@@ -118,29 +118,38 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </nav>
 
           <div className="p-3 border-t border-gray-50 dark:border-zinc-800 space-y-2">
-            <div className="bg-gray-50 dark:bg-zinc-800/30 rounded-lg p-2">
-              <p className="text-[8px] uppercase tracking-widest font-bold text-zinc-400 mb-1.5 px-1">Switch View</p>
-              <div className="grid grid-cols-2 gap-1">
-                {(['PARENT', 'STUDENT', 'TEACHER', 'ADMIN'] as Role[]).map(role => (
-                  <button
-                    key={role}
-                    onClick={() => {
-                      switchRole(role);
-                      navigate('/dashboard');
-                      setIsSidebarOpen(false);
-                    }}
-                    className={cn(
-                      "text-[8px] py-1 px-1 rounded border transition-all font-bold",
-                      user.role === role 
-                        ? "bg-zinc-900 text-white border-zinc-900 dark:bg-white dark:text-black dark:border-white" 
-                        : "bg-white dark:bg-zinc-900 border-gray-100 dark:border-zinc-800 text-zinc-400"
-                    )}
-                  >
-                    {role}
-                  </button>
-                ))}
+            {user.role === 'ADMIN' ? (
+              <div className="bg-gray-50 dark:bg-zinc-800/30 rounded-lg p-2">
+                <p className="text-[8px] uppercase tracking-widest font-bold text-zinc-400 mb-1.5 px-1">Switch View</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {(['PARENT', 'STUDENT', 'TEACHER', 'ADMIN'] as Role[]).map(role => (
+                    <button
+                      key={role}
+                      onClick={() => {
+                        const result = switchRole(role);
+                        if (result.success) {
+                          navigate('/dashboard');
+                          setIsSidebarOpen(false);
+                        }
+                      }}
+                      className={cn(
+                        "text-[8px] py-1 px-1 rounded border transition-all font-bold",
+                        user.role === role 
+                          ? "bg-zinc-900 text-white border-zinc-900 dark:bg-white dark:text-black dark:border-white" 
+                          : "bg-white dark:bg-zinc-900 border-gray-100 dark:border-zinc-800 text-zinc-400"
+                      )}
+                    >
+                      {role}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="bg-gray-50 dark:bg-zinc-800/30 rounded-lg p-2">
+                <p className="text-[8px] uppercase tracking-widest font-bold text-zinc-400 mb-1.5 px-1">Access</p>
+                <p className="text-[9px] text-zinc-500 px-1">Role switching is restricted to admin users.</p>
+              </div>
+            )}
             <button 
               onClick={logout}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-lg transition-colors"

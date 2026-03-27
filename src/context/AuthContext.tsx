@@ -3,9 +3,9 @@ import { User, Role } from '../types';
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, role: Role) => void;
+  login: (email: string, password: string) => { success: boolean; message?: string };
   logout: () => void;
-  switchRole: (role: Role) => void;
+  switchRole: (role: Role) => { success: boolean; message?: string };
   isDarkMode: boolean;
   toggleDarkMode: () => void;
 }
@@ -19,10 +19,7 @@ const USERS: User[] = [
   { id: 'u4', name: 'School Admin', email: 'admin@example.com', role: 'ADMIN' },
 ];
 
-const KENYAN_NAMES_POOL = [
-  'James Otieno', 'David Omolo', 'Kevin Wanjala', 'Brian Kamau', 'Peter Mutua',
-  'John Musyoka', 'Evans Kipkorir', 'Collins Bett', 'Samuel Njoroge', 'Michael Mwangi'
-];
+const DEMO_PASSWORD = 'School@123';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
@@ -53,27 +50,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [isDarkMode]);
 
-  const login = (email: string, role: Role) => {
-    const found = USERS.find(u => u.email === email && u.role === role);
-    if (found) {
-      setUser(found);
-    } else {
-      // Assign a random Kenyan name for new logins to avoid "John Doe" or email-based names
-      const randomName = KENYAN_NAMES_POOL[Math.floor(Math.random() * KENYAN_NAMES_POOL.length)];
-      setUser({
-        id: 'u' + Date.now(),
-        name: randomName,
-        email,
-        role,
-      });
+  const login = (email: string, password: string) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const found = USERS.find(u => u.email.toLowerCase() === normalizedEmail);
+
+    if (!found) {
+      return { success: false, message: 'Account not found.' };
     }
+
+    if (password !== DEMO_PASSWORD) {
+      return { success: false, message: 'Invalid password.' };
+    }
+
+    setUser(found);
+    return { success: true };
   };
 
   const logout = () => setUser(null);
 
   const switchRole = (role: Role) => {
+    if (!user || user.role !== 'ADMIN') {
+      return { success: false, message: 'Only admins can switch roles.' };
+    }
+
     const found = USERS.find(u => u.role === role);
-    if (found) setUser(found);
+    if (!found) {
+      return { success: false, message: 'Role account not configured.' };
+    }
+
+    setUser(found);
+    return { success: true };
   };
 
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);

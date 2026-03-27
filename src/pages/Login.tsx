@@ -3,19 +3,23 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Button, Card } from '../components/UI';
 import { BookOpen } from 'lucide-react';
-import { Role } from '../types';
-import { cn } from '../utils/utils';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<Role>('PARENT');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    login(email || `${role.toLowerCase()}@example.com`, role);
-    navigate('/dashboard');
+    setError('');
+    const result = login(email, password);
+    if (!result.success) {
+      setError(result.message || 'Unable to sign in.');
+      return;
+    }
+    navigate('/dashboard', { replace: true });
   };
 
   return (
@@ -44,29 +48,28 @@ export const Login: React.FC = () => {
             </div>
 
             <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase text-zinc-400">Access Role</label>
-              <div className="grid grid-cols-2 gap-2">
-                {(['PARENT', 'STUDENT', 'TEACHER', 'ADMIN'] as Role[]).map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setRole(r)}
-                    className={cn(
-                      "py-2 px-3 rounded-lg text-[10px] font-bold transition-all border",
-                      role === r 
-                        ? "bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 border-transparent" 
-                        : "bg-white dark:bg-zinc-900 text-zinc-500 border-zinc-100 dark:border-zinc-800 hover:border-zinc-300"
-                    )}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
+              <label className="text-[10px] font-bold uppercase text-zinc-400">Password</label>
+              <input
+                type="password"
+                required
+                placeholder="Enter your password"
+                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs outline-none focus:border-zinc-400 transition-colors"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
             </div>
+
+            {error && <p className="text-[11px] text-red-500 font-medium">{error}</p>}
 
             <Button type="submit" className="w-full py-2.5 text-xs font-bold mt-2">
               Sign In
             </Button>
+
+            <div className="text-[10px] text-zinc-500 bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800 rounded-lg p-2.5">
+              <p className="font-bold mb-1">Demo Accounts</p>
+              <p>parent@example.com, student@example.com, teacher@example.com, admin@example.com</p>
+              <p className="mt-1">Password: School@123</p>
+            </div>
           </form>
         </Card>
 
