@@ -13,9 +13,18 @@ export const Announcements: React.FC = () => {
     title: '',
     content: '',
     author: user?.name || 'School Admin',
-    targetRoles: ['PARENT', 'STUDENT', 'TEACHER'] as any[],
-    date: new Date().toISOString()
+    targetRoles: ['PARENT', 'STUDENT', 'TEACHER'] as ('PARENT' | 'STUDENT' | 'TEACHER' | 'ADMIN')[],
+    date: new Date().toISOString(),
+    pinned: false,
+    urgent: false,
+    channel: 'IN_APP' as 'IN_APP' | 'SMS' | 'EMAIL' | 'WHATSAPP',
+    expiresAt: ''
   });
+
+  const visibleAnnouncements = announcements
+    .filter(a => !user || a.targetRoles.includes(user.role))
+    .filter(a => !a.expiresAt || new Date(a.expiresAt) >= new Date())
+    .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,7 +35,11 @@ export const Announcements: React.FC = () => {
       content: '',
       author: user?.name || 'School Admin',
       targetRoles: ['PARENT', 'STUDENT', 'TEACHER'],
-      date: new Date().toISOString()
+      date: new Date().toISOString(),
+      pinned: false,
+      urgent: false,
+      channel: 'IN_APP',
+      expiresAt: ''
     });
   };
 
@@ -43,7 +56,7 @@ export const Announcements: React.FC = () => {
       </div>
 
       <div className="space-y-6">
-        {announcements.map(announcement => (
+        {visibleAnnouncements.map(announcement => (
           <Card key={announcement.id} className="hover:border-blue-200 dark:hover:border-blue-900/30 transition-colors">
             <div className="flex flex-col md:flex-row gap-6">
               <div className="md:w-48 shrink-0">
@@ -61,6 +74,9 @@ export const Announcements: React.FC = () => {
                 <div className="flex items-start justify-between gap-4 mb-3">
                   <h3 className="text-xl font-bold">{announcement.title}</h3>
                   <div className="flex gap-1">
+                    {announcement.pinned && <Badge variant="warning">PINNED</Badge>}
+                    {announcement.urgent && <Badge variant="danger">URGENT</Badge>}
+                    {announcement.channel && <Badge variant="info">{announcement.channel}</Badge>}
                     {announcement.targetRoles.map(role => (
                       <Badge key={role} variant="neutral">{role}</Badge>
                     ))}
@@ -95,6 +111,31 @@ export const Announcements: React.FC = () => {
               onChange={(e) => setFormData({ ...formData, content: e.target.value })}
               required
             />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-sm flex items-center gap-2">
+              <input type="checkbox" checked={formData.pinned} onChange={(e) => setFormData({ ...formData, pinned: e.target.checked })} />
+              Pin announcement
+            </label>
+            <label className="text-sm flex items-center gap-2">
+              <input type="checkbox" checked={formData.urgent} onChange={(e) => setFormData({ ...formData, urgent: e.target.checked })} />
+              Mark as urgent
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Channel</label>
+              <select className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none" value={formData.channel} onChange={(e) => setFormData({ ...formData, channel: e.target.value as 'IN_APP' | 'SMS' | 'EMAIL' | 'WHATSAPP' })}>
+                <option value="IN_APP">IN_APP</option>
+                <option value="SMS">SMS</option>
+                <option value="EMAIL">EMAIL</option>
+                <option value="WHATSAPP">WHATSAPP</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Expiry Date</label>
+              <input type="date" className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none" value={formData.expiresAt} onChange={(e) => setFormData({ ...formData, expiresAt: e.target.value })} />
+            </div>
           </div>
           <Button type="submit" className="w-full py-4 mt-4"><Save size={18} /> Post Announcement</Button>
         </form>

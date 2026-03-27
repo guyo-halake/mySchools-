@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import { Card, Table, Button, Badge } from '../components/UI';
-import { Save } from 'lucide-react';
+import { Save, Upload } from 'lucide-react';
 
 export const InputResults: React.FC = () => {
-  const { students, results, updateResult, addResult } = useApp();
+  const { user } = useAuth();
+  const { students, results, updateResult, addResult, teachers } = useApp();
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [selectedTerm, setSelectedTerm] = useState('Term 1');
   const [selectedYear, setSelectedYear] = useState(2024);
+  const [error, setError] = useState('');
+  const [csvData, setCsvData] = useState('');
+  const [workflowStatus, setWorkflowStatus] = useState<'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED'>('DRAFT');
   
   const subjects = [
     'Mathematics', 'English', 'Swahili', 'Geography', 'History', 
@@ -17,6 +22,31 @@ export const InputResults: React.FC = () => {
   const [inputData, setInputData] = useState<{ [key: string]: { marks: string; remarks: string } }>(
     subjects.reduce((acc, sub) => ({ ...acc, [sub]: { marks: '', remarks: '' } }), {})
   );
+
+  const workflowKey = `workflow_${selectedStudentId}_${selectedTerm}_${selectedYear}`;
+
+  const teacherProfile = teachers.find(t => t.id === user?.teacherId);
+  const allowedStudents = user?.role === 'TEACHER' && teacherProfile?.classId
+    ? students.filter(s => s.classId === teacherProfile.classId)
+    : students;
+  const allowedSubjects = user?.role === 'TEACHER' && teacherProfile
+    ? teacherProfile.subjects
+    : subjects;
+
+  useEffect(() => {
+    if (!selectedStudentId && allowedStudents.length > 0) {
+      setSelectedStudentId(allowedStudents[0].id);
+    }
+  }, [allowedStudents, selectedStudentId]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(workflowKey);
+    if (saved) {
+      setWorkflowStatus(saved as 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED');
+    } else {
+      setWorkflowStatus('DRAFT');
+    }
+  }, [workflowKey]);
 
   useEffect(() => {
     if (selectedStudentId) {
@@ -42,12 +72,22 @@ export const InputResults: React.FC = () => {
 
   const handleSave = () => {
     if (!selectedStudentId) return;
+    setError('');
+
+    if (workflowStatus === 'FINALIZED') {
+      setError('This report card is finalized and cannot be edited.');
+      return;
+    }
 
     Object.entries(inputData).forEach(([subject, data]) => {
       const { marks: marksStr, remarks } = data as { marks: string; remarks: string };
       if (marksStr === '') return;
 
       const marks = parseInt(marksStr);
+      if (Number.isNaN(marks) || marks < 0 || marks > 100) {
+        setError(`Invalid marks for ${subject}. Enter values between 0 and 100.`);
+        return;
+      }
       const grade = marks >= 80 ? 'A' : marks >= 70 ? 'B' : marks >= 60 ? 'C' : marks >= 50 ? 'D' : 'E';
       
       const existing = results.find(r => 
@@ -58,7 +98,7 @@ export const InputResults: React.FC = () => {
       );
 
       if (existing) {
-        updateResult(existing.id, { marks, grade, remarks });
+        updateResult(existing.id, { marks, grade, remarks, moderationStatus: workflowStatus });
       } else {
         addResult({
           studentId: selectedStudentId,
@@ -67,12 +107,43 @@ export const InputResults: React.FC = () => {
           grade,
           term: selectedTerm,
           year: selectedYear,
-          remarks
+          remarks,
+          moderationStatus: workflowStatus
         });
       }
     });
     
     alert('Results saved successfully');
+  };
+
+  const handleBulkImport = () => {
+    setError('');
+    if (!csvData.trim()) {
+      setError('Paste CSV rows first. Format: Subject,Marks,Remarks');
+      return;
+    }
+
+    const lines = csvData.split('\n').map(line => line.trim()).filter(Boolean);
+    const nextData = { ...inputData };
+
+    for (const line of lines) {
+      const [subjectRaw, marksRaw, ...remarksParts] = line.split(',');
+      const subject = (subjectRaw || '').trim();
+      const marks = (marksRaw || '').trim();
+      const remarks = remarksParts.join(',').trim();
+
+      if (!allowedSubjects.includes(subject)) {
+        continue;
+      }
+      nextData[subject] = { marks, remarks };
+    }
+
+    setInputData(nextData);
+  };
+
+  const updateWorkflowStatus = (status: 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED') => {
+    setWorkflowStatus(status);
+    localStorage.setItem(workflowKey, status);
   };
 
   return (
@@ -87,6 +158,24 @@ export const InputResults: React.FC = () => {
         </Button>
       </div>
 
+      <Card>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="info">Workflow: {workflowStatus}</Badge>
+          {user?.role === 'TEACHER' && workflowStatus === 'DRAFT' && (
+            <Button variant="outline" onClick={() => updateWorkflowStatus('TEACHER_SUBMITTED')}>Submit to HOD</Button>
+          )}
+          {user?.role === 'ADMIN' && workflowStatus === 'TEACHER_SUBMITTED' && (
+            <Button variant="outline" onClick={() => updateWorkflowStatus('HOD_APPROVED')}>Approve as HOD</Button>
+          )}
+          {user?.role === 'ADMIN' && workflowStatus === 'HOD_APPROVED' && (
+            <Button onClick={() => updateWorkflowStatus('FINALIZED')}>Finalize as DOS</Button>
+          )}
+          {(user?.role === 'ADMIN' || user?.role === 'TEACHER') && workflowStatus !== 'FINALIZED' && (
+            <Button variant="ghost" onClick={() => updateWorkflowStatus('DRAFT')}>Reset to Draft</Button>
+          )}
+        </div>
+      </Card>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="space-y-1">
           <label className="text-[10px] font-bold uppercase text-zinc-400">Student</label>
@@ -96,7 +185,7 @@ export const InputResults: React.FC = () => {
             onChange={(e) => setSelectedStudentId(e.target.value)}
           >
             <option value="">Select Student</option>
-            {students.map(s => (
+            {allowedStudents.map(s => (
               <option key={s.id} value={s.id}>{s.name} ({s.admissionNumber})</option>
             ))}
           </select>
@@ -126,9 +215,23 @@ export const InputResults: React.FC = () => {
         </div>
       </div>
 
+      <Card title="Bulk Import (CSV)" subtitle="Paste Subject,Marks,Remarks per line">
+        <div className="space-y-3">
+          <textarea
+            className="w-full min-h-[100px] bg-gray-50 dark:bg-zinc-800 border border-gray-100 dark:border-zinc-700 rounded px-3 py-2 text-xs outline-none focus:border-zinc-400"
+            placeholder="Mathematics,78,Improved solving speed"
+            value={csvData}
+            onChange={(e) => setCsvData(e.target.value)}
+          />
+          <Button variant="outline" onClick={handleBulkImport}>
+            <Upload size={14} /> Apply CSV to Form
+          </Button>
+        </div>
+      </Card>
+
       <Card>
         <Table headers={['Subject', 'Marks (0-100)', 'Grade', 'Teacher Remarks']}>
-          {subjects.map(sub => {
+          {allowedSubjects.map(sub => {
             const marks = parseInt(inputData[sub]?.marks || '0');
             const grade = inputData[sub]?.marks ? (marks >= 80 ? 'A' : marks >= 70 ? 'B' : marks >= 60 ? 'C' : marks >= 50 ? 'D' : 'E') : '-';
             
@@ -140,6 +243,7 @@ export const InputResults: React.FC = () => {
                     type="number"
                     min="0"
                     max="100"
+                    disabled={workflowStatus === 'FINALIZED'}
                     className="w-16 bg-gray-50 dark:bg-zinc-800 border border-gray-100 dark:border-zinc-700 rounded px-2 py-1 text-xs outline-none focus:border-zinc-400"
                     value={inputData[sub]?.marks || ''}
                     onChange={(e) => setInputData({
@@ -157,6 +261,7 @@ export const InputResults: React.FC = () => {
                   <input 
                     type="text"
                     placeholder="Enter feedback..."
+                    disabled={workflowStatus === 'FINALIZED'}
                     className="w-full bg-gray-50 dark:bg-zinc-800 border border-gray-100 dark:border-zinc-700 rounded px-3 py-1 text-xs outline-none focus:border-zinc-400"
                     value={inputData[sub]?.remarks || ''}
                     onChange={(e) => setInputData({
@@ -170,8 +275,7 @@ export const InputResults: React.FC = () => {
           })}
         </Table>
       </Card>
+      {error && <p className="text-xs text-red-500">{error}</p>}
     </div>
   );
 };
-
-import { Trash2 } from 'lucide-react';

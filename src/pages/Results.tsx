@@ -18,6 +18,7 @@ export const Results: React.FC = () => {
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState<Record<string, Record<string, { marks: string; remarks: string }>>>({});
+  const [workflowStatus, setWorkflowStatus] = useState<'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED'>('DRAFT');
 
   useEffect(() => {
     if (user?.studentId) {
@@ -37,6 +38,8 @@ export const Results: React.FC = () => {
   const latestTermWithResults = ['Term 3', 'Term 2', 'Term 1'].find(t => 
     allStudentResults.some(r => r.term === t)
   ) || 'Term 3';
+  const selectedWorkflowTerm = selectedTerm === 'All Terms' ? latestTermWithResults : selectedTerm;
+  const workflowKey = `workflow_${selectedStudentId}_${selectedWorkflowTerm}_${selectedYear}`;
 
   const currentRank = student ? getStudentRank(
     student.id, 
@@ -45,6 +48,51 @@ export const Results: React.FC = () => {
   ) : null;
 
   const terms = ['Term 1', 'Term 2', 'Term 3'];
+
+  useEffect(() => {
+    if (!selectedStudentId) return;
+    const saved = localStorage.getItem(workflowKey);
+    if (saved) {
+      setWorkflowStatus(saved as 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED');
+    } else {
+      setWorkflowStatus('DRAFT');
+    }
+  }, [workflowKey, selectedStudentId]);
+
+  const isFinalized = workflowStatus === 'FINALIZED';
+
+  const getKcsePoints = (grade: string) => {
+    const pointsMap: Record<string, number> = {
+      A: 12,
+      'A-': 11,
+      'B+': 10,
+      B: 9,
+      'B-': 8,
+      'C+': 7,
+      C: 6,
+      'C-': 5,
+      'D+': 4,
+      D: 3,
+      'D-': 2,
+      E: 1,
+    };
+    return pointsMap[grade] || (grade === 'A' ? 12 : grade === 'B' ? 9 : grade === 'C' ? 6 : grade === 'D' ? 3 : 1);
+  };
+
+  const getMeanGrade = (average: number) => {
+    if (average >= 80) return 'A';
+    if (average >= 75) return 'A-';
+    if (average >= 70) return 'B+';
+    if (average >= 65) return 'B';
+    if (average >= 60) return 'B-';
+    if (average >= 55) return 'C+';
+    if (average >= 50) return 'C';
+    if (average >= 45) return 'C-';
+    if (average >= 40) return 'D+';
+    if (average >= 35) return 'D';
+    if (average >= 30) return 'D-';
+    return 'E';
+  };
 
   const getResult = (subject: string, term: string) => {
     return allStudentResults.find(r => r.subject === subject && r.term === term);
@@ -71,6 +119,7 @@ export const Results: React.FC = () => {
 
   const handleSave = () => {
     if (!selectedStudentId) return;
+    if (isFinalized) return;
 
     Object.entries(editData).forEach(([subject, termData]) => {
       Object.entries(termData).forEach(([term, data]) => {
@@ -106,6 +155,14 @@ export const Results: React.FC = () => {
     });
     
     setIsEditing(false);
+  };
+
+  const updateWorkflowStatus = (status: 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED') => {
+    setWorkflowStatus(status);
+    localStorage.setItem(workflowKey, status);
+    if (status === 'FINALIZED') {
+      setIsEditing(false);
+    }
   };
 
   return (
@@ -148,9 +205,9 @@ export const Results: React.FC = () => {
             <option value="Term 2">Term 2</option>
             <option value="Term 3">Term 3</option>
           </select>
-          {user?.role === 'TEACHER' && (
+          {(user?.role === 'TEACHER' || user?.role === 'ADMIN') && !isFinalized && (
             <Button 
-              variant={isEditing ? "success" : "primary"} 
+              variant={isEditing ? "secondary" : "primary"} 
               onClick={isEditing ? handleSave : handleEditToggle}
               className="h-8 text-[10px]"
             >
@@ -160,6 +217,21 @@ export const Results: React.FC = () => {
           <Button variant="outline" className="h-8 text-[10px]"><Download size={14} /> Export PDF</Button>
         </div>
       </div>
+
+      <Card>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="info">Moderation: {workflowStatus}</Badge>
+          {user?.role === 'TEACHER' && workflowStatus === 'DRAFT' && (
+            <Button variant="outline" onClick={() => updateWorkflowStatus('TEACHER_SUBMITTED')}>Submit to HOD</Button>
+          )}
+          {user?.role === 'ADMIN' && workflowStatus === 'TEACHER_SUBMITTED' && (
+            <Button variant="outline" onClick={() => updateWorkflowStatus('HOD_APPROVED')}>Approve as HOD</Button>
+          )}
+          {user?.role === 'ADMIN' && workflowStatus === 'HOD_APPROVED' && (
+            <Button onClick={() => updateWorkflowStatus('FINALIZED')}>Finalize as DOS</Button>
+          )}
+        </div>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {currentRank && (
@@ -183,6 +255,13 @@ export const Results: React.FC = () => {
               <div className="flex items-baseline gap-2">
                 <p className="text-2xl font-bold text-amber-700 dark:text-amber-300">{currentRank.averageMarks.toFixed(1)}%</p>
                 <p className="text-xs text-amber-600/60 font-medium">Overall Average</p>
+              </div>
+            </Card>
+            <Card className="bg-violet-50 dark:bg-violet-900/10 border-violet-100 dark:border-violet-800/20">
+              <p className="text-[10px] font-bold uppercase text-violet-600 dark:text-violet-400 mb-1">KCSE Projection</p>
+              <div className="flex items-baseline gap-2">
+                <p className="text-2xl font-bold text-violet-700 dark:text-violet-300">{getMeanGrade(currentRank.averageMarks)}</p>
+                <p className="text-xs text-violet-600/60 font-medium">{getKcsePoints(getMeanGrade(currentRank.averageMarks))} points</p>
               </div>
             </Card>
           </>
@@ -244,7 +323,7 @@ export const Results: React.FC = () => {
                                   )}>
                                     {res.marks}%
                                   </span>
-                                  <Badge variant={res.marks >= 80 ? 'success' : res.marks >= 50 ? 'info' : 'error'} className="text-[8px] py-0 px-1">
+                                  <Badge variant={res.marks >= 80 ? 'success' : res.marks >= 50 ? 'info' : 'danger'}>
                                     {res.grade}
                                   </Badge>
                                 </div>
@@ -298,7 +377,7 @@ export const Results: React.FC = () => {
                           {(() => {
                             const res = getResult(sub, selectedTerm);
                             if (!res) return <span className="text-zinc-300">-</span>;
-                            return <Badge variant={res.marks >= 80 ? 'success' : res.marks >= 50 ? 'info' : 'error'} className="text-[10px]">{res.grade}</Badge>;
+                            return <Badge variant={res.marks >= 80 ? 'success' : res.marks >= 50 ? 'info' : 'danger'}>{res.grade}</Badge>;
                           })()}
                         </td>
                       )}

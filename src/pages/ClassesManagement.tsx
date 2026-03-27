@@ -4,10 +4,11 @@ import { Card, Table, Button, Badge, Modal } from '../components/UI';
 import { Search, Plus, Save, Trash2, Edit, BookOpen } from 'lucide-react';
 
 export const ClassesManagement: React.FC = () => {
-  const { classes, teachers, students } = useApp();
+  const { classes, teachers, students, addClass, updateClass, deleteClass } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     teacherId: ''
@@ -19,17 +20,39 @@ export const ClassesManagement: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // In a real app we'd have addClass/updateClass in context
-    // For now we'll just close the modal
+
+    const existingClassCount = students.filter(s => s.classId === editingId || s.classId === '').length;
+    if (!editingId && existingClassCount > 60) {
+      setError('Class size appears to exceed 60 students. Split into streams before saving.');
+      return;
+    }
+
+    if (editingId) {
+      updateClass(editingId, formData);
+    } else {
+      addClass(formData);
+    }
+
+    setError('');
     setIsModalOpen(false);
     setEditingId(null);
     setFormData({ name: '', teacherId: '' });
   };
 
   const handleEdit = (c: any) => {
+    setError('');
     setEditingId(c.id);
     setFormData({ ...c });
     setIsModalOpen(true);
+  };
+
+  const handleDeleteClass = (classId: string) => {
+    const enrolledCount = students.filter(s => s.classId === classId).length;
+    if (enrolledCount > 0) {
+      setError('Cannot delete class with enrolled students. Reassign students first.');
+      return;
+    }
+    deleteClass(classId);
   };
 
   return (
@@ -81,12 +104,13 @@ export const ClassesManagement: React.FC = () => {
               <td className="px-4 py-4">
                 <div className="flex gap-2">
                   <Button variant="ghost" className="p-2 h-auto" onClick={() => handleEdit(c)}><Edit size={16} /></Button>
-                  <Button variant="ghost" className="p-2 h-auto text-red-500"><Trash2 size={16} /></Button>
+                  <Button variant="ghost" className="p-2 h-auto text-red-500" onClick={() => handleDeleteClass(c.id)}><Trash2 size={16} /></Button>
                 </div>
               </td>
             </tr>
           ))}
         </Table>
+        {error && <p className="text-xs text-red-500 mt-4">{error}</p>}
       </Card>
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingId ? "Edit Class" : "Create New Class"}>
@@ -115,6 +139,7 @@ export const ClassesManagement: React.FC = () => {
             </select>
           </div>
           <Button type="submit" className="w-full py-4 mt-4"><Save size={18} /> {editingId ? "Update Class" : "Create Class"}</Button>
+          {error && <p className="text-xs text-red-500">{error}</p>}
         </form>
       </Modal>
     </div>

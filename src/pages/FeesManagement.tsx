@@ -36,6 +36,45 @@ export const FeesManagement: React.FC = () => {
     }
   };
 
+  const handleReverse = (id: string) => {
+    const fee = fees.find(f => f.id === id);
+    if (!fee) return;
+    updateFee(id, { paid: 0, status: 'UNPAID' });
+  };
+
+  const handleAdjust = (id: string, delta: number) => {
+    const fee = fees.find(f => f.id === id);
+    if (!fee) return;
+    const nextPaid = Math.max(0, Math.min(fee.amount, fee.paid + delta));
+    const nextStatus = nextPaid === 0 ? 'UNPAID' : nextPaid >= fee.amount ? 'PAID' : 'PARTIAL';
+    updateFee(id, { paid: nextPaid, status: nextStatus });
+  };
+
+  const exportAccountingCsv = () => {
+    const rows = ['Student,Admission,Type,VoteHead,Amount,Paid,Balance,Status'];
+    filteredFees.forEach(f => {
+      const student = students.find(s => s.id === f.studentId);
+      rows.push([
+        student?.name || '',
+        student?.admissionNumber || '',
+        f.type,
+        f.voteHead || 'Tuition',
+        f.amount,
+        f.paid,
+        f.amount - f.paid,
+        f.status,
+      ].join(','));
+    });
+
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'fees-accounting-export.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -61,9 +100,10 @@ export const FeesManagement: React.FC = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          <Button variant="outline" onClick={exportAccountingCsv}>Export Accounting CSV</Button>
         </div>
 
-        <Table headers={['Student', 'Type', 'Amount', 'Paid', 'Balance', 'Status', 'Actions']}>
+        <Table headers={['Student', 'Type', 'Vote Head', 'Amount', 'Paid', 'Balance', 'Status', 'Actions']}>
           {filteredFees.map(f => {
             const student = students.find(s => s.id === f.studentId);
             const balance = f.amount - f.paid;
@@ -79,6 +119,7 @@ export const FeesManagement: React.FC = () => {
                   </div>
                 </td>
                 <td className="px-4 py-4 text-sm">{f.type}</td>
+                <td className="px-4 py-4 text-sm">{f.voteHead || 'Tuition'}</td>
                 <td className="px-4 py-4 font-mono">{formatCurrency(f.amount)}</td>
                 <td className="px-4 py-4 font-mono text-emerald-600">{formatCurrency(f.paid)}</td>
                 <td className="px-4 py-4 font-mono text-rose-600">{formatCurrency(balance)}</td>
@@ -98,6 +139,9 @@ export const FeesManagement: React.FC = () => {
                         Approve
                       </Button>
                     )}
+                    <Button variant="outline" className="text-xs py-1 px-2" onClick={() => handleAdjust(f.id, 1000)}>+1,000</Button>
+                    <Button variant="outline" className="text-xs py-1 px-2" onClick={() => handleAdjust(f.id, -1000)}>-1,000</Button>
+                    <Button variant="ghost" className="text-xs py-1 px-2 text-red-500" onClick={() => handleReverse(f.id)}>Reverse</Button>
                     <Button variant="ghost" className="p-2 h-auto"><Edit size={14} /></Button>
                   </div>
                 </td>
@@ -105,6 +149,23 @@ export const FeesManagement: React.FC = () => {
             );
           })}
         </Table>
+      </Card>
+
+      <Card title="Reconciliation Snapshot" subtitle="Quick check for bank/M-Pesa matching">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/40">
+            <p className="text-[10px] uppercase text-zinc-400 font-bold">Recorded Payments</p>
+            <p className="text-lg font-bold">{formatCurrency(fees.reduce((a, f) => a + f.paid, 0))}</p>
+          </div>
+          <div className="p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/40">
+            <p className="text-[10px] uppercase text-zinc-400 font-bold">Expected Invoices</p>
+            <p className="text-lg font-bold">{formatCurrency(fees.reduce((a, f) => a + f.amount, 0))}</p>
+          </div>
+          <div className="p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/40">
+            <p className="text-[10px] uppercase text-zinc-400 font-bold">Unmatched Balance</p>
+            <p className="text-lg font-bold text-amber-600">{formatCurrency(fees.reduce((a, f) => a + (f.amount - f.paid), 0))}</p>
+          </div>
+        </div>
       </Card>
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Record New Fee/Payment">

@@ -31,6 +31,9 @@ interface AppContextType {
   addTeacher: (t: Omit<Teacher, 'id'>) => void;
   updateTeacher: (id: string, t: Partial<Teacher>) => void;
   deleteTeacher: (id: string) => void;
+  addClass: (c: Omit<Class, 'id'>) => void;
+  updateClass: (id: string, c: Partial<Class>) => void;
+  deleteClass: (id: string) => void;
   
   getStudentRank: (studentId: string, term: string, year: number) => {
     classRank: number;
@@ -132,17 +135,20 @@ const INITIAL_DATA = {
     id: `f${i + 1}`,
     studentId: s.id,
     type: 'Tuition Fee',
+    voteHead: 'Tuition',
     amount: 45000,
     paid: Math.random() > 0.3 ? 45000 : 20000 + Math.floor(Math.random() * 20000),
     date: '2024-01-15',
+    dueDate: '2024-04-30',
+    receiptNumber: `RCPT-${2024}-${(i + 1).toString().padStart(4, '0')}`,
     status: Math.random() > 0.3 ? 'PAID' : 'PARTIAL'
   })),
   suspensions: [],
   events: [
-    { id: 'e1', title: 'Prize Giving Day', description: 'Celebrating academic excellence.', date: '2024-05-20', location: 'School Hall', rsvps: [] },
+    { id: 'e1', title: 'Prize Giving Day', description: 'Celebrating academic excellence.', date: '2024-05-20', location: 'School Hall', targetRoles: ['PARENT', 'STUDENT', 'TEACHER', 'ADMIN'], recurring: 'NONE', requiresPermissionSlip: false, rsvps: [] },
   ],
   announcements: [
-    { id: 'a1', title: 'Exam Schedule', content: 'End of term exams start next week.', date: '2024-03-20', author: 'Principal', targetRoles: ['PARENT', 'STUDENT', 'TEACHER'] },
+    { id: 'a1', title: 'Exam Schedule', content: 'End of term exams start next week.', date: '2024-03-20', author: 'Principal', targetRoles: ['PARENT', 'STUDENT', 'TEACHER'], pinned: true, urgent: false, channel: 'IN_APP' },
   ],
 };
 
@@ -272,6 +278,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
+  const addClass = (c: Omit<Class, 'id'>) => {
+    setData((prev: any) => ({
+      ...prev,
+      classes: [...prev.classes, { ...c, id: 'c' + Date.now() }]
+    }));
+  };
+
+  const updateClass = (id: string, c: Partial<Class>) => {
+    setData((prev: any) => ({
+      ...prev,
+      classes: prev.classes.map((cl: Class) => cl.id === id ? { ...cl, ...c } : cl)
+    }));
+  };
+
+  const deleteClass = (id: string) => {
+    setData((prev: any) => ({
+      ...prev,
+      classes: prev.classes.filter((cl: Class) => cl.id !== id)
+    }));
+  };
+
   const getStudentRank = (studentId: string, term: string, year: number) => {
     const student = data.students.find(s => s.id === studentId);
     if (!student) return { classRank: 0, classTotal: 0, formRank: 0, formTotal: 0, averageMarks: 0 };
@@ -309,6 +336,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addResult, updateResult, addFee, updateFee, 
       addSuspension, updateSuspension, addAnnouncement, addEvent, rsvpEvent,
       addStudent, updateStudent, deleteStudent, addTeacher, updateTeacher, deleteTeacher,
+      addClass, updateClass, deleteClass,
       getStudentRank
     }}>
       {children}

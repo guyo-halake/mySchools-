@@ -12,7 +12,11 @@ export const TeachersManagement: React.FC = () => {
     name: '',
     email: '',
     subjects: [] as string[],
-    classId: ''
+    classId: '',
+    department: '',
+    isHod: false,
+    maxLessonsPerWeek: 30,
+    currentLessonsPerWeek: 0
   });
   const [subjectInput, setSubjectInput] = useState('');
 
@@ -30,7 +34,7 @@ export const TeachersManagement: React.FC = () => {
     }
     setIsModalOpen(false);
     setEditingId(null);
-    setFormData({ name: '', email: '', subjects: [], classId: '' });
+    setFormData({ name: '', email: '', subjects: [], classId: '', department: '', isHod: false, maxLessonsPerWeek: 30, currentLessonsPerWeek: 0 });
   };
 
   const handleEdit = (t: any) => {
@@ -70,7 +74,7 @@ export const TeachersManagement: React.FC = () => {
           </div>
         </div>
 
-        <Table headers={['Teacher', 'Email', 'Subjects', 'Assigned Class', 'Actions']}>
+        <Table headers={['Teacher', 'Email', 'Subjects', 'Assigned Class', 'Dept/HOD', 'Workload', 'Actions']}>
           {filteredTeachers.map(t => (
             <tr key={t.id}>
               <td className="px-4 py-4">
@@ -89,6 +93,13 @@ export const TeachersManagement: React.FC = () => {
               </td>
               <td className="px-4 py-4">
                 <Badge variant="success">{classes.find(c => c.id === t.classId)?.name || 'None'}</Badge>
+              </td>
+              <td className="px-4 py-4 text-xs">
+                <div>{t.department || 'General'}</div>
+                {t.isHod && <Badge variant="info">HOD</Badge>}
+              </td>
+              <td className="px-4 py-4 text-xs">
+                {(t.currentLessonsPerWeek || 0)}/{t.maxLessonsPerWeek || 30}
               </td>
               <td className="px-4 py-4">
                 <div className="flex gap-2">
@@ -156,6 +167,26 @@ export const TeachersManagement: React.FC = () => {
               <option value="">None</option>
               {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Department</label>
+              <input type="text" className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none" value={formData.department} onChange={(e) => setFormData({ ...formData, department: e.target.value })} placeholder="Sciences" />
+            </div>
+            <label className="text-sm flex items-center gap-2 pt-8">
+              <input type="checkbox" checked={formData.isHod} onChange={(e) => setFormData({ ...formData, isHod: e.target.checked })} />
+              Department HOD
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Max Lessons/Week</label>
+              <input type="number" className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none" value={formData.maxLessonsPerWeek} onChange={(e) => setFormData({ ...formData, maxLessonsPerWeek: Number(e.target.value) })} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Current Lessons/Week</label>
+              <input type="number" className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none" value={formData.currentLessonsPerWeek} onChange={(e) => setFormData({ ...formData, currentLessonsPerWeek: Number(e.target.value) })} />
+            </div>
           </div>
           <Button type="submit" className="w-full py-4 mt-4"><Save size={18} /> {editingId ? "Update Teacher" : "Create Teacher"}</Button>
         </form>

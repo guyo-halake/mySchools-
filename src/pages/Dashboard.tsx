@@ -22,6 +22,12 @@ import { formatCurrency, formatDate, cn } from '../utils/utils';
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const { students, results, events, fees, suspensions, teachers, announcements, classes } = useApp();
+  const [showFinancials, setShowFinancials] = React.useState(() => localStorage.getItem('dashboard_widget_financials') !== '0');
+  const [showAcademics, setShowAcademics] = React.useState(() => localStorage.getItem('dashboard_widget_academics') !== '0');
+
+  const toggleWidget = (key: 'dashboard_widget_financials' | 'dashboard_widget_academics', value: boolean) => {
+    localStorage.setItem(key, value ? '1' : '0');
+  };
 
   if (user?.role === 'PARENT' || user?.role === 'STUDENT') {
     const student = students.find(s => s.id === user.studentId) || students[0];
@@ -134,11 +140,58 @@ export const Dashboard: React.FC = () => {
     ? (results.filter(r => r.marks >= 50).length / results.length) * 100 
     : 0;
 
+  if (user?.role === 'TEACHER') {
+    const teacher = teachers.find(t => t.id === user.teacherId);
+    const teacherStudents = teacher?.classId ? students.filter(s => s.classId === teacher.classId) : [];
+    const teacherStudentIds = new Set(teacherStudents.map(s => s.id));
+    const teacherResults = results.filter(r => teacherStudentIds.has(r.studentId));
+    const classPassRate = teacherResults.length > 0
+      ? (teacherResults.filter(r => r.marks >= 50).length / teacherResults.length) * 100
+      : 0;
+    const activeIssues = suspensions.filter(s => teacherStudentIds.has(s.studentId) && s.status === 'ACTIVE').length;
+    const classBalance = fees
+      .filter(f => teacherStudentIds.has(f.studentId))
+      .reduce((acc, f) => acc + (f.amount - f.paid), 0);
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold">Teacher Dashboard</h1>
+            <p className="text-xs text-zinc-500">Class, subject and parent-alert overview</p>
+          </div>
+          <Badge variant="info">{teacher?.classId ? classes.find(c => c.id === teacher.classId)?.name : 'Unassigned Class'}</Badge>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card><p className="text-[10px] uppercase font-bold text-zinc-400">Students</p><p className="text-2xl font-bold">{teacherStudents.length}</p></Card>
+          <Card><p className="text-[10px] uppercase font-bold text-zinc-400">Subjects</p><p className="text-2xl font-bold">{teacher?.subjects.length || 0}</p></Card>
+          <Card><p className="text-[10px] uppercase font-bold text-zinc-400">Class Pass Rate</p><p className="text-2xl font-bold text-emerald-600">{classPassRate.toFixed(1)}%</p></Card>
+          <Card><p className="text-[10px] uppercase font-bold text-zinc-400">Active Incidents</p><p className="text-2xl font-bold text-amber-600">{activeIssues}</p></Card>
+        </div>
+
+        <Card title="Teacher Alerts" subtitle="Academic, discipline and fee alerts requiring follow-up">
+          <ul className="space-y-2 text-xs text-zinc-600 dark:text-zinc-300">
+            <li>{teacherResults.filter(r => r.marks < 50).length} subject results are below 50% and need intervention.</li>
+            <li>{activeIssues} active discipline records in your class.</li>
+            <li>Outstanding fee balance for your class: {formatCurrency(classBalance)}.</li>
+          </ul>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Overview</h1>
+        <h1 className="text-xl font-bold">Admin Overview</h1>
         <div className="flex gap-2">
+          <Button variant={showFinancials ? 'secondary' : 'outline'} className="h-8 text-[10px]" onClick={() => { const next = !showFinancials; setShowFinancials(next); toggleWidget('dashboard_widget_financials', next); }}>
+            {showFinancials ? 'Hide Financials' : 'Show Financials'}
+          </Button>
+          <Button variant={showAcademics ? 'secondary' : 'outline'} className="h-8 text-[10px]" onClick={() => { const next = !showAcademics; setShowAcademics(next); toggleWidget('dashboard_widget_academics', next); }}>
+            {showAcademics ? 'Hide Academics' : 'Show Academics'}
+          </Button>
           <Button variant="ghost" className="h-8 text-[10px]">Export Report</Button>
           <Button className="h-8 text-[10px]">New Entry</Button>
         </div>
@@ -162,7 +215,7 @@ export const Dashboard: React.FC = () => {
               </div>
             </div>
 
-            <div className="space-y-1 border-r border-gray-100 dark:border-zinc-800 pr-4">
+            {showFinancials && <div className="space-y-1 border-r border-gray-100 dark:border-zinc-800 pr-4">
               <div className="flex items-center gap-2 text-zinc-400 mb-1">
                 <CreditCard size={14} />
                 <span className="text-[10px] font-bold uppercase tracking-wider">Financials</span>
@@ -175,9 +228,9 @@ export const Dashboard: React.FC = () => {
                   style={{ width: `${collectionRate}%` }}
                 />
               </div>
-            </div>
+            </div>}
 
-            <div className="space-y-1 border-r border-gray-100 dark:border-zinc-800 pr-4">
+            {showAcademics && <div className="space-y-1 border-r border-gray-100 dark:border-zinc-800 pr-4">
               <div className="flex items-center gap-2 text-zinc-400 mb-1">
                 <TrendingUp size={14} />
                 <span className="text-[10px] font-bold uppercase tracking-wider">Academic</span>
@@ -185,10 +238,10 @@ export const Dashboard: React.FC = () => {
               <p className="text-2xl font-bold text-blue-500">{passRate.toFixed(1)}%</p>
               <p className="text-[10px] text-zinc-500">Overall Pass Rate</p>
               <div className="flex items-center gap-1 mt-2">
-                <Badge variant="success" className="text-[8px] py-0 px-1">+2.4%</Badge>
+                <Badge variant="success">+2.4%</Badge>
                 <span className="text-[8px] text-zinc-400">vs last term</span>
               </div>
-            </div>
+            </div>}
 
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-zinc-400 mb-1">

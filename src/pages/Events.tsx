@@ -14,8 +14,13 @@ export const Events: React.FC = () => {
     description: '',
     date: new Date().toISOString().split('T')[0],
     location: '',
+    targetRoles: ['PARENT', 'STUDENT', 'TEACHER', 'ADMIN'] as ('PARENT' | 'STUDENT' | 'TEACHER' | 'ADMIN')[],
+    recurring: 'NONE' as 'NONE' | 'WEEKLY' | 'MONTHLY' | 'TERM',
+    requiresPermissionSlip: false,
     rsvps: [] as string[]
   });
+
+  const visibleEvents = user ? events.filter(e => !e.targetRoles || e.targetRoles.includes(user.role)) : events;
 
   const handleRSVP = (eventId: string) => {
     if (user) rsvpEvent(eventId, user.id);
@@ -30,8 +35,40 @@ export const Events: React.FC = () => {
       description: '',
       date: new Date().toISOString().split('T')[0],
       location: '',
+      targetRoles: ['PARENT', 'STUDENT', 'TEACHER', 'ADMIN'],
+      recurring: 'NONE',
+      requiresPermissionSlip: false,
       rsvps: []
     });
+  };
+
+  const exportIcs = (eventId: string) => {
+    const event = events.find(e => e.id === eventId);
+    if (!event) return;
+    const start = new Date(event.date).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const end = new Date(new Date(event.date).getTime() + 60 * 60 * 1000).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const content = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'BEGIN:VEVENT',
+      `UID:${event.id}@schoolportal`,
+      `DTSTAMP:${start}`,
+      `DTSTART:${start}`,
+      `DTEND:${end}`,
+      `SUMMARY:${event.title}`,
+      `DESCRIPTION:${event.description}`,
+      `LOCATION:${event.location}`,
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\n');
+
+    const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${event.title.replace(/\s+/g, '_').toLowerCase()}.ics`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -47,7 +84,7 @@ export const Events: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {events.map(event => {
+        {visibleEvents.map(event => {
           const isRSVPed = user ? event.rsvps.includes(user.id) : false;
           
           return (
@@ -69,23 +106,30 @@ export const Events: React.FC = () => {
                     {event.location}
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-zinc-400">
+                    <Badge variant="neutral">Recurring: {event.recurring || 'NONE'}</Badge>
+                    {event.requiresPermissionSlip && <Badge variant="warning">Permission Slip Required</Badge>}
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-zinc-400">
                     <Users size={16} />
                     {event.rsvps.length} People attending
                   </div>
                 </div>
-                
-                <Button 
-                  variant={isRSVPed ? 'secondary' : 'primary'} 
-                  className="w-full"
-                  onClick={() => handleRSVP(event.id)}
-                  disabled={isRSVPed}
-                >
-                  {isRSVPed ? (
-                    <><Check size={18} /> Attending</>
-                  ) : (
-                    'RSVP Now'
-                  )}
-                </Button>
+
+                <div className="flex gap-2">
+                  <Button 
+                    variant={isRSVPed ? 'secondary' : 'primary'} 
+                    className="w-full"
+                    onClick={() => handleRSVP(event.id)}
+                    disabled={isRSVPed}
+                  >
+                    {isRSVPed ? (
+                      <><Check size={18} /> Attending</>
+                    ) : (
+                      'RSVP Now'
+                    )}
+                  </Button>
+                  <Button variant="outline" onClick={() => exportIcs(event.id)}>iCal</Button>
+                </div>
               </div>
             </Card>
           );
@@ -132,6 +176,23 @@ export const Events: React.FC = () => {
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               required
             />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Recurring</label>
+              <select className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none" value={formData.recurring} onChange={(e) => setFormData({ ...formData, recurring: e.target.value as 'NONE' | 'WEEKLY' | 'MONTHLY' | 'TERM' })}>
+                <option value="NONE">NONE</option>
+                <option value="WEEKLY">WEEKLY</option>
+                <option value="MONTHLY">MONTHLY</option>
+                <option value="TERM">TERM</option>
+              </select>
+            </div>
+            <div className="flex items-center pt-7">
+              <label className="text-sm flex items-center gap-2">
+                <input type="checkbox" checked={formData.requiresPermissionSlip} onChange={(e) => setFormData({ ...formData, requiresPermissionSlip: e.target.checked })} />
+                Requires trip permission
+              </label>
+            </div>
           </div>
           <Button type="submit" className="w-full py-4 mt-4"><Save size={18} /> Create Event</Button>
         </form>

@@ -8,12 +8,22 @@ export const StudentsManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [importValidation, setImportValidation] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     admissionNumber: '',
     classId: '',
     teacherId: '',
     parentEmail: '',
+    parentPhone: '',
+    guardianName: '',
+    secondaryGuardianName: '',
+    secondaryGuardianPhone: '',
+    medicalNotes: '',
+    allergyInfo: '',
+    enrollmentStatus: 'ACTIVE' as 'ACTIVE' | 'TRANSFERRED' | 'EXITED',
+    address: '',
+    dateOfBirth: '',
     photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=New'
   });
 
@@ -31,7 +41,7 @@ export const StudentsManagement: React.FC = () => {
     }
     setIsModalOpen(false);
     setEditingId(null);
-    setFormData({ name: '', admissionNumber: '', classId: '', teacherId: '', parentEmail: '', photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=New' });
+    setFormData({ name: '', admissionNumber: '', classId: '', teacherId: '', parentEmail: '', parentPhone: '', guardianName: '', secondaryGuardianName: '', secondaryGuardianPhone: '', medicalNotes: '', allergyInfo: '', enrollmentStatus: 'ACTIVE', address: '', dateOfBirth: '', photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=New' });
   };
 
   const handleEdit = (s: any) => {
@@ -48,10 +58,11 @@ export const StudentsManagement: React.FC = () => {
           <p className="text-gray-500 dark:text-zinc-400">Add, edit or remove students from the system</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline"><Upload size={18} /> Import CSV</Button>
+          <Button variant="outline" onClick={() => setImportValidation('CSV import validation: required columns are name, admissionNumber, classId, parentEmail, guardianName, parentPhone.') }><Upload size={18} /> Import CSV</Button>
           <Button onClick={() => setIsModalOpen(true)}><UserPlus size={18} /> Add Student</Button>
         </div>
       </div>
+      {importValidation && <p className="text-xs text-zinc-500">{importValidation}</p>}
 
       <Card>
         <div className="flex items-center gap-4 mb-6">
@@ -67,7 +78,7 @@ export const StudentsManagement: React.FC = () => {
           </div>
         </div>
 
-        <Table headers={['Student', 'Admission', 'Class', 'Parent Email', 'Actions']}>
+        <Table headers={['Student', 'Admission', 'Class', 'Parent Email', 'Status', 'Actions']}>
           {filteredStudents.map(s => (
             <tr key={s.id}>
               <td className="px-4 py-4">
@@ -81,6 +92,7 @@ export const StudentsManagement: React.FC = () => {
                 <Badge variant="info">{classes.find(c => c.id === s.classId)?.name || 'Unassigned'}</Badge>
               </td>
               <td className="px-4 py-4 text-sm text-gray-500">{s.parentEmail}</td>
+              <td className="px-4 py-4"><Badge variant={s.enrollmentStatus === 'ACTIVE' ? 'success' : 'warning'}>{s.enrollmentStatus || 'ACTIVE'}</Badge></td>
               <td className="px-4 py-4">
                 <div className="flex gap-2">
                   <Button variant="ghost" className="p-2 h-auto" onClick={() => handleEdit(s)}><Edit size={16} /></Button>
@@ -125,6 +137,52 @@ export const StudentsManagement: React.FC = () => {
               onChange={(e) => setFormData({ ...formData, parentEmail: e.target.value })}
               required
             />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Parent Phone</label>
+              <input type="text" className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none" value={formData.parentPhone} onChange={(e) => setFormData({ ...formData, parentPhone: e.target.value })} required />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Primary Guardian</label>
+              <input type="text" className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none" value={formData.guardianName} onChange={(e) => setFormData({ ...formData, guardianName: e.target.value })} required />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Secondary Guardian</label>
+              <input type="text" className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none" value={formData.secondaryGuardianName} onChange={(e) => setFormData({ ...formData, secondaryGuardianName: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Secondary Phone</label>
+              <input type="text" className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none" value={formData.secondaryGuardianPhone} onChange={(e) => setFormData({ ...formData, secondaryGuardianPhone: e.target.value })} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Date of Birth</label>
+              <input type="date" className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none" value={formData.dateOfBirth} onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })} required />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Enrollment Status</label>
+              <select className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none" value={formData.enrollmentStatus} onChange={(e) => setFormData({ ...formData, enrollmentStatus: e.target.value as 'ACTIVE' | 'TRANSFERRED' | 'EXITED' })}>
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="TRANSFERRED">TRANSFERRED</option>
+                <option value="EXITED">EXITED</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1">Medical Notes</label>
+            <textarea className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none min-h-[70px]" value={formData.medicalNotes} onChange={(e) => setFormData({ ...formData, medicalNotes: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1">Allergy Information</label>
+            <input type="text" className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none" value={formData.allergyInfo} onChange={(e) => setFormData({ ...formData, allergyInfo: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1">Address</label>
+            <input type="text" className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} required />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

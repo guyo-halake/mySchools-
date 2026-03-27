@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { User, Role } from '../types';
 
 interface AuthContextType {
@@ -6,6 +6,7 @@ interface AuthContextType {
   login: (email: string, password: string) => { success: boolean; message?: string };
   logout: () => void;
   switchRole: (role: Role) => { success: boolean; message?: string };
+  requestPasswordReset: (email: string) => { success: boolean; message: string };
   isDarkMode: boolean;
   toggleDarkMode: () => void;
 }
@@ -20,6 +21,7 @@ const USERS: User[] = [
 ];
 
 const DEMO_PASSWORD = 'School@123';
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
@@ -31,6 +33,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const saved = localStorage.getItem('theme');
     return saved === 'dark'; // Defaults to false (light) if null
   });
+  const sessionTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -63,10 +66,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     setUser(found);
+    localStorage.removeItem('session_expired');
     return { success: true };
   };
 
-  const logout = () => setUser(null);
+  const logout = () => {
+    if (sessionTimerRef.current) {
+      window.clearTimeout(sessionTimerRef.current);
+      sessionTimerRef.current = null;
+    }
+    setUser(null);
+  };
 
   const switchRole = (role: Role) => {
     if (!user || user.role !== 'ADMIN') {
@@ -84,8 +94,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
 
+  const requestPasswordReset = (email: string) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const found = USERS.find(u => u.email.toLowerCase() === normalizedEmail);
+
+    if (!found) {
+      return { success: false, message: 'Account not found. Please contact the school admin office.' };
+    }
+
+    localStorage.setItem('password_reset_requested', normalizedEmail);
+    return { success: true, message: 'Password reset request recorded. Contact admin to complete reset.' };
+  };
+
+  useEffect(() => {
+    if (!user) {
+      if (sessionTimerRef.current) {
+        window.clearTimeout(sessionTimerRef.current);
+        sessionTimerRef.current = null;
+      }
+      return;
+    }
+
+    const resetTimer = () => {
+      if (sessionTimerRef.current) {
+        window.clearTimeout(sessionTimerRef.current);
+      }
+
+      sessionTimerRef.current = window.setTimeout(() => {
+        localStorage.setItem('session_expired', '1');
+        setUser(null);
+      }, SESSION_TIMEOUT_MS);
+    };
+
+    resetTimer();
+
+    const events = ['click', 'keydown', 'mousemove', 'touchstart', 'scroll'];
+    events.forEach((eventName) => window.addEventListener(eventName, resetTimer));
+
+    return () => {
+      events.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
+      if (sessionTimerRef.current) {
+        window.clearTimeout(sessionTimerRef.current);
+        sessionTimerRef.current = null;
+      }
+    };
+  }, [user]);
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, switchRole, isDarkMode, toggleDarkMode }}>
+    <AuthContext.Provider value={{ user, login, logout, switchRole, requestPasswordReset, isDarkMode, toggleDarkMode }}>
       {children}
     </AuthContext.Provider>
   );

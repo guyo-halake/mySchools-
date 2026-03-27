@@ -23,10 +23,27 @@ export const Chat: React.FC = () => {
   const { students, classes, results, fees, suspensions, teachers, getStudentRank } = useApp();
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showContacts, setShowContacts] = useState(false);
+  const [consentConfirmed, setConsentConfirmed] = useState(false);
+  const [messageTemplate, setMessageTemplate] = useState('progress');
+  const [chatLogs, setChatLogs] = useState<{ studentId: string; timestamp: string; channel: string; template: string }[]>([]);
+
+  const templates: Record<string, string> = {
+    progress: 'Hello parent, this is your class teacher. I would like to discuss your child\'s academic progress.',
+    discipline: 'Hello parent, this is your class teacher. Please contact school regarding a discipline concern.',
+    fees: 'Hello parent, this is the accounts office. Kindly review the pending fee balance and contact us for a payment plan.',
+  };
 
   const handleWhatsApp = (phone: string, message: string) => {
+    if (!consentConfirmed) return;
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
+  };
+
+  const maskPhone = (phone: string) => `${phone.slice(0, 4)}*****${phone.slice(-3)}`;
+
+  const logCommunication = (studentId: string, template: string) => {
+    setChatLogs(prev => [{ studentId, timestamp: new Date().toISOString(), channel: 'WHATSAPP', template }, ...prev].slice(0, 20));
   };
 
   const getClassName = (classId: string) => {
@@ -68,6 +85,15 @@ export const Chat: React.FC = () => {
           <h1 className="text-2xl font-bold">Chat Parents</h1>
           <p className="text-gray-500 dark:text-zinc-400">Communicate directly with parents via WhatsApp</p>
         </div>
+        <div className="flex items-center gap-3 text-xs">
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={consentConfirmed} onChange={(e) => setConsentConfirmed(e.target.checked)} />
+            Consent/compliance confirmed
+          </label>
+          <button className="text-emerald-600 font-medium" onClick={() => setShowContacts(v => !v)}>
+            {showContacts ? 'Mask Contacts' : 'Show Contacts'}
+          </button>
+        </div>
         <div className="relative w-full md:w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
           <input 
@@ -93,7 +119,7 @@ export const Chat: React.FC = () => {
           </div>
           <Button 
             className="w-full bg-white text-emerald-600 hover:bg-emerald-50"
-            onClick={() => handleWhatsApp('254700000000', 'Hello parents, this is your class teacher. Just a quick update on...')}
+            onClick={() => handleWhatsApp('254700000000', templates[messageTemplate])}
           >
             <MessageSquare size={18} /> Open Group Chat
           </Button>
@@ -117,12 +143,21 @@ export const Chat: React.FC = () => {
               <div className="flex justify-between items-center text-[10px] text-gray-500 mb-2">
                 <span>Parent: <span className="font-bold text-gray-700 dark:text-gray-300">{s.guardianName}</span></span>
               </div>
+                    <div className="text-[10px] text-zinc-500">
+                      Contact: {showContacts ? `+${s.parentPhone}` : maskPhone(s.parentPhone)}
+                    </div>
+                    <select className="w-full bg-gray-50 dark:bg-zinc-800 border border-gray-100 dark:border-zinc-700 rounded px-2 py-1 text-[10px]" value={messageTemplate} onChange={(e) => setMessageTemplate(e.target.value)}>
+                      <option value="progress">Progress Update</option>
+                      <option value="discipline">Discipline Follow-up</option>
+                      <option value="fees">Fees Reminder</option>
+                    </select>
               <Button 
                 variant="outline" 
                 className="w-full border-emerald-100 text-emerald-600 hover:bg-emerald-50 h-9 text-xs"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleWhatsApp(s.parentPhone, `Hello, this is Mr. Anderson. I'd like to discuss ${s.name}'s progress.`);
+                        handleWhatsApp(s.parentPhone, `${templates[messageTemplate]} Student: ${s.name}.`);
+                        logCommunication(s.id, messageTemplate);
                 }}
               >
                 <Phone size={14} /> WhatsApp Parent
@@ -267,7 +302,10 @@ export const Chat: React.FC = () => {
             <div className="flex gap-3 pt-2">
               <Button 
                 className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-6 rounded-2xl"
-                onClick={() => handleWhatsApp(selectedStudent.parentPhone, `Hello ${selectedStudent.guardianName}, this is Mr. Anderson...`)}
+                onClick={() => {
+                  handleWhatsApp(selectedStudent.parentPhone, `${templates[messageTemplate]} Student: ${selectedStudent.name}.`);
+                  logCommunication(selectedStudent.id, messageTemplate);
+                }}
               >
                 <MessageSquare size={18} /> Chat with Parent
               </Button>
@@ -278,6 +316,21 @@ export const Chat: React.FC = () => {
           </div>
         )}
       </Modal>
+
+      <Card title="Communication Log" subtitle="Recent parent contacts for compliance tracking">
+        <div className="space-y-2 text-xs">
+          {chatLogs.length === 0 && <p className="text-zinc-500">No communication logs yet.</p>}
+          {chatLogs.map((log, idx) => {
+            const student = students.find(s => s.id === log.studentId);
+            return (
+              <div key={`${log.studentId}-${idx}`} className="flex items-center justify-between p-2 rounded bg-gray-50 dark:bg-zinc-800/40">
+                <span>{student?.name || 'Student'} • {log.template}</span>
+                <span className="text-zinc-400">{new Date(log.timestamp).toLocaleString()}</span>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
     </div>
   );
 };

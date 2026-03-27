@@ -20,6 +20,11 @@ export interface Student {
   parentEmail: string;
   parentPhone: string;
   guardianName: string;
+  secondaryGuardianName?: string;
+  secondaryGuardianPhone?: string;
+  medicalNotes?: string;
+  allergyInfo?: string;
+  enrollmentStatus?: 'ACTIVE' | 'TRANSFERRED' | 'EXITED';
   address: string;
   dateOfBirth: string;
 }
@@ -30,6 +35,10 @@ export interface Teacher {
   email: string;
   subjects: string[];
   classId?: string; // If they are a class teacher
+  department?: string;
+  isHod?: boolean;
+  maxLessonsPerWeek?: number;
+  currentLessonsPerWeek?: number;
 }
 
 export interface Class {
@@ -46,6 +55,9 @@ export interface Result {
   grade: string;
   term: string;
   year: number;
+  examType?: 'CAT' | 'MIDTERM' | 'ENDTERM' | 'PROJECT';
+  examWeight?: number;
+  moderationStatus?: 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED';
   previousMarks?: number;
   remarks?: string;
 }
@@ -57,6 +69,9 @@ export interface FeeStatement {
   amount: number;
   paid: number;
   date: string;
+  dueDate?: string;
+  receiptNumber?: string;
+  voteHead?: string;
   status: 'PAID' | 'PARTIAL' | 'UNPAID';
 }
 
@@ -67,6 +82,10 @@ export interface SuspensionComplaint {
   issue: string;
   issuedBy: string;
   date: string;
+  category?: 'BULLYING' | 'ABSENTEEISM' | 'DRUGS' | 'CHEATING' | 'MISCONDUCT' | 'OTHER';
+  evidenceUrl?: string;
+  meetingNotes?: string;
+  escalationLevel?: 'CLASS_TEACHER' | 'DEAN' | 'DEPUTY_PRINCIPAL' | 'PRINCIPAL';
   status: 'ACTIVE' | 'RESOLVED' | 'ACKNOWLEDGED';
 }
 
@@ -76,6 +95,9 @@ export interface SchoolEvent {
   description: string;
   date: string;
   location: string;
+  targetRoles?: Role[];
+  recurring?: 'NONE' | 'WEEKLY' | 'MONTHLY' | 'TERM';
+  requiresPermissionSlip?: boolean;
   rsvps: string[]; // user ids
 }
 
@@ -85,5 +107,9 @@ export interface Announcement {
   content: string;
   date: string;
   author: string;
+  pinned?: boolean;
+  urgent?: boolean;
+  channel?: 'IN_APP' | 'SMS' | 'EMAIL' | 'WHATSAPP';
+  expiresAt?: string;
   targetRoles: Role[];
 }

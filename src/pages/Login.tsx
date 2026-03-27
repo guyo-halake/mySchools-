@@ -5,11 +5,16 @@ import { Button, Card } from '../components/UI';
 import { BookOpen } from 'lucide-react';
 
 export const Login: React.FC = () => {
-  const { login } = useAuth();
+  const { login, requestPasswordReset } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [info, setInfo] = useState(() =>
+    localStorage.getItem('session_expired') === '1'
+      ? 'Your session expired after inactivity. Please sign in again.'
+      : ''
+  );
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,7 +24,14 @@ export const Login: React.FC = () => {
       setError(result.message || 'Unable to sign in.');
       return;
     }
+    localStorage.removeItem('session_expired');
     navigate('/dashboard', { replace: true });
+  };
+
+  const handleForgotPassword = () => {
+    setError('');
+    const result = requestPasswordReset(email);
+    setInfo(result.message);
   };
 
   return (
@@ -60,6 +72,17 @@ export const Login: React.FC = () => {
             </div>
 
             {error && <p className="text-[11px] text-red-500 font-medium">{error}</p>}
+            {info && <p className="text-[11px] text-emerald-600 font-medium">{info}</p>}
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                className="text-[10px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              >
+                Forgot password?
+              </button>
+            </div>
 
             <Button type="submit" className="w-full py-2.5 text-xs font-bold mt-2">
               Sign In

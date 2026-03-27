@@ -16,6 +16,35 @@ export const Fees: React.FC = () => {
   const totalPaid = studentFees.reduce((acc, f) => acc + f.paid, 0);
   const balance = totalAmount - totalPaid;
 
+  const overdueFees = studentFees.filter(f => f.dueDate && new Date(f.dueDate) < new Date() && f.paid < f.amount);
+  const penalties = overdueFees.reduce((acc, f) => acc + Math.round((f.amount - f.paid) * 0.05), 0);
+
+  const downloadReceiptAsPdf = (feeId: string) => {
+    const fee = studentFees.find(f => f.id === feeId);
+    if (!fee || !student) return;
+    const receiptHtml = `
+      <html>
+        <head><title>Receipt ${fee.receiptNumber || fee.id}</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 24px;">
+          <h2>School Fees Receipt</h2>
+          <p><strong>Receipt No:</strong> ${fee.receiptNumber || fee.id}</p>
+          <p><strong>Student:</strong> ${student.name} (${student.admissionNumber})</p>
+          <p><strong>Vote Head:</strong> ${fee.voteHead || 'Tuition'}</p>
+          <p><strong>Amount Paid:</strong> ${formatCurrency(fee.paid)}</p>
+          <p><strong>Date:</strong> ${formatDate(fee.date)}</p>
+          <p>Use browser Print and select Save as PDF.</p>
+        </body>
+      </html>`;
+
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.write(receiptHtml);
+      win.document.close();
+      win.focus();
+      win.print();
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -39,17 +68,31 @@ export const Fees: React.FC = () => {
           <p className="text-xs text-emerald-500 font-bold mt-2">{(totalPaid/totalAmount * 100).toFixed(1)}% Cleared</p>
         </Card>
         <Card className="bg-rose-50 dark:bg-rose-900/10 border-rose-100 dark:border-rose-900/20" title="Outstanding Balance">
-          <p className="text-3xl font-bold text-rose-600">{formatCurrency(balance)}</p>
-          <p className="text-xs text-rose-500 font-bold mt-2">Due by: 30th April 2024</p>
+          <p className="text-3xl font-bold text-rose-600">{formatCurrency(balance + penalties)}</p>
+          <p className="text-xs text-rose-500 font-bold mt-2">Includes penalties: {formatCurrency(penalties)}</p>
         </Card>
       </div>
 
+      <Card title="Payment Alerts" subtitle="Due dates, reminders, and installment planning">
+        <div className="space-y-2 text-sm">
+          {overdueFees.length === 0 && <p className="text-emerald-600 font-medium">No overdue fee items.</p>}
+          {overdueFees.map(f => (
+            <div key={f.id} className="flex items-center justify-between p-2 rounded-lg bg-amber-50 dark:bg-amber-900/10">
+              <span>{f.type} overdue since {formatDate(f.dueDate || f.date)}</span>
+              <span className="font-bold text-amber-700">Penalty +{formatCurrency(Math.round((f.amount - f.paid) * 0.05))}</span>
+            </div>
+          ))}
+          <p className="text-xs text-zinc-500">Installment plan suggestion: split outstanding balance into 3 monthly payments.</p>
+        </div>
+      </Card>
+
       <Card title="Fee Statements" subtitle="Detailed history of all charges and payments">
-        <Table headers={['Date', 'Description', 'Amount', 'Paid', 'Balance', 'Status', 'Receipt']}>
+        <Table headers={['Date', 'Description', 'Vote Head', 'Amount', 'Paid', 'Balance', 'Status', 'Receipt']}>
           {studentFees.map(f => (
             <tr key={f.id}>
               <td className="px-4 py-4 text-sm text-gray-500">{formatDate(f.date)}</td>
               <td className="px-4 py-4 font-semibold">{f.type}</td>
+              <td className="px-4 py-4 text-sm">{f.voteHead || 'Tuition'}</td>
               <td className="px-4 py-4 font-mono">{formatCurrency(f.amount)}</td>
               <td className="px-4 py-4 font-mono text-emerald-600">{formatCurrency(f.paid)}</td>
               <td className="px-4 py-4 font-mono text-rose-600">{formatCurrency(f.amount - f.paid)}</td>
@@ -60,7 +103,7 @@ export const Fees: React.FC = () => {
               </td>
               <td className="px-4 py-4">
                 {f.paid > 0 && (
-                  <Button variant="ghost" className="p-2 h-auto text-blue-600"><Download size={14} /></Button>
+                  <Button variant="ghost" className="p-2 h-auto text-blue-600" onClick={() => downloadReceiptAsPdf(f.id)}><Download size={14} /></Button>
                 )}
               </td>
             </tr>
