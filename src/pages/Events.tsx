@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { Card, Badge, Button, Modal } from '../components/UI';
 import { Calendar, MapPin, Users, Check, Plus, Save } from 'lucide-react';
 import { formatDate } from '../utils/utils';
+import { Role } from '../types';
 
 export const Events: React.FC = () => {
   const { user } = useAuth();
@@ -14,7 +15,7 @@ export const Events: React.FC = () => {
     description: '',
     date: new Date().toISOString().split('T')[0],
     location: '',
-    targetRoles: ['PARENT', 'STUDENT', 'TEACHER', 'ADMIN'] as ('PARENT' | 'STUDENT' | 'TEACHER' | 'ADMIN')[],
+    targetRoles: ['PARENT', 'STUDENT', 'TEACHER', 'ADMIN'] as Role[],
     recurring: 'NONE' as 'NONE' | 'WEEKLY' | 'MONTHLY' | 'TERM',
     requiresPermissionSlip: false,
     rsvps: [] as string[]
@@ -85,7 +86,7 @@ export const Events: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {visibleEvents.map(event => {
-          const isRSVPed = user ? event.rsvps.includes(user.id) : false;
+          const isRSVPed = user ? event.rsvps.some((rsvp) => rsvp.userId === user.id) : false;
           
           return (
             <Card key={event.id} className="group hover:shadow-md transition-shadow">
@@ -113,6 +114,11 @@ export const Events: React.FC = () => {
                     <Users size={16} />
                     {event.rsvps.length} People attending
                   </div>
+                  {(user?.role === 'ADMIN' || user?.role === 'TEACHER') && event.rsvps.length > 0 && (
+                    <div className="text-[10px] text-zinc-500">
+                      Latest RSVP: {new Date(event.rsvps[event.rsvps.length - 1].respondedAt).toLocaleString()}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-2">

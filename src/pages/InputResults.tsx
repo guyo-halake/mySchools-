@@ -6,7 +6,7 @@ import { Save, Upload } from 'lucide-react';
 
 export const InputResults: React.FC = () => {
   const { user } = useAuth();
-  const { students, results, updateResult, addResult, teachers } = useApp();
+  const { students, results, updateResult, addResult, teachers, getResultWorkflowStatus, setResultWorkflowStatus } = useApp();
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [selectedTerm, setSelectedTerm] = useState('Term 1');
   const [selectedYear, setSelectedYear] = useState(2024);
@@ -23,7 +23,6 @@ export const InputResults: React.FC = () => {
     subjects.reduce((acc, sub) => ({ ...acc, [sub]: { marks: '', remarks: '' } }), {})
   );
 
-  const workflowKey = `workflow_${selectedStudentId}_${selectedTerm}_${selectedYear}`;
 
   const teacherProfile = teachers.find(t => t.id === user?.teacherId);
   const allowedStudents = user?.role === 'TEACHER' && teacherProfile?.classId
@@ -40,13 +39,12 @@ export const InputResults: React.FC = () => {
   }, [allowedStudents, selectedStudentId]);
 
   useEffect(() => {
-    const saved = localStorage.getItem(workflowKey);
-    if (saved) {
-      setWorkflowStatus(saved as 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED');
-    } else {
+    if (!selectedStudentId) {
       setWorkflowStatus('DRAFT');
+      return;
     }
-  }, [workflowKey]);
+    setWorkflowStatus(getResultWorkflowStatus(selectedStudentId, selectedTerm, selectedYear));
+  }, [selectedStudentId, selectedTerm, selectedYear, getResultWorkflowStatus]);
 
   useEffect(() => {
     if (selectedStudentId) {
@@ -143,7 +141,9 @@ export const InputResults: React.FC = () => {
 
   const updateWorkflowStatus = (status: 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED') => {
     setWorkflowStatus(status);
-    localStorage.setItem(workflowKey, status);
+    if (selectedStudentId) {
+      setResultWorkflowStatus(selectedStudentId, selectedTerm, selectedYear, status);
+    }
   };
 
   return (

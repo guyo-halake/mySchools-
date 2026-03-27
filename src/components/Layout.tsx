@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -59,13 +60,17 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, logout, isDarkMode, toggleDarkMode, switchRole } = useAuth();
+  const { getNotificationsForUser, markNotificationRead } = useApp();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
   if (!user) return <>{children}</>;
 
   const links = sidebarLinks[user.role] || [];
+  const notifications = getNotificationsForUser(user.id, user.role);
+  const unreadCount = notifications.filter(n => !n.readBy.includes(user.id)).length;
 
   const getUserInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -178,6 +183,51 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </div>
 
           <div className="flex items-center gap-4">
+            <div className="relative">
+              <button
+                onClick={() => setIsNotificationsOpen((prev) => !prev)}
+                className="p-1.5 hover:bg-gray-50 dark:hover:bg-zinc-800 rounded-lg transition-colors relative"
+              >
+                <Bell size={16} />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+              {isNotificationsOpen && (
+                <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-xl shadow-lg p-2 z-50">
+                  <p className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 px-2 py-1">Notifications</p>
+                  <div className="max-h-80 overflow-y-auto space-y-1">
+                    {notifications.length === 0 && (
+                      <p className="text-xs text-zinc-500 px-2 py-3">No notifications yet.</p>
+                    )}
+                    {notifications.map(notification => {
+                      const unread = !notification.readBy.includes(user.id);
+                      return (
+                        <button
+                          key={notification.id}
+                          onClick={() => {
+                            markNotificationRead(notification.id, user.id);
+                            setIsNotificationsOpen(false);
+                            if (notification.link) {
+                              navigate(notification.link);
+                            }
+                          }}
+                          className={cn(
+                            "w-full text-left px-2 py-2 rounded-lg transition-colors",
+                            unread ? "bg-blue-50 dark:bg-blue-900/20" : "hover:bg-gray-50 dark:hover:bg-zinc-800"
+                          )}
+                        >
+                          <p className="text-xs font-bold">{notification.title}</p>
+                          <p className="text-[10px] text-zinc-500 line-clamp-2">{notification.message}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
             <button 
               onClick={toggleDarkMode}
               className="p-1.5 hover:bg-gray-50 dark:hover:bg-zinc-800 rounded-lg transition-colors"

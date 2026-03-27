@@ -98,7 +98,18 @@ export interface SchoolEvent {
   targetRoles?: Role[];
   recurring?: 'NONE' | 'WEEKLY' | 'MONTHLY' | 'TERM';
   requiresPermissionSlip?: boolean;
-  rsvps: string[]; // user ids
+  rsvps: { userId: string; respondedAt: string }[];
+}
+
+export interface NotificationItem {
+  id: string;
+  type: 'EVENT' | 'ANNOUNCEMENT' | 'RSVP' | 'SYSTEM';
+  title: string;
+  message: string;
+  createdAt: string;
+  targetRoles: Role[];
+  readBy: string[];
+  link?: string;
 }
 
 export interface Announcement {

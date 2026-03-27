@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   User, Student, Teacher, Class, Result, FeeStatement, 
-  SuspensionComplaint, SchoolEvent, Announcement, Role 
+  SuspensionComplaint, SchoolEvent, Announcement, Role, NotificationItem
 } from '../types';
 
 interface AppContextType {
@@ -13,6 +13,7 @@ interface AppContextType {
   suspensions: SuspensionComplaint[];
   events: SchoolEvent[];
   announcements: Announcement[];
+  notifications: NotificationItem[];
   
   addResult: (result: Omit<Result, 'id'>) => void;
   updateResult: (id: string, result: Partial<Result>) => void;
@@ -23,6 +24,10 @@ interface AppContextType {
   addAnnouncement: (item: Omit<Announcement, 'id'>) => void;
   addEvent: (item: Omit<SchoolEvent, 'id'>) => void;
   rsvpEvent: (eventId: string, userId: string) => void;
+  getNotificationsForUser: (userId: string, role: Role) => NotificationItem[];
+  markNotificationRead: (notificationId: string, userId: string) => void;
+  getResultWorkflowStatus: (studentId: string, term: string, year: number) => 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED';
+  setResultWorkflowStatus: (studentId: string, term: string, year: number, status: 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED') => void;
   
   // Admin CRUDs
   addStudent: (s: Omit<Student, 'id'>) => void;
@@ -46,7 +51,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const APP_DATA_VERSION = 'v4';
+const APP_DATA_VERSION = 'v5';
 
 const SUBJECTS = [
   'Mathematics', 'English', 'Swahili', 'Geography', 'History', 
@@ -150,6 +155,20 @@ const INITIAL_DATA = {
   announcements: [
     { id: 'a1', title: 'Exam Schedule', content: 'End of term exams start next week.', date: '2024-03-20', author: 'Principal', targetRoles: ['PARENT', 'STUDENT', 'TEACHER'], pinned: true, urgent: false, channel: 'IN_APP' },
   ],
+  notifications: [],
+  resultWorkflows: {},
+};
+
+const normalizeEvents = (events: SchoolEvent[]) => {
+  return events.map((event) => ({
+    ...event,
+    rsvps: (event.rsvps || []).map((rsvp: any) => {
+      if (typeof rsvp === 'string') {
+        return { userId: rsvp, respondedAt: new Date().toISOString() };
+      }
+      return rsvp;
+    }),
+  }));
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -161,8 +180,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (parsed.version !== APP_DATA_VERSION) {
       return INITIAL_DATA; // Force reset for new version
     }
-    
-    return parsed;
+
+    return {
+      ...parsed,
+      events: normalizeEvents(parsed.events || []),
+      notifications: parsed.notifications || [],
+      resultWorkflows: parsed.resultWorkflows || {},
+    };
   });
 
   useEffect(() => {
@@ -212,16 +236,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addAnnouncement = (item: Omit<Announcement, 'id'>) => {
+    const newId = Math.random().toString(36).substr(2, 9);
     setData((prev: any) => ({
       ...prev,
-      announcements: [...prev.announcements, { ...item, id: Math.random().toString(36).substr(2, 9) }]
+      announcements: [...prev.announcements, { ...item, id: newId }],
+      notifications: [
+        {
+          id: 'n' + Date.now(),
+          type: 'ANNOUNCEMENT',
+          title: `New announcement: ${item.title}`,
+          message: item.content,
+          createdAt: new Date().toISOString(),
+          targetRoles: item.targetRoles,
+          readBy: [],
+          link: '/announcements',
+        },
+        ...prev.notifications,
+      ],
     }));
   };
 
   const addEvent = (item: Omit<SchoolEvent, 'id'>) => {
+    const targetRoles = item.targetRoles && item.targetRoles.length > 0 ? item.targetRoles : ['PARENT', 'STUDENT', 'TEACHER', 'ADMIN'];
     setData((prev: any) => ({
       ...prev,
-      events: [...prev.events, { ...item, id: Math.random().toString(36).substr(2, 9) }]
+      events: [...prev.events, { ...item, id: Math.random().toString(36).substr(2, 9) }],
+      notifications: [
+        {
+          id: 'n' + Date.now(),
+          type: 'EVENT',
+          title: `New event: ${item.title}`,
+          message: `${item.description} on ${item.date} at ${item.location}`,
+          createdAt: new Date().toISOString(),
+          targetRoles,
+          readBy: [],
+          link: '/events',
+        },
+        ...prev.notifications,
+      ],
     }));
   };
 
@@ -230,9 +282,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...prev,
       events: prev.events.map((e: SchoolEvent) => 
         e.id === eventId 
-          ? { ...e, rsvps: e.rsvps.includes(userId) ? e.rsvps : [...e.rsvps, userId] } 
+          ? {
+              ...e,
+              rsvps: e.rsvps.some((r) => r.userId === userId)
+                ? e.rsvps
+                : [...e.rsvps, { userId, respondedAt: new Date().toISOString() }],
+            }
           : e
-      )
+      ),
+      notifications: [
+        {
+          id: 'n' + Date.now(),
+          type: 'RSVP',
+          title: 'New RSVP received',
+          message: `A parent/student has RSVP'd for an event.`,
+          createdAt: new Date().toISOString(),
+          targetRoles: ['ADMIN', 'TEACHER'],
+          readBy: [],
+          link: '/events',
+        },
+        ...prev.notifications,
+      ],
+    }));
+  };
+
+  const getNotificationsForUser = (userId: string, role: Role) => {
+    return data.notifications.filter((notification) => notification.targetRoles.includes(role)).slice(0, 25);
+  };
+
+  const markNotificationRead = (notificationId: string, userId: string) => {
+    setData((prev: any) => ({
+      ...prev,
+      notifications: prev.notifications.map((notification: NotificationItem) =>
+        notification.id === notificationId && !notification.readBy.includes(userId)
+          ? { ...notification, readBy: [...notification.readBy, userId] }
+          : notification
+      ),
+    }));
+  };
+
+  const getResultWorkflowStatus = (studentId: string, term: string, year: number) => {
+    const key = `${studentId}_${term}_${year}`;
+    return data.resultWorkflows?.[key] || 'DRAFT';
+  };
+
+  const setResultWorkflowStatus = (studentId: string, term: string, year: number, status: 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED') => {
+    const key = `${studentId}_${term}_${year}`;
+    setData((prev: any) => ({
+      ...prev,
+      resultWorkflows: {
+        ...(prev.resultWorkflows || {}),
+        [key]: status,
+      },
     }));
   };
 
@@ -337,6 +438,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addSuspension, updateSuspension, addAnnouncement, addEvent, rsvpEvent,
       addStudent, updateStudent, deleteStudent, addTeacher, updateTeacher, deleteTeacher,
       addClass, updateClass, deleteClass,
+      getNotificationsForUser, markNotificationRead,
+      getResultWorkflowStatus, setResultWorkflowStatus,
       getStudentRank
     }}>
       {children}

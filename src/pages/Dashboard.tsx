@@ -21,7 +21,7 @@ import { formatCurrency, formatDate, cn } from '../utils/utils';
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
-  const { students, results, events, fees, suspensions, teachers, announcements, classes } = useApp();
+  const { students, results, events, fees, suspensions, teachers, announcements, classes, notifications } = useApp();
   const [showFinancials, setShowFinancials] = React.useState(() => localStorage.getItem('dashboard_widget_financials') !== '0');
   const [showAcademics, setShowAcademics] = React.useState(() => localStorage.getItem('dashboard_widget_academics') !== '0');
 
@@ -43,6 +43,8 @@ export const Dashboard: React.FC = () => {
     
     const { getStudentRank } = useApp();
     const rank = getStudentRank(student.id, latestTerm, 2024);
+
+    const visibleEvents = events.filter(e => !e.targetRoles || e.targetRoles.includes(user.role));
 
     return (
       <div className="space-y-6">
@@ -110,7 +112,7 @@ export const Dashboard: React.FC = () => {
           <div className="space-y-4">
             <h2 className="text-xs font-bold uppercase text-zinc-400 tracking-wider">Upcoming Events</h2>
             <div className="space-y-2">
-              {events.map(e => (
+              {visibleEvents.map(e => (
                 <Card key={e.id} className="p-3">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded bg-zinc-50 dark:bg-zinc-800 flex flex-col items-center justify-center">
@@ -120,6 +122,7 @@ export const Dashboard: React.FC = () => {
                     <div>
                       <p className="text-xs font-bold">{e.title}</p>
                       <p className="text-[10px] text-zinc-500">{e.location}</p>
+                      <p className="text-[9px] text-zinc-400">{e.rsvps.length} RSVPs</p>
                     </div>
                   </div>
                 </Card>
@@ -153,6 +156,8 @@ export const Dashboard: React.FC = () => {
       .filter(f => teacherStudentIds.has(f.studentId))
       .reduce((acc, f) => acc + (f.amount - f.paid), 0);
 
+    const teacherNotifications = notifications.filter(n => n.targetRoles.includes('TEACHER')).slice(0, 5);
+
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -177,9 +182,24 @@ export const Dashboard: React.FC = () => {
             <li>Outstanding fee balance for your class: {formatCurrency(classBalance)}.</li>
           </ul>
         </Card>
+
+        <Card title="Live Notifications" subtitle="Cross-page updates in real time">
+          <div className="space-y-2 text-xs">
+            {teacherNotifications.length === 0 && <p className="text-zinc-500">No live notifications yet.</p>}
+            {teacherNotifications.map((n) => (
+              <div key={n.id} className="p-2 rounded bg-gray-50 dark:bg-zinc-800/40">
+                <p className="font-bold">{n.title}</p>
+                <p className="text-zinc-500">{n.message}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
       </div>
     );
   }
+
+  const adminNotifications = notifications.filter(n => n.targetRoles.includes('ADMIN')).slice(0, 8);
+  const rsvpNotifications = adminNotifications.filter(n => n.type === 'RSVP').slice(0, 5);
 
   return (
     <div className="space-y-6">
@@ -238,8 +258,8 @@ export const Dashboard: React.FC = () => {
               <p className="text-2xl font-bold text-blue-500">{passRate.toFixed(1)}%</p>
               <p className="text-[10px] text-zinc-500">Overall Pass Rate</p>
               <div className="flex items-center gap-1 mt-2">
-                <Badge variant="success">+2.4%</Badge>
-                <span className="text-[8px] text-zinc-400">vs last term</span>
+                <Badge variant={passRate >= 50 ? 'success' : 'warning'}>{passRate >= 50 ? 'ON TRACK' : 'AT RISK'}</Badge>
+                <span className="text-[8px] text-zinc-400">current term status</span>
               </div>
             </div>}
 
@@ -261,20 +281,13 @@ export const Dashboard: React.FC = () => {
           <h2 className="text-xs font-bold uppercase text-zinc-400 tracking-wider">Recent Activity</h2>
           <Card>
             <Table headers={['Student', 'Action', 'Time', 'Status']}>
-              {students.slice(0, 6).map((s, i) => (
-                <tr key={s.id}>
+              {adminNotifications.map((n) => (
+                <tr key={n.id}>
+                  <td className="px-3 py-2 text-xs font-medium">School System</td>
+                  <td className="px-3 py-2 text-[10px] text-zinc-500">{n.title}</td>
+                  <td className="px-3 py-2 text-[10px] text-zinc-500">{new Date(n.createdAt).toLocaleString()}</td>
                   <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[8px] font-bold">
-                        {s.name.split(' ').map(n => n[0]).join('')}
-                      </div>
-                      <span className="text-xs font-medium">{s.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-[10px] text-zinc-500">Result Updated</td>
-                  <td className="px-3 py-2 text-[10px] text-zinc-500">{i + 1}h ago</td>
-                  <td className="px-3 py-2">
-                    <Badge variant="success">Success</Badge>
+                    <Badge variant={n.type === 'RSVP' ? 'info' : 'success'}>{n.type}</Badge>
                   </td>
                 </tr>
               ))}
@@ -302,6 +315,18 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <Card title="Event RSVP Feed" subtitle="School receives parent/student RSVP activity instantly">
+        <div className="space-y-2 text-xs">
+          {rsvpNotifications.length === 0 && <p className="text-zinc-500">No RSVP activity yet.</p>}
+          {rsvpNotifications.map((n) => (
+            <div key={n.id} className="p-2 rounded bg-blue-50 dark:bg-blue-900/20">
+              <p className="font-bold">{n.title}</p>
+              <p>{n.message}</p>
+            </div>
+          ))}
+        </div>
+      </Card>
     </div>
   );
 };

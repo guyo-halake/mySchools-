@@ -12,7 +12,7 @@ const ALL_SUBJECTS = [
 
 export const Results: React.FC = () => {
   const { user } = useAuth();
-  const { results, students, updateResult, addResult } = useApp();
+  const { results, students, updateResult, addResult, getResultWorkflowStatus, setResultWorkflowStatus } = useApp();
   const [selectedYear, setSelectedYear] = useState(2024);
   const [selectedTerm, setSelectedTerm] = useState('All Terms');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
@@ -51,13 +51,8 @@ export const Results: React.FC = () => {
 
   useEffect(() => {
     if (!selectedStudentId) return;
-    const saved = localStorage.getItem(workflowKey);
-    if (saved) {
-      setWorkflowStatus(saved as 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED');
-    } else {
-      setWorkflowStatus('DRAFT');
-    }
-  }, [workflowKey, selectedStudentId]);
+    setWorkflowStatus(getResultWorkflowStatus(selectedStudentId, selectedWorkflowTerm, selectedYear));
+  }, [workflowKey, selectedStudentId, selectedWorkflowTerm, selectedYear, getResultWorkflowStatus]);
 
   const isFinalized = workflowStatus === 'FINALIZED';
 
@@ -159,7 +154,9 @@ export const Results: React.FC = () => {
 
   const updateWorkflowStatus = (status: 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED') => {
     setWorkflowStatus(status);
-    localStorage.setItem(workflowKey, status);
+    if (selectedStudentId) {
+      setResultWorkflowStatus(selectedStudentId, selectedWorkflowTerm, selectedYear, status);
+    }
     if (status === 'FINALIZED') {
       setIsEditing(false);
     }
