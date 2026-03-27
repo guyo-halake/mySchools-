@@ -12,9 +12,10 @@ const ALL_SUBJECTS = [
 
 export const Results: React.FC = () => {
   const { user } = useAuth();
-  const { results, students, updateResult, addResult, getResultWorkflowStatus, setResultWorkflowStatus } = useApp();
-  const [selectedYear, setSelectedYear] = useState(2024);
+  const { results, students, updateResult, addResult, getResultWorkflowStatus, setResultWorkflowStatus, gradingSystem, setGradingSystem, calculateGrade } = useApp();
+  const [selectedYear, setSelectedYear] = useState<number | 'ALL'>(2024);
   const [selectedTerm, setSelectedTerm] = useState('All Terms');
+  const [selectedForm, setSelectedForm] = useState<'ALL' | 'FORM_1' | 'FORM_2' | 'FORM_3' | 'FORM_4'>('ALL');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState<Record<string, Record<string, { marks: string; remarks: string }>>>({});
@@ -29,8 +30,12 @@ export const Results: React.FC = () => {
   }, [user, students]);
 
   const student = students.find(s => s.id === selectedStudentId);
-  const allStudentResults = student 
-    ? results.filter(r => r.studentId === student.id && r.year === selectedYear)
+  const studentAllResults = student ? results.filter(r => r.studentId === student.id) : [];
+  const yearsSet = new Set<number>(studentAllResults.map((r) => Number(r.year)));
+  const availableYears = Array.from(yearsSet).sort((a, b) => b - a);
+  const rankYear = selectedYear === 'ALL' ? (availableYears[0] || 2024) : selectedYear;
+  const allStudentResults = student
+    ? studentAllResults.filter(r => (selectedYear === 'ALL' || r.year === selectedYear) && (selectedForm === 'ALL' || r.formLevel === selectedForm))
     : [];
 
   const { getStudentRank } = useApp();
@@ -39,20 +44,21 @@ export const Results: React.FC = () => {
     allStudentResults.some(r => r.term === t)
   ) || 'Term 3';
   const selectedWorkflowTerm = selectedTerm === 'All Terms' ? latestTermWithResults : selectedTerm;
+  const selectedWorkflowYear = selectedYear === 'ALL' ? rankYear : selectedYear;
   const workflowKey = `workflow_${selectedStudentId}_${selectedWorkflowTerm}_${selectedYear}`;
 
   const currentRank = student ? getStudentRank(
     student.id, 
     selectedTerm === 'All Terms' ? latestTermWithResults : selectedTerm, 
-    selectedYear
+    rankYear
   ) : null;
 
   const terms = ['Term 1', 'Term 2', 'Term 3'];
 
   useEffect(() => {
     if (!selectedStudentId) return;
-    setWorkflowStatus(getResultWorkflowStatus(selectedStudentId, selectedWorkflowTerm, selectedYear));
-  }, [workflowKey, selectedStudentId, selectedWorkflowTerm, selectedYear, getResultWorkflowStatus]);
+    setWorkflowStatus(getResultWorkflowStatus(selectedStudentId, selectedWorkflowTerm, selectedWorkflowYear));
+  }, [workflowKey, selectedStudentId, selectedWorkflowTerm, selectedWorkflowYear, getResultWorkflowStatus]);
 
   const isFinalized = workflowStatus === 'FINALIZED';
 
@@ -74,20 +80,7 @@ export const Results: React.FC = () => {
     return pointsMap[grade] || (grade === 'A' ? 12 : grade === 'B' ? 9 : grade === 'C' ? 6 : grade === 'D' ? 3 : 1);
   };
 
-  const getMeanGrade = (average: number) => {
-    if (average >= 80) return 'A';
-    if (average >= 75) return 'A-';
-    if (average >= 70) return 'B+';
-    if (average >= 65) return 'B';
-    if (average >= 60) return 'B-';
-    if (average >= 55) return 'C+';
-    if (average >= 50) return 'C';
-    if (average >= 45) return 'C-';
-    if (average >= 40) return 'D+';
-    if (average >= 35) return 'D';
-    if (average >= 30) return 'D-';
-    return 'E';
-  };
+  const getMeanGrade = (average: number) => calculateGrade(average);
 
   const getResult = (subject: string, term: string) => {
     return allStudentResults.find(r => r.subject === subject && r.term === term);
@@ -114,6 +107,7 @@ export const Results: React.FC = () => {
 
   const handleSave = () => {
     if (!selectedStudentId) return;
+    if (selectedYear === 'ALL') return;
     if (isFinalized) return;
 
     Object.entries(editData).forEach(([subject, termData]) => {
@@ -122,7 +116,7 @@ export const Results: React.FC = () => {
         if (marksStr === '') return;
 
         const marks = parseInt(marksStr);
-        const grade = marks >= 80 ? 'A' : marks >= 70 ? 'B' : marks >= 60 ? 'C' : marks >= 50 ? 'D' : 'E';
+        const grade = calculateGrade(marks);
         
         const existing = results.find(r => 
           r.studentId === selectedStudentId && 
@@ -155,7 +149,7 @@ export const Results: React.FC = () => {
   const updateWorkflowStatus = (status: 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED') => {
     setWorkflowStatus(status);
     if (selectedStudentId) {
-      setResultWorkflowStatus(selectedStudentId, selectedWorkflowTerm, selectedYear, status);
+      setResultWorkflowStatus(selectedStudentId, selectedWorkflowTerm, selectedWorkflowYear, status);
     }
     if (status === 'FINALIZED') {
       setIsEditing(false);
@@ -184,11 +178,28 @@ export const Results: React.FC = () => {
               </select>
             </div>
           )}
+          {(user?.role === 'PARENT' || user?.role === 'STUDENT') && (
+            <select
+              className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs outline-none"
+              value={selectedForm}
+              onChange={(e) => setSelectedForm(e.target.value as 'ALL' | 'FORM_1' | 'FORM_2' | 'FORM_3' | 'FORM_4')}
+            >
+              <option value="ALL">All Forms</option>
+              <option value="FORM_1">Form 1</option>
+              <option value="FORM_2">Form 2</option>
+              <option value="FORM_3">Form 3</option>
+              <option value="FORM_4">Form 4</option>
+            </select>
+          )}
           <select 
             className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs outline-none"
             value={selectedYear}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
+            onChange={(e) => setSelectedYear(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))}
           >
+            <option value="ALL">All Years</option>
+            {availableYears.map((year) => (
+              <option key={year} value={year}>{year}</option>
+            ))}
             <option value={2024}>2024</option>
             <option value={2023}>2023</option>
           </select>
@@ -202,7 +213,17 @@ export const Results: React.FC = () => {
             <option value="Term 2">Term 2</option>
             <option value="Term 3">Term 3</option>
           </select>
-          {(user?.role === 'TEACHER' || user?.role === 'ADMIN') && !isFinalized && (
+          {user?.role === 'ADMIN' && (
+            <select
+              className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs outline-none"
+              value={gradingSystem}
+              onChange={(e) => setGradingSystem(e.target.value as 'KENYAN' | 'BRITISH')}
+            >
+              <option value="KENYAN">Kenyan Grading</option>
+              <option value="BRITISH">British Grading</option>
+            </select>
+          )}
+          {user?.role === 'ADMIN' && selectedYear !== 'ALL' && !isFinalized && (
             <Button 
               variant={isEditing ? "secondary" : "primary"} 
               onClick={isEditing ? handleSave : handleEditToggle}
@@ -218,6 +239,7 @@ export const Results: React.FC = () => {
       <Card>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="info">Moderation: {workflowStatus}</Badge>
+          <Badge variant="neutral">System: {gradingSystem}</Badge>
           {user?.role === 'TEACHER' && workflowStatus === 'DRAFT' && (
             <Button variant="outline" onClick={() => updateWorkflowStatus('TEACHER_SUBMITTED')}>Submit to HOD</Button>
           )}
@@ -255,10 +277,10 @@ export const Results: React.FC = () => {
               </div>
             </Card>
             <Card className="bg-violet-50 dark:bg-violet-900/10 border-violet-100 dark:border-violet-800/20">
-              <p className="text-[10px] font-bold uppercase text-violet-600 dark:text-violet-400 mb-1">KCSE Projection</p>
+              <p className="text-[10px] font-bold uppercase text-violet-600 dark:text-violet-400 mb-1">{gradingSystem === 'KENYAN' ? 'KCSE Projection' : 'British Projection'}</p>
               <div className="flex items-baseline gap-2">
                 <p className="text-2xl font-bold text-violet-700 dark:text-violet-300">{getMeanGrade(currentRank.averageMarks)}</p>
-                <p className="text-xs text-violet-600/60 font-medium">{getKcsePoints(getMeanGrade(currentRank.averageMarks))} points</p>
+                <p className="text-xs text-violet-600/60 font-medium">{gradingSystem === 'KENYAN' ? `${getKcsePoints(getMeanGrade(currentRank.averageMarks))} points` : 'GCSE style band'}</p>
               </div>
             </Card>
           </>
@@ -269,8 +291,8 @@ export const Results: React.FC = () => {
         <Card 
           title={student ? `${student.name}'s Results` : "Results Summary"} 
           subtitle={selectedTerm === 'All Terms' 
-            ? `Performance across all terms for ${selectedYear}` 
-            : `Performance for ${selectedTerm}, ${selectedYear}`}
+            ? `Performance across all terms for ${selectedYear === 'ALL' ? 'all years' : selectedYear}` 
+            : `Performance for ${selectedTerm}, ${selectedYear === 'ALL' ? 'all years' : selectedYear}`}
         >
           <div className="overflow-x-auto">
             {(() => {
@@ -360,7 +382,7 @@ export const Results: React.FC = () => {
                             const subjectResults = allStudentResults.filter(r => r.subject === sub);
                             if (subjectResults.length === 0) return <span className="text-zinc-300">-</span>;
                             const avg = subjectResults.reduce((acc, r) => acc + r.marks, 0) / subjectResults.length;
-                            const grade = avg >= 80 ? 'A' : avg >= 70 ? 'B' : avg >= 60 ? 'C' : avg >= 50 ? 'D' : 'E';
+                            const grade = calculateGrade(avg);
                             return (
                               <div className="flex flex-col">
                                 <span className="font-bold text-xs">{avg.toFixed(0)}%</span>

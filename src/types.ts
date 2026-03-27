@@ -1,4 +1,10 @@
 export type Role = 'PARENT' | 'STUDENT' | 'TEACHER' | 'ADMIN';
+export type GradingSystem = 'KENYAN' | 'BRITISH';
+
+export interface GradeBand {
+  grade: string;
+  min: number;
+}
 
 export interface User {
   id: string;
@@ -55,6 +61,7 @@ export interface Result {
   grade: string;
   term: string;
   year: number;
+  formLevel?: 'FORM_1' | 'FORM_2' | 'FORM_3' | 'FORM_4';
   examType?: 'CAT' | 'MIDTERM' | 'ENDTERM' | 'PROJECT';
   examWeight?: number;
   moderationStatus?: 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED';

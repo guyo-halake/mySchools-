@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   User, Student, Teacher, Class, Result, FeeStatement, 
-  SuspensionComplaint, SchoolEvent, Announcement, Role, NotificationItem
+  SuspensionComplaint, SchoolEvent, Announcement, Role, NotificationItem, GradingSystem, GradeBand
 } from '../types';
 
 interface AppContextType {
@@ -14,6 +14,8 @@ interface AppContextType {
   events: SchoolEvent[];
   announcements: Announcement[];
   notifications: NotificationItem[];
+  gradingSystem: GradingSystem;
+  gradeScale: GradeBand[];
   
   addResult: (result: Omit<Result, 'id'>) => void;
   updateResult: (id: string, result: Partial<Result>) => void;
@@ -26,6 +28,9 @@ interface AppContextType {
   rsvpEvent: (eventId: string, userId: string) => void;
   getNotificationsForUser: (userId: string, role: Role) => NotificationItem[];
   markNotificationRead: (notificationId: string, userId: string) => void;
+  setGradingSystem: (system: GradingSystem) => void;
+  setGradeScale: (scale: GradeBand[]) => void;
+  calculateGrade: (marks: number) => string;
   getResultWorkflowStatus: (studentId: string, term: string, year: number) => 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED';
   setResultWorkflowStatus: (studentId: string, term: string, year: number, status: 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED') => void;
   
@@ -57,6 +62,26 @@ const SUBJECTS = [
   'Mathematics', 'English', 'Swahili', 'Geography', 'History', 
   'CRE', 'IRE', 'Physics', 'Chemistry', 'Computer', 'Business', 'Agriculture'
 ];
+
+const KENYAN_GRADE_SCALE: GradeBand[] = [
+  { grade: 'A', min: 80 },
+  { grade: 'B', min: 70 },
+  { grade: 'C', min: 60 },
+  { grade: 'D', min: 50 },
+  { grade: 'E', min: 0 },
+];
+
+const BRITISH_GRADE_SCALE: GradeBand[] = [
+  { grade: 'A*', min: 90 },
+  { grade: 'A', min: 80 },
+  { grade: 'B', min: 70 },
+  { grade: 'C', min: 60 },
+  { grade: 'D', min: 50 },
+  { grade: 'E', min: 40 },
+  { grade: 'U', min: 0 },
+];
+
+const DEFAULT_GRADING_SYSTEM: GradingSystem = 'KENYAN';
 
 const KENYAN_BOY_NAMES = [
   'James Otieno', 'David Omolo', 'Kevin Wanjala', 'Brian Kamau', 'Peter Mutua',
@@ -99,24 +124,41 @@ const generateStudents = (count: number) => {
 
 const students = generateStudents(300);
 
+const YEAR_TO_FORM: Record<number, 'FORM_1' | 'FORM_2' | 'FORM_3' | 'FORM_4'> = {
+  2021: 'FORM_1',
+  2022: 'FORM_2',
+  2023: 'FORM_3',
+  2024: 'FORM_4',
+};
+
+const gradeFromScale = (marks: number, scale: GradeBand[]) => {
+  const sorted = [...scale].sort((a, b) => b.min - a.min);
+  const found = sorted.find((band) => marks >= band.min);
+  return found ? found.grade : sorted[sorted.length - 1]?.grade || 'E';
+};
+
 const generateResults = (studentsList: any[]) => {
   const results: any[] = [];
   const terms = ['Term 1', 'Term 2', 'Term 3'];
+  const years = [2021, 2022, 2023, 2024];
   
   studentsList.forEach(student => {
-    terms.forEach(term => {
-      SUBJECTS.forEach((sub, i) => {
-        const marks = 40 + Math.floor(Math.random() * 55);
-        results.push({
-          id: `r-${student.id}-${term}-${i}`,
-          studentId: student.id,
-          subject: sub,
-          marks,
-          grade: marks >= 80 ? 'A' : marks >= 70 ? 'B' : marks >= 60 ? 'C' : marks >= 50 ? 'D' : 'E',
-          term,
-          year: 2024,
-          previousMarks: 45 + Math.floor(Math.random() * 40),
-          remarks: marks > 70 ? 'Excellent performance.' : marks > 50 ? 'Good effort, keep it up.' : 'Needs significant improvement.'
+    years.forEach(year => {
+      terms.forEach(term => {
+        SUBJECTS.forEach((sub, i) => {
+          const marks = 40 + Math.floor(Math.random() * 55);
+          results.push({
+            id: `r-${student.id}-${year}-${term}-${i}`,
+            studentId: student.id,
+            subject: sub,
+            marks,
+            grade: gradeFromScale(marks, KENYAN_GRADE_SCALE),
+            term,
+            year,
+            formLevel: YEAR_TO_FORM[year],
+            previousMarks: 45 + Math.floor(Math.random() * 40),
+            remarks: marks > 70 ? 'Excellent performance.' : marks > 50 ? 'Good effort, keep it up.' : 'Needs significant improvement.'
+          });
         });
       });
     });
@@ -156,6 +198,8 @@ const INITIAL_DATA = {
     { id: 'a1', title: 'Exam Schedule', content: 'End of term exams start next week.', date: '2024-03-20', author: 'Principal', targetRoles: ['PARENT', 'STUDENT', 'TEACHER'], pinned: true, urgent: false, channel: 'IN_APP' },
   ],
   notifications: [],
+  gradingSystem: DEFAULT_GRADING_SYSTEM,
+  gradeScale: KENYAN_GRADE_SCALE,
   resultWorkflows: {},
 };
 
@@ -185,6 +229,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...parsed,
       events: normalizeEvents(parsed.events || []),
       notifications: parsed.notifications || [],
+      gradingSystem: parsed.gradingSystem || DEFAULT_GRADING_SYSTEM,
+      gradeScale: parsed.gradeScale || KENYAN_GRADE_SCALE,
       resultWorkflows: parsed.resultWorkflows || {},
     };
   });
@@ -321,6 +367,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
+  const setGradingSystem = (system: GradingSystem) => {
+    setData((prev: any) => ({
+      ...prev,
+      gradingSystem: system,
+      gradeScale: system === 'KENYAN' ? KENYAN_GRADE_SCALE : BRITISH_GRADE_SCALE,
+    }));
+  };
+
+  const setGradeScale = (scale: GradeBand[]) => {
+    setData((prev: any) => ({
+      ...prev,
+      gradeScale: scale,
+    }));
+  };
+
+  const calculateGrade = (marks: number) => gradeFromScale(marks, data.gradeScale || KENYAN_GRADE_SCALE);
+
   const getResultWorkflowStatus = (studentId: string, term: string, year: number) => {
     const key = `${studentId}_${term}_${year}`;
     return data.resultWorkflows?.[key] || 'DRAFT';
@@ -439,6 +502,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addStudent, updateStudent, deleteStudent, addTeacher, updateTeacher, deleteTeacher,
       addClass, updateClass, deleteClass,
       getNotificationsForUser, markNotificationRead,
+      setGradingSystem, setGradeScale, calculateGrade,
       getResultWorkflowStatus, setResultWorkflowStatus,
       getStudentRank
     }}>

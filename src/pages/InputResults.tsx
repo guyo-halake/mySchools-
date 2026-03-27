@@ -6,7 +6,7 @@ import { Save, Upload } from 'lucide-react';
 
 export const InputResults: React.FC = () => {
   const { user } = useAuth();
-  const { students, results, updateResult, addResult, teachers, getResultWorkflowStatus, setResultWorkflowStatus } = useApp();
+  const { students, results, updateResult, addResult, teachers, getResultWorkflowStatus, setResultWorkflowStatus, calculateGrade } = useApp();
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [selectedTerm, setSelectedTerm] = useState('Term 1');
   const [selectedYear, setSelectedYear] = useState(2024);
@@ -86,7 +86,7 @@ export const InputResults: React.FC = () => {
         setError(`Invalid marks for ${subject}. Enter values between 0 and 100.`);
         return;
       }
-      const grade = marks >= 80 ? 'A' : marks >= 70 ? 'B' : marks >= 60 ? 'C' : marks >= 50 ? 'D' : 'E';
+      const grade = calculateGrade(marks);
       
       const existing = results.find(r => 
         r.studentId === selectedStudentId && 
@@ -233,7 +233,7 @@ export const InputResults: React.FC = () => {
         <Table headers={['Subject', 'Marks (0-100)', 'Grade', 'Teacher Remarks']}>
           {allowedSubjects.map(sub => {
             const marks = parseInt(inputData[sub]?.marks || '0');
-            const grade = inputData[sub]?.marks ? (marks >= 80 ? 'A' : marks >= 70 ? 'B' : marks >= 60 ? 'C' : marks >= 50 ? 'D' : 'E') : '-';
+            const grade = inputData[sub]?.marks ? calculateGrade(marks) : '-';
             
             return (
               <tr key={sub}>

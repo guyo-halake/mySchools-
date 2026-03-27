@@ -29,7 +29,10 @@ export const Events: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    addEvent(formData);
+    addEvent({
+      ...formData,
+      targetRoles: formData.targetRoles.length > 0 ? formData.targetRoles : ['PARENT', 'STUDENT', 'TEACHER', 'ADMIN'],
+    });
     setIsModalOpen(false);
     setFormData({
       title: '',
@@ -198,6 +201,27 @@ export const Events: React.FC = () => {
                 <input type="checkbox" checked={formData.requiresPermissionSlip} onChange={(e) => setFormData({ ...formData, requiresPermissionSlip: e.target.checked })} />
                 Requires trip permission
               </label>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-2">Target Roles</label>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              {(['PARENT', 'STUDENT', 'TEACHER', 'ADMIN'] as Role[]).map((role) => (
+                <label key={role} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.targetRoles.includes(role)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setFormData({ ...formData, targetRoles: [...formData.targetRoles, role] });
+                      } else {
+                        setFormData({ ...formData, targetRoles: formData.targetRoles.filter((r) => r !== role) });
+                      }
+                    }}
+                  />
+                  {role}
+                </label>
+              ))}
             </div>
           </div>
           <Button type="submit" className="w-full py-4 mt-4"><Save size={18} /> Create Event</Button>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
@@ -63,14 +63,31 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const { getNotificationsForUser, markNotificationRead } = useApp();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [toasts, setToasts] = useState<Array<{ id: string; title: string; message: string; link?: string }>>([]);
   const location = useLocation();
   const navigate = useNavigate();
+  const lastToastNotificationRef = useRef<string>('');
 
   if (!user) return <>{children}</>;
 
   const links = sidebarLinks[user.role] || [];
   const notifications = getNotificationsForUser(user.id, user.role);
   const unreadCount = notifications.filter(n => !n.readBy.includes(user.id)).length;
+
+  useEffect(() => {
+    const unread = notifications.find((notification) => !notification.readBy.includes(user.id));
+    if (!unread) return;
+    if (lastToastNotificationRef.current === unread.id) return;
+
+    lastToastNotificationRef.current = unread.id;
+    setToasts((prev) => [...prev, { id: unread.id, title: unread.title, message: unread.message, link: unread.link }].slice(-3));
+
+    const timer = window.setTimeout(() => {
+      setToasts((prev) => prev.filter((toast) => toast.id !== unread.id));
+    }, 5000);
+
+    return () => window.clearTimeout(timer);
+  }, [notifications, user.id]);
 
   const getUserInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -253,6 +270,25 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             {children}
           </div>
         </main>
+      </div>
+
+      <div className="fixed bottom-4 right-4 z-[120] space-y-2 w-[320px] max-w-[calc(100vw-2rem)]">
+        {toasts.map((toast) => (
+          <button
+            key={toast.id}
+            onClick={() => {
+              markNotificationRead(toast.id, user.id);
+              if (toast.link) {
+                navigate(toast.link);
+              }
+              setToasts((prev) => prev.filter((item) => item.id !== toast.id));
+            }}
+            className="w-full text-left p-3 rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg"
+          >
+            <p className="text-xs font-bold">{toast.title}</p>
+            <p className="text-[11px] text-zinc-500 mt-1 line-clamp-2">{toast.message}</p>
+          </button>
+        ))}
       </div>
     </div>
   );
