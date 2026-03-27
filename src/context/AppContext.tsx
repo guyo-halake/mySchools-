@@ -28,6 +28,7 @@ interface AppContextType {
   rsvpEvent: (eventId: string, userId: string) => void;
   getNotificationsForUser: (userId: string, role: Role) => NotificationItem[];
   markNotificationRead: (notificationId: string, userId: string) => void;
+  markAllNotificationsRead: (userId: string, role: Role) => void;
   setGradingSystem: (system: GradingSystem) => void;
   setGradeScale: (scale: GradeBand[]) => void;
   calculateGrade: (marks: number) => string;
@@ -290,6 +291,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         {
           id: 'n' + Date.now(),
           type: 'ANNOUNCEMENT',
+          priority: item.urgent ? 'HIGH' : 'MEDIUM',
           title: `New announcement: ${item.title}`,
           message: item.content,
           createdAt: new Date().toISOString(),
@@ -311,6 +313,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         {
           id: 'n' + Date.now(),
           type: 'EVENT',
+          priority: item.requiresPermissionSlip ? 'HIGH' : 'MEDIUM',
           title: `New event: ${item.title}`,
           message: `${item.description} on ${item.date} at ${item.location}`,
           createdAt: new Date().toISOString(),
@@ -340,6 +343,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         {
           id: 'n' + Date.now(),
           type: 'RSVP',
+          priority: 'LOW',
           title: 'New RSVP received',
           message: `A parent/student has RSVP'd for an event.`,
           createdAt: new Date().toISOString(),
@@ -353,7 +357,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const getNotificationsForUser = (userId: string, role: Role) => {
-    return data.notifications.filter((notification) => notification.targetRoles.includes(role)).slice(0, 25);
+    const visible = data.notifications
+      .filter((notification) => notification.targetRoles.includes(role))
+      .map((notification) => ({ ...notification, priority: notification.priority || 'MEDIUM' }));
+
+    const groupedRsvp = visible
+      .filter((notification) => notification.type === 'RSVP')
+      .reduce((acc, notification) => {
+        const group = acc.find((item) => item.link === notification.link && item.type === 'RSVP');
+        if (group) {
+          group.message = `${Number(group.message.split(' ')[0]) + 1} new RSVP updates.`;
+          if (!group.readBy.includes(userId) && notification.readBy.includes(userId)) {
+            group.readBy.push(userId);
+          }
+          return acc;
+        }
+
+        acc.push({ ...notification, message: '1 new RSVP update.' });
+        return acc;
+      }, [] as NotificationItem[]);
+
+    const nonRsvp = visible.filter((notification) => notification.type !== 'RSVP');
+    const merged = [...nonRsvp, ...groupedRsvp].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+    return merged.slice(0, 25);
   };
 
   const markNotificationRead = (notificationId: string, userId: string) => {
@@ -364,6 +390,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ? { ...notification, readBy: [...notification.readBy, userId] }
           : notification
       ),
+    }));
+  };
+
+  const markAllNotificationsRead = (userId: string, role: Role) => {
+    setData((prev: any) => ({
+      ...prev,
+      notifications: prev.notifications.map((notification: NotificationItem) => {
+        if (!notification.targetRoles.includes(role) || notification.readBy.includes(userId)) {
+          return notification;
+        }
+        return { ...notification, readBy: [...notification.readBy, userId] };
+      }),
     }));
   };
 
@@ -501,7 +539,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addSuspension, updateSuspension, addAnnouncement, addEvent, rsvpEvent,
       addStudent, updateStudent, deleteStudent, addTeacher, updateTeacher, deleteTeacher,
       addClass, updateClass, deleteClass,
-      getNotificationsForUser, markNotificationRead,
+      getNotificationsForUser, markNotificationRead, markAllNotificationsRead,
       setGradingSystem, setGradeScale, calculateGrade,
       getResultWorkflowStatus, setResultWorkflowStatus,
       getStudentRank

@@ -1,32 +1,57 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
-import { Card, Badge, Table, Button } from '../components/UI';
+import { Card, Badge, Table, Button, PageHeader } from '../components/UI';
 import { 
   TrendingUp, 
-  TrendingDown, 
-  Calendar, 
   CreditCard, 
-  AlertCircle, 
-  User as UserIcon,
-  ArrowRight,
-  Plus,
   Bell,
   Users,
   ShieldCheck,
-  FileText,
-  BookOpen
+  AlertTriangle,
+  UserRound,
+  School,
+  Hash,
+  Landmark,
+  Wallet,
+  CalendarClock
 } from 'lucide-react';
-import { formatCurrency, formatDate, cn } from '../utils/utils';
+import { formatCurrency } from '../utils/utils';
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const { students, results, events, fees, suspensions, teachers, announcements, classes, notifications } = useApp();
   const [showFinancials, setShowFinancials] = React.useState(() => localStorage.getItem('dashboard_widget_financials') !== '0');
   const [showAcademics, setShowAcademics] = React.useState(() => localStorage.getItem('dashboard_widget_academics') !== '0');
+  const [parentGradingSystem, setParentGradingSystem] = React.useState<'KENYAN' | 'BRITISH'>('KENYAN');
+  const [expandedRemarks, setExpandedRemarks] = React.useState<Record<string, boolean>>({});
 
   const toggleWidget = (key: 'dashboard_widget_financials' | 'dashboard_widget_academics', value: boolean) => {
     localStorage.setItem(key, value ? '1' : '0');
+  };
+
+  const getDisplayGrade = (marks: number, system: 'KENYAN' | 'BRITISH') => {
+    if (system === 'KENYAN') {
+      if (marks >= 80) return 'A';
+      if (marks >= 70) return 'B';
+      if (marks >= 60) return 'C';
+      if (marks >= 50) return 'D';
+      return 'E';
+    }
+
+    if (marks >= 90) return 'A*';
+    if (marks >= 80) return 'A';
+    if (marks >= 70) return 'B';
+    if (marks >= 60) return 'C';
+    if (marks >= 50) return 'D';
+    if (marks >= 40) return 'E';
+    return 'U';
+  };
+
+  const getGradeVariant = (marks: number) => {
+    if (marks >= 80) return 'success' as const;
+    if (marks >= 50) return 'info' as const;
+    return 'danger' as const;
   };
 
   if (user?.role === 'PARENT' || user?.role === 'STUDENT') {
@@ -37,6 +62,10 @@ export const Dashboard: React.FC = () => {
     const termsOrder = ['Term 3', 'Term 2', 'Term 1'];
     const latestTerm = termsOrder.find(t => allStudentResults.some(r => r.term === t)) || 'Term 3';
     const studentResults = allStudentResults.filter(r => r.term === latestTerm);
+    const classInfo = classes.find(c => c.id === student.classId);
+    const className = classInfo?.name || student.classId;
+    const stream = className.includes(' ') ? className.split(' ').slice(-1)[0] : 'Main';
+    const classTeacher = teachers.find(t => t.id === (classInfo?.teacherId || student.teacherId));
 
     const studentFees = fees.filter(f => f.studentId === student.id);
     const balance = studentFees.reduce((acc, f) => acc + (f.amount - f.paid), 0);
@@ -44,91 +73,129 @@ export const Dashboard: React.FC = () => {
     const { getStudentRank } = useApp();
     const rank = getStudentRank(student.id, latestTerm, 2024);
 
-    const visibleEvents = events.filter(e => !e.targetRoles || e.targetRoles.includes(user.role));
+    const visibleEvents = events
+      .filter(e => !e.targetRoles || e.targetRoles.includes(user.role))
+      .sort((a, b) => +new Date(a.date) - +new Date(b.date));
+    const nextEvent = visibleEvents[0];
+
+    const subjectsOrder = [
+      'Mathematics', 'English', 'Swahili', 'Geography', 'History',
+      'CRE', 'IRE', 'Physics', 'Chemistry', 'Computer', 'Business', 'Agriculture'
+    ];
+
+    const resultsBySubject = subjectsOrder.map((subject) => {
+      const row = studentResults.find((result) => result.subject === subject);
+      return { subject, row };
+    });
 
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Dashboard</h1>
-          <Badge variant="info">{user.role}</Badge>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          <Card className="md:col-span-2">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-lg font-bold">
-                {student.name.split(' ').map(n => n[0]).join('')}
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm font-bold">{student.name}</p>
-                <p className="text-[10px] text-zinc-500">Adm: {student.admissionNumber} • Class: {student.classId}</p>
-                <p className="text-[10px] text-zinc-500">Teacher: Mr. Kamau</p>
-              </div>
+        <section className="pb-4 border-b border-zinc-200 dark:border-zinc-800">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="micro-label text-zinc-500">Parent Portal</p>
+              <h1 className="mt-1 text-2xl lg:text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">Welcome back, {user.name.split(' ')[0]}</h1>
+              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Academic snapshot, fees status, and events in one view.</p>
             </div>
-          </Card>
-          
-          <Card>
-            <p className="text-[10px] font-bold uppercase text-zinc-400 mb-1">Fee Balance</p>
-            <p className={`text-lg font-bold ${balance > 0 ? 'text-red-500' : 'text-green-500'}`}>
-              Ksh {balance.toLocaleString()}
-            </p>
-          </Card>
-
-          <Card>
-            <p className="text-[10px] font-bold uppercase text-zinc-400 mb-1">Class Position</p>
-            <div className="flex items-baseline gap-1">
-              <p className="text-lg font-bold text-blue-600">{rank.classRank}</p>
-              <p className="text-[10px] text-zinc-400">out of {rank.classTotal}</p>
-            </div>
-          </Card>
-
-          <Card>
-            <p className="text-[10px] font-bold uppercase text-zinc-400 mb-1">Form Position</p>
-            <div className="flex items-baseline gap-1">
-              <p className="text-lg font-bold text-emerald-600">{rank.formRank}</p>
-              <p className="text-[10px] text-zinc-400">out of {rank.formTotal}</p>
-            </div>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <h2 className="text-xs font-bold uppercase text-zinc-400 tracking-wider">Recent Results</h2>
-            <Card>
-              <Table headers={['Subject', 'Marks', 'Grade']}>
-                {studentResults.map(r => (
-                  <tr key={r.id}>
-                    <td className="px-3 py-2 text-xs">{r.subject}</td>
-                    <td className="px-3 py-2 text-xs font-mono">{r.marks}</td>
-                    <td className="px-3 py-2">
-                      <Badge variant={r.grade === 'A' ? 'success' : 'neutral'}>{r.grade}</Badge>
-                    </td>
-                  </tr>
-                ))}
-              </Table>
-            </Card>
-          </div>
-
-          <div className="space-y-4">
-            <h2 className="text-xs font-bold uppercase text-zinc-400 tracking-wider">Upcoming Events</h2>
-            <div className="space-y-2">
-              {visibleEvents.map(e => (
-                <Card key={e.id} className="p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded bg-zinc-50 dark:bg-zinc-800 flex flex-col items-center justify-center">
-                      <span className="text-[8px] font-bold uppercase">{new Date(e.date).toLocaleString('default', { month: 'short' })}</span>
-                      <span className="text-xs font-bold">{new Date(e.date).getDate()}</span>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold">{e.title}</p>
-                      <p className="text-[10px] text-zinc-500">{e.location}</p>
-                      <p className="text-[9px] text-zinc-400">{e.rsvps.length} RSVPs</p>
-                    </div>
-                  </div>
-                </Card>
-              ))}
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="info">Class Position {rank.classRank}/{rank.classTotal}</Badge>
+              <Badge variant="success">Form Position {rank.formRank}/{rank.formTotal}</Badge>
             </div>
           </div>
+        </section>
+
+        <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div>
+            <p className="micro-label text-zinc-500 flex items-center gap-1"><UserRound size={11} /> Student Name</p>
+            <p className="text-sm font-semibold mt-1 text-zinc-900 dark:text-zinc-100">{student.name}</p>
+          </div>
+          <div>
+            <p className="micro-label text-zinc-500 flex items-center gap-1"><School size={11} /> Current Class</p>
+            <p className="text-sm font-semibold mt-1 text-zinc-900 dark:text-zinc-100">{className}</p>
+          </div>
+          <div>
+            <p className="micro-label text-zinc-500 flex items-center gap-1"><Landmark size={11} /> Stream</p>
+            <p className="text-sm font-semibold mt-1 text-zinc-900 dark:text-zinc-100">{stream}</p>
+          </div>
+          <div>
+            <p className="micro-label text-zinc-500 flex items-center gap-1"><Users size={11} /> Class Teacher</p>
+            <p className="text-sm font-semibold mt-1 text-zinc-900 dark:text-zinc-100">{classTeacher?.name || 'Not assigned'}</p>
+          </div>
+          <div>
+            <p className="micro-label text-zinc-500 flex items-center gap-1"><Hash size={11} /> Admission Number</p>
+            <p className="text-sm font-semibold mt-1 text-zinc-900 dark:text-zinc-100">{student.admissionNumber}</p>
+          </div>
+        </section>
+
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="py-2">
+            <p className="micro-label text-zinc-500 flex items-center gap-1"><Wallet size={11} /> Fees Balance</p>
+            <p className={balance > 0 ? 'text-2xl font-semibold text-rose-600 mt-1' : 'text-2xl font-semibold text-emerald-600 mt-1'}>{formatCurrency(balance)}</p>
+            <p className="mt-2 text-xs text-zinc-500">Current term financial position</p>
+          </div>
+          <div className="py-2">
+            <p className="micro-label text-zinc-500 flex items-center gap-1"><CalendarClock size={11} /> Upcoming Event</p>
+            {nextEvent ? (
+              <div className="mt-1">
+                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{nextEvent.title}</p>
+                <p className="text-xs text-zinc-500 mt-1">{new Date(nextEvent.date).toLocaleDateString()} • {nextEvent.location}</p>
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-500 mt-1">No upcoming events</p>
+            )}
+          </div>
+        </section>
+
+        <Card
+          title="Recent Results"
+          subtitle={`${latestTerm} • ${parentGradingSystem === 'KENYAN' ? 'Kenyan KCSE' : 'British'} view`}
+          className="glass-panel motion-rise border border-zinc-200/80 dark:border-zinc-800/80 shadow-[0_16px_36px_-24px_rgba(0,0,0,0.45)]"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <p className="micro-label text-zinc-500">All subjects</p>
+            <div className="flex items-center gap-2">
+              <Button variant={parentGradingSystem === 'KENYAN' ? 'secondary' : 'outline'} className="h-8" onClick={() => setParentGradingSystem('KENYAN')}>Kenyan KCSE</Button>
+              <Button variant={parentGradingSystem === 'BRITISH' ? 'secondary' : 'outline'} className="h-8" onClick={() => setParentGradingSystem('BRITISH')}>British</Button>
+            </div>
+          </div>
+
+          <Table headers={['Subject', 'Grade', 'Marks', 'Teacher Remarks']}>
+            {resultsBySubject.map(({ subject, row }) => {
+              const remarkKey = `${subject}-${latestTerm}`;
+              const isExpanded = !!expandedRemarks[remarkKey];
+
+              return (
+                <tr key={subject}>
+                  <td className="px-3 py-2 text-xs font-medium text-zinc-900 dark:text-zinc-100">{subject}</td>
+                  <td className="px-3 py-2">
+                    {row ? <Badge variant={getGradeVariant(row.marks)}>{getDisplayGrade(row.marks, parentGradingSystem)}</Badge> : <span className="text-zinc-400 text-xs">-</span>}
+                  </td>
+                  <td className="px-3 py-2 text-xs font-mono text-zinc-700 dark:text-zinc-300">{row ? `${row.marks}%` : '-'}</td>
+                  <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-300">
+                    {row?.remarks ? (
+                      <div>
+                        {!isExpanded ? (
+                          <button className="text-cyan-700 hover:text-cyan-800 dark:text-cyan-300 dark:hover:text-cyan-200 font-medium" onClick={() => setExpandedRemarks((prev) => ({ ...prev, [remarkKey]: true }))}>Show remark</button>
+                        ) : (
+                          <div className="space-y-1">
+                            <p className="text-zinc-700 dark:text-zinc-300">{row.remarks}</p>
+                            <button className="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200" onClick={() => setExpandedRemarks((prev) => ({ ...prev, [remarkKey]: false }))}>Hide</button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-zinc-400">No remark</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </Table>
+        </Card>
+
+        <div className="flex gap-2 justify-end">
+          <Button variant="outline">Request Meeting</Button>
+          <Button>Contact School</Button>
         </div>
       </div>
     );
@@ -160,12 +227,16 @@ export const Dashboard: React.FC = () => {
 
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold">Teacher Dashboard</h1>
-            <p className="text-xs text-zinc-500">Class, subject and parent-alert overview</p>
-          </div>
-          <Badge variant="info">{teacher?.classId ? classes.find(c => c.id === teacher.classId)?.name : 'Unassigned Class'}</Badge>
+        <PageHeader
+          title="Teacher Dashboard"
+          subtitle="Class, subject and parent-alert overview"
+          actions={<Badge variant="info">{teacher?.classId ? classes.find(c => c.id === teacher.classId)?.name : 'Unassigned Class'}</Badge>}
+        />
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <Card className="border-l-4 border-l-rose-500"><p className="micro-label text-rose-600">Critical: Active Incidents</p><p className="text-xl font-bold text-rose-600">{activeIssues}</p></Card>
+          <Card className="border-l-4 border-l-amber-500"><p className="micro-label text-amber-600">Critical: Below 50%</p><p className="text-xl font-bold text-amber-600">{teacherResults.filter(r => r.marks < 50).length}</p></Card>
+          <Card className="border-l-4 border-l-blue-500"><p className="micro-label text-blue-600">Critical: Fee Balance</p><p className="text-xl font-bold text-blue-600">{formatCurrency(classBalance)}</p></Card>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -203,9 +274,10 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Admin Overview</h1>
-        <div className="flex gap-2">
+      <PageHeader
+        title="Admin Overview"
+        subtitle="School-wide operations, compliance, and financial control"
+        actions={<div className="flex gap-2">
           <Button variant={showFinancials ? 'secondary' : 'outline'} className="h-8 text-[10px]" onClick={() => { const next = !showFinancials; setShowFinancials(next); toggleWidget('dashboard_widget_financials', next); }}>
             {showFinancials ? 'Hide Financials' : 'Show Financials'}
           </Button>
@@ -214,7 +286,22 @@ export const Dashboard: React.FC = () => {
           </Button>
           <Button variant="ghost" className="h-8 text-[10px]">Export Report</Button>
           <Button className="h-8 text-[10px]">New Entry</Button>
-        </div>
+        </div>}
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <Card className="border-l-4 border-l-rose-500">
+          <p className="micro-label text-rose-600">Critical: Active Discipline Cases</p>
+          <p className="text-xl font-bold text-rose-600">{suspensions.filter(s => s.status === 'ACTIVE').length}</p>
+        </Card>
+        <Card className="border-l-4 border-l-amber-500">
+          <p className="micro-label text-amber-600">Critical: Unsettled Fees</p>
+          <p className="text-xl font-bold text-amber-600">{fees.filter(f => f.status !== 'PAID').length} records</p>
+        </Card>
+        <Card className="border-l-4 border-l-blue-500">
+          <p className="micro-label text-blue-600">Critical: High Priority Alerts</p>
+          <p className="text-xl font-bold text-blue-600">{adminNotifications.filter(n => n.priority === 'HIGH').length}</p>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

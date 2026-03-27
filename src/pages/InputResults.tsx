@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
-import { Card, Table, Button, Badge } from '../components/UI';
+import { Card, Table, Button, Badge, PageHeader } from '../components/UI';
 import { Save, Upload } from 'lucide-react';
 
 export const InputResults: React.FC = () => {
   const { user } = useAuth();
-  const { students, results, updateResult, addResult, teachers, getResultWorkflowStatus, setResultWorkflowStatus, calculateGrade } = useApp();
+  const { students, results, updateResult, addResult, teachers, getResultWorkflowStatus, setResultWorkflowStatus, calculateGrade, gradingSystem } = useApp();
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [selectedTerm, setSelectedTerm] = useState('Term 1');
   const [selectedYear, setSelectedYear] = useState(2024);
@@ -148,19 +148,18 @@ export const InputResults: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold">Input Results</h1>
-          <p className="text-xs text-zinc-500">Record academic performance and teacher remarks</p>
-        </div>
-        <Button onClick={handleSave} disabled={!selectedStudentId}>
+      <PageHeader
+        title="Input Results"
+        subtitle="Record academic performance and teacher remarks"
+        actions={<Button onClick={handleSave} disabled={!selectedStudentId}>
           <Save size={14} /> Save All
-        </Button>
-      </div>
+        </Button>}
+      />
 
       <Card>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="info">Workflow: {workflowStatus}</Badge>
+          <Badge variant="neutral">System: {gradingSystem}</Badge>
           {user?.role === 'TEACHER' && workflowStatus === 'DRAFT' && (
             <Button variant="outline" onClick={() => updateWorkflowStatus('TEACHER_SUBMITTED')}>Submit to HOD</Button>
           )}
@@ -178,9 +177,9 @@ export const InputResults: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="space-y-1">
-          <label className="text-[10px] font-bold uppercase text-zinc-400">Student</label>
+          <label className="form-label">Student</label>
           <select 
-            className="w-full bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs outline-none"
+            className="form-control"
             value={selectedStudentId}
             onChange={(e) => setSelectedStudentId(e.target.value)}
           >
@@ -191,9 +190,9 @@ export const InputResults: React.FC = () => {
           </select>
         </div>
         <div className="space-y-1">
-          <label className="text-[10px] font-bold uppercase text-zinc-400">Term</label>
+          <label className="form-label">Term</label>
           <select 
-            className="w-full bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs outline-none"
+            className="form-control"
             value={selectedTerm}
             onChange={(e) => setSelectedTerm(e.target.value)}
           >
@@ -203,9 +202,9 @@ export const InputResults: React.FC = () => {
           </select>
         </div>
         <div className="space-y-1">
-          <label className="text-[10px] font-bold uppercase text-zinc-400">Year</label>
+          <label className="form-label">Year</label>
           <select 
-            className="w-full bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs outline-none"
+            className="form-control"
             value={selectedYear}
             onChange={(e) => setSelectedYear(Number(e.target.value))}
           >

@@ -60,9 +60,11 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, logout, isDarkMode, toggleDarkMode, switchRole } = useAuth();
-  const { getNotificationsForUser, markNotificationRead } = useApp();
+  const { getNotificationsForUser, markNotificationRead, markAllNotificationsRead } = useApp();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [quietHoursEnabled, setQuietHoursEnabled] = useState(() => localStorage.getItem('quiet_hours_enabled') === '1');
+  const [quietHoursRange, setQuietHoursRange] = useState(() => localStorage.getItem('quiet_hours_range') || '22:00-06:00');
   const [toasts, setToasts] = useState<Array<{ id: string; title: string; message: string; link?: string }>>([]);
   const location = useLocation();
   const navigate = useNavigate();
@@ -74,10 +76,27 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const notifications = getNotificationsForUser(user.id, user.role);
   const unreadCount = notifications.filter(n => !n.readBy.includes(user.id)).length;
 
+  const isWithinQuietHours = () => {
+    if (!quietHoursEnabled) return false;
+    const [start, end] = quietHoursRange.split('-');
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const [startH, startM] = start.split(':').map(Number);
+    const [endH, endM] = end.split(':').map(Number);
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+
+    if (startMinutes < endMinutes) {
+      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+    }
+    return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+  };
+
   useEffect(() => {
     const unread = notifications.find((notification) => !notification.readBy.includes(user.id));
     if (!unread) return;
     if (lastToastNotificationRef.current === unread.id) return;
+    if (isWithinQuietHours()) return;
 
     lastToastNotificationRef.current = unread.id;
     setToasts((prev) => [...prev, { id: unread.id, title: unread.title, message: unread.message, link: unread.link }].slice(-3));
@@ -214,7 +233,33 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               </button>
               {isNotificationsOpen && (
                 <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-xl shadow-lg p-2 z-50">
-                  <p className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 px-2 py-1">Notifications</p>
+                  <div className="flex items-center justify-between px-2 py-1">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-zinc-400">Notifications</p>
+                    <button className="text-[10px] text-zinc-500 hover:text-zinc-700" onClick={() => markAllNotificationsRead(user.id, user.role)}>Mark all read</button>
+                  </div>
+                  <div className="px-2 py-1 text-[10px] text-zinc-500 flex items-center gap-2">
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={quietHoursEnabled}
+                        onChange={(e) => {
+                          const next = e.target.checked;
+                          setQuietHoursEnabled(next);
+                          localStorage.setItem('quiet_hours_enabled', next ? '1' : '0');
+                        }}
+                      />
+                      Quiet Hours
+                    </label>
+                    <input
+                      type="text"
+                      value={quietHoursRange}
+                      onChange={(e) => {
+                        setQuietHoursRange(e.target.value);
+                        localStorage.setItem('quiet_hours_range', e.target.value);
+                      }}
+                      className="w-24 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded px-1 py-0.5"
+                    />
+                  </div>
                   <div className="max-h-80 overflow-y-auto space-y-1">
                     {notifications.length === 0 && (
                       <p className="text-xs text-zinc-500 px-2 py-3">No notifications yet.</p>
@@ -236,7 +281,12 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                             unread ? "bg-blue-50 dark:bg-blue-900/20" : "hover:bg-gray-50 dark:hover:bg-zinc-800"
                           )}
                         >
-                          <p className="text-xs font-bold">{notification.title}</p>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-bold">{notification.title}</p>
+                            <span className={cn("text-[9px] px-1.5 py-0.5 rounded uppercase font-bold", notification.priority === 'HIGH' ? 'bg-rose-100 text-rose-600' : notification.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600')}>
+                              {notification.priority}
+                            </span>
+                          </div>
                           <p className="text-[10px] text-zinc-500 line-clamp-2">{notification.message}</p>
                         </button>
                       );

@@ -111,6 +111,7 @@ export interface SchoolEvent {
 export interface NotificationItem {
   id: string;
   type: 'EVENT' | 'ANNOUNCEMENT' | 'RSVP' | 'SYSTEM';
+  priority: 'LOW' | 'MEDIUM' | 'HIGH';
   title: string;
   message: string;
   createdAt: string;

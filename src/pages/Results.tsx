@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
-import { Card, Table, Badge, Button } from '../components/UI';
+import { Card, Table, Badge, Button, PageHeader } from '../components/UI';
 import { TrendingUp, TrendingDown, Download, Save, User as UserIcon, Minus } from 'lucide-react';
 import { cn } from '../utils/utils';
+import { jsPDF } from 'jspdf';
 
 const ALL_SUBJECTS = [
   'Mathematics', 'English', 'Swahili', 'Geography', 'History', 
@@ -12,7 +13,7 @@ const ALL_SUBJECTS = [
 
 export const Results: React.FC = () => {
   const { user } = useAuth();
-  const { results, students, updateResult, addResult, getResultWorkflowStatus, setResultWorkflowStatus, gradingSystem, setGradingSystem, calculateGrade } = useApp();
+  const { results, students, classes, updateResult, addResult, getResultWorkflowStatus, setResultWorkflowStatus, gradingSystem, setGradingSystem, calculateGrade } = useApp();
   const [selectedYear, setSelectedYear] = useState<number | 'ALL'>(2024);
   const [selectedTerm, setSelectedTerm] = useState('All Terms');
   const [selectedForm, setSelectedForm] = useState<'ALL' | 'FORM_1' | 'FORM_2' | 'FORM_3' | 'FORM_4'>('ALL');
@@ -146,6 +147,140 @@ export const Results: React.FC = () => {
     setIsEditing(false);
   };
 
+  const downloadPdfReport = () => {
+    if (!student) return;
+
+    const classInfo = classes.find((c) => c.id === student.classId);
+    const reportTerm = selectedTerm === 'All Terms' ? 'All Terms' : selectedTerm;
+    const reportYearLabel = selectedYear === 'ALL' ? 'All Years' : String(selectedYear);
+    const reportRows = allStudentResults
+      .filter((r) => selectedTerm === 'All Terms' || r.term === selectedTerm)
+      .sort((a, b) => {
+        if (a.subject === b.subject) {
+          const termOrder = ['Term 1', 'Term 2', 'Term 3'];
+          return termOrder.indexOf(a.term) - termOrder.indexOf(b.term);
+        }
+        return a.subject.localeCompare(b.subject);
+      });
+
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginX = 14;
+
+    doc.setFillColor(245, 248, 250);
+    doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+    // Vector logo mark to avoid dependency on external image files.
+    doc.setFillColor(14, 116, 144);
+    doc.circle(marginX + 8, 16, 6, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(8);
+    doc.text('SR', marginX + 8, 17, { align: 'center' });
+
+    doc.setTextColor(20, 23, 28);
+    doc.setFontSize(14);
+    doc.text('School Results System', marginX + 18, 13);
+    doc.setFontSize(10);
+    doc.setTextColor(82, 90, 102);
+    doc.text('Academic Report Form', marginX + 18, 18);
+
+    doc.setDrawColor(210, 214, 220);
+    doc.line(marginX, 24, pageWidth - marginX, 24);
+
+    doc.setFontSize(9);
+    doc.setTextColor(32, 36, 42);
+    doc.text(`Student: ${student.name}`, marginX, 32);
+    doc.text(`Admission No: ${student.admissionNumber}`, marginX, 37);
+    doc.text(`Class: ${classInfo?.name || student.classId}`, marginX, 42);
+    doc.text(`Form: ${student.formLevel.replace('_', ' ')}`, marginX, 47);
+
+    doc.text(`Year: ${reportYearLabel}`, pageWidth / 2 + 8, 32);
+    doc.text(`Term: ${reportTerm}`, pageWidth / 2 + 8, 37);
+    doc.text(`Grading: ${gradingSystem}`, pageWidth / 2 + 8, 42);
+    doc.text(`Generated: ${new Date().toLocaleDateString()}`, pageWidth / 2 + 8, 47);
+
+    doc.setDrawColor(210, 214, 220);
+    doc.line(marginX, 52, pageWidth - marginX, 52);
+
+    let y = 60;
+    const rowHeight = 7;
+    const colSubject = marginX;
+    const colTerm = marginX + 70;
+    const colMarks = marginX + 98;
+    const colGrade = marginX + 120;
+    const colRemarks = marginX + 142;
+
+    doc.setFontSize(9);
+    doc.setTextColor(23, 27, 34);
+    doc.text('Subject', colSubject, y);
+    doc.text('Term', colTerm, y);
+    doc.text('Marks', colMarks, y);
+    doc.text('Grade', colGrade, y);
+    doc.text('Remarks', colRemarks, y);
+    y += 3;
+    doc.line(marginX, y, pageWidth - marginX, y);
+    y += 4;
+
+    if (reportRows.length === 0) {
+      doc.setTextColor(120, 126, 136);
+      doc.text('No results available for the selected filters.', marginX, y + 2);
+      y += 10;
+    } else {
+      reportRows.forEach((row) => {
+        if (y > pageHeight - 20) {
+          doc.addPage();
+          doc.setFillColor(245, 248, 250);
+          doc.rect(0, 0, pageWidth, pageHeight, 'F');
+          y = 20;
+        }
+
+        const remark = row.remarks || '-';
+        const shortRemark = remark.length > 38 ? `${remark.slice(0, 38)}...` : remark;
+
+        doc.setTextColor(35, 41, 49);
+        doc.text(row.subject, colSubject, y);
+        doc.text(row.term, colTerm, y);
+        doc.text(`${row.marks}%`, colMarks, y);
+        doc.text(row.grade, colGrade, y);
+        doc.text(shortRemark, colRemarks, y);
+        y += rowHeight;
+      });
+    }
+
+    const subjectAverages = ALL_SUBJECTS.map((subject) => {
+      const entries = reportRows.filter((r) => r.subject === subject);
+      if (entries.length === 0) return null;
+      const avg = entries.reduce((acc, r) => acc + r.marks, 0) / entries.length;
+      return avg;
+    }).filter((value): value is number => value !== null);
+
+    const overallAverage = subjectAverages.length > 0
+      ? subjectAverages.reduce((acc, value) => acc + value, 0) / subjectAverages.length
+      : 0;
+
+    const overallGrade = calculateGrade(overallAverage);
+    if (y > pageHeight - 28) {
+      doc.addPage();
+      doc.setFillColor(245, 248, 250);
+      doc.rect(0, 0, pageWidth, pageHeight, 'F');
+      y = 20;
+    }
+
+    doc.line(marginX, y + 2, pageWidth - marginX, y + 2);
+    doc.setFontSize(10);
+    doc.setTextColor(20, 24, 30);
+    doc.text(`Overall Mean: ${overallAverage.toFixed(1)}%`, marginX, y + 10);
+    doc.text(`Overall Grade: ${overallGrade}`, marginX + 70, y + 10);
+
+    doc.setFontSize(8);
+    doc.setTextColor(105, 112, 122);
+    doc.text('Official school report generated from School Results System.', marginX, pageHeight - 10);
+
+    const fileName = `${student.name.replace(/\s+/g, '_')}_${reportYearLabel}_${reportTerm}_Report.pdf`;
+    doc.save(fileName);
+  };
+
   const updateWorkflowStatus = (status: 'DRAFT' | 'TEACHER_SUBMITTED' | 'HOD_APPROVED' | 'DOS_APPROVED' | 'FINALIZED') => {
     setWorkflowStatus(status);
     if (selectedStudentId) {
@@ -158,17 +293,15 @@ export const Results: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold">Academic Performance</h1>
-          <p className="text-xs text-zinc-500">Comprehensive view of all terms and subjects</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title="Academic Performance"
+        subtitle="Comprehensive multi-year performance by term, subject, and grading system"
+        actions={<div className="flex items-center gap-2">
           {(user?.role === 'TEACHER' || user?.role === 'ADMIN') && (
             <div className="flex items-center gap-2 mr-4">
               <UserIcon size={14} className="text-zinc-400" />
               <select 
-                className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs outline-none"
+                className="form-control-sm"
                 value={selectedStudentId}
                 onChange={(e) => setSelectedStudentId(e.target.value)}
               >
@@ -180,7 +313,7 @@ export const Results: React.FC = () => {
           )}
           {(user?.role === 'PARENT' || user?.role === 'STUDENT') && (
             <select
-              className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs outline-none"
+              className="form-control-sm"
               value={selectedForm}
               onChange={(e) => setSelectedForm(e.target.value as 'ALL' | 'FORM_1' | 'FORM_2' | 'FORM_3' | 'FORM_4')}
             >
@@ -192,7 +325,7 @@ export const Results: React.FC = () => {
             </select>
           )}
           <select 
-            className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs outline-none"
+            className="form-control-sm"
             value={selectedYear}
             onChange={(e) => setSelectedYear(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))}
           >
@@ -204,7 +337,7 @@ export const Results: React.FC = () => {
             <option value={2023}>2023</option>
           </select>
           <select 
-            className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs outline-none"
+            className="form-control-sm"
             value={selectedTerm}
             onChange={(e) => setSelectedTerm(e.target.value)}
           >
@@ -215,7 +348,7 @@ export const Results: React.FC = () => {
           </select>
           {user?.role === 'ADMIN' && (
             <select
-              className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs outline-none"
+              className="form-control-sm"
               value={gradingSystem}
               onChange={(e) => setGradingSystem(e.target.value as 'KENYAN' | 'BRITISH')}
             >
@@ -227,14 +360,14 @@ export const Results: React.FC = () => {
             <Button 
               variant={isEditing ? "secondary" : "primary"} 
               onClick={isEditing ? handleSave : handleEditToggle}
-              className="h-8 text-[10px]"
+              className="h-8"
             >
               {isEditing ? <><Save size={14} /> Save Changes</> : 'Edit Results'}
             </Button>
           )}
-          <Button variant="outline" className="h-8 text-[10px]"><Download size={14} /> Export PDF</Button>
-        </div>
-      </div>
+          <Button variant="outline" className="h-8" onClick={downloadPdfReport}><Download size={14} /> Export PDF</Button>
+        </div>}
+      />
 
       <Card>
         <div className="flex flex-wrap items-center gap-2">
@@ -252,36 +385,47 @@ export const Results: React.FC = () => {
         </div>
       </Card>
 
+      <Card title="System Legend" subtitle="Kenyan and British grade mappings">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div className="p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/40">
+            <p className="section-title mb-1">Kenyan (KCSE-style)</p>
+            <p>A: 80-100, B: 70-79, C: 60-69, D: 50-59, E: below 50</p>
+          </div>
+          <div className="p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/40">
+            <p className="section-title mb-1">British (GCSE-style)</p>
+            <p>A*: 90+, A: 80+, B: 70+, C: 60+, D: 50+, E: 40+, U: below 40</p>
+          </div>
+        </div>
+      </Card>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {currentRank && (
           <>
-            <Card className="bg-blue-50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-800/20">
-              <p className="text-[10px] font-bold uppercase text-blue-600 dark:text-blue-400 mb-1">Class Position</p>
-              <div className="flex items-baseline gap-2">
-                <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{currentRank.classRank}</p>
-                <p className="text-xs text-blue-600/60 font-medium">out of {currentRank.classTotal}</p>
-              </div>
-            </Card>
-            <Card className="bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-800/20">
-              <p className="text-[10px] font-bold uppercase text-emerald-600 dark:text-emerald-400 mb-1">Form Position</p>
-              <div className="flex items-baseline gap-2">
-                <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{currentRank.formRank}</p>
-                <p className="text-xs text-emerald-600/60 font-medium">out of {currentRank.formTotal}</p>
-              </div>
-            </Card>
-            <Card className="bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-800/20">
-              <p className="text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400 mb-1">Mean Score</p>
-              <div className="flex items-baseline gap-2">
-                <p className="text-2xl font-bold text-amber-700 dark:text-amber-300">{currentRank.averageMarks.toFixed(1)}%</p>
-                <p className="text-xs text-amber-600/60 font-medium">Overall Average</p>
+            <Card className="bg-blue-50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-800/20 md:col-span-2">
+              <p className="micro-label text-blue-600 mb-2">Results Snapshot</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="p-2 rounded bg-white/70 dark:bg-zinc-900/50">
+                  <p className="micro-label text-zinc-500">Class Position</p>
+                  <p className="text-xl font-bold text-blue-700 dark:text-blue-300">{currentRank.classRank}/{currentRank.classTotal}</p>
+                </div>
+                <div className="p-2 rounded bg-white/70 dark:bg-zinc-900/50">
+                  <p className="micro-label text-zinc-500">Form Position</p>
+                  <p className="text-xl font-bold text-emerald-700 dark:text-emerald-300">{currentRank.formRank}/{currentRank.formTotal}</p>
+                </div>
+                <div className="p-2 rounded bg-white/70 dark:bg-zinc-900/50">
+                  <p className="micro-label text-zinc-500">Mean Score</p>
+                  <p className="text-xl font-bold text-amber-700 dark:text-amber-300">{currentRank.averageMarks.toFixed(1)}%</p>
+                </div>
+                <div className="p-2 rounded bg-white/70 dark:bg-zinc-900/50">
+                  <p className="micro-label text-zinc-500">Projected Grade</p>
+                  <p className="text-xl font-bold text-violet-700 dark:text-violet-300">{getMeanGrade(currentRank.averageMarks)}</p>
+                </div>
               </div>
             </Card>
             <Card className="bg-violet-50 dark:bg-violet-900/10 border-violet-100 dark:border-violet-800/20">
-              <p className="text-[10px] font-bold uppercase text-violet-600 dark:text-violet-400 mb-1">{gradingSystem === 'KENYAN' ? 'KCSE Projection' : 'British Projection'}</p>
-              <div className="flex items-baseline gap-2">
-                <p className="text-2xl font-bold text-violet-700 dark:text-violet-300">{getMeanGrade(currentRank.averageMarks)}</p>
-                <p className="text-xs text-violet-600/60 font-medium">{gradingSystem === 'KENYAN' ? `${getKcsePoints(getMeanGrade(currentRank.averageMarks))} points` : 'GCSE style band'}</p>
-              </div>
+              <p className="micro-label text-violet-600 mb-1">Current Grading System</p>
+              <p className="text-2xl font-bold text-violet-700 dark:text-violet-300">{gradingSystem}</p>
+              <p className="text-xs text-violet-700/70 mt-1">{gradingSystem === 'KENYAN' ? `${getKcsePoints(getMeanGrade(currentRank.averageMarks))} points projection` : 'GCSE-style projection active'}</p>
             </Card>
           </>
         )}
