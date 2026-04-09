@@ -9,7 +9,7 @@ export const api = {
   async getStudents(schoolId: string): Promise<Student[]> {
     const { data, error } = await supabase
       .from('students')
-      .select('*, profile:profiles!students_id_fkey(*), stream:streams!students_stream_id_fkey(*, class:classes!streams_class_id_fkey(*))')
+      .select('*, profile:profiles!students_id_fkey(*)')
       .eq('school_id', schoolId);
     
     if (error) {
@@ -184,5 +184,79 @@ export const api = {
       .eq('student_id', studentId);
     if (error) throw error;
     return data;
+  },
+
+  // 7. PRINCIPAL MANAGEMENT
+  async getStreamsWithDetails(schoolId: string) {
+    const { data, error } = await supabase
+      .from('streams')
+      .select('*, class:classes!streams_class_id_fkey(*), teacher:profiles!streams_class_teacher_id_fkey(*), students(count)')
+      .eq('school_id', schoolId);
+    if (error) throw error;
+    return data;
+  },
+
+  async updateStreamTeacher(streamId: string, teacherId: string) {
+    const { data, error } = await supabase
+      .from('streams')
+      .update({ class_teacher_id: teacherId })
+      .eq('id', streamId);
+    if (error) throw error;
+    return data;
+  },
+
+  async getFeesFull(schoolId: string) {
+    const { data, error } = await supabase
+      .from('fees')
+      .select('*, student:students!fees_student_id_fkey(*, profile:profiles!students_id_fkey(*)), term:terms!fees_term_id_fkey(*)')
+      .eq('school_id', schoolId)
+      .order('payment_date', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  async setGlobalFees(schoolId: string, amount: number) {
+    const currentTerm = await this.getLatestTerm(schoolId);
+    const { data, error } = await supabase
+      .from('fees')
+      .update({ amount_due: amount })
+      .eq('school_id', schoolId)
+      .eq('term_id', currentTerm.id);
+    if (error) throw error;
+    return data;
+  },
+
+  async getLatestTerm(schoolId: string) {
+    const { data, error } = await supabase
+       .from('terms')
+       .select('*')
+       .eq('school_id', schoolId)
+       .order('year', { ascending: false })
+       .order('end_date', { ascending: false })
+       .limit(1)
+       .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async getDisciplinarySchoolWide(schoolId: string) {
+    const { data, error } = await supabase
+      .from('disciplinary_records')
+      .select('*, student:students!disciplinary_records_student_id_fkey(*, profile:profiles!students_id_fkey(*))')
+      .eq('school_id', schoolId)
+      .order('incident_date', { ascending: false })
+      .limit(10);
+    if (error) throw error;
+    return data;
+  },
+
+  async getHealthSchoolWide(schoolId: string) {
+    const { data, error } = await supabase
+      .from('student_health')
+      .select('*, student:students!student_health_student_id_fkey(school_id, profile:profiles!students_id_fkey(*))')
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return (data || []).filter((h: any) => h.student?.school_id === schoolId).slice(0, 10);
   }
 };

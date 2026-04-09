@@ -1,121 +1,167 @@
-import React, { useState } from 'react';
-import { useApp } from '../context/AppContext';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { api } from '../lib/api';
 import { Card, Table, Button, Badge, Modal } from '../components/UI';
-import { Search, Plus, Save, Trash2, Edit, BookOpen } from 'lucide-react';
+import { Search, Plus, Save, Edit, Users, School } from 'lucide-react';
 
 export const ClassesManagement: React.FC = () => {
-  const { classes, teachers, students } = useApp();
+  const { user } = useAuth();
+  const [streams, setStreams] = useState<any[]>([]);
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    teacherId: ''
-  });
+  const [editingStream, setEditingStream] = useState<any | null>(null);
+  const [selectedTeacherId, setSelectedTeacherId] = useState('');
 
-  const filteredClasses = classes.filter(c => 
-    c.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // In a real app we'd have addClass/updateClass in context
-    // For now we'll just close the modal
-    setIsModalOpen(false);
-    setEditingId(null);
-    setFormData({ name: '', teacherId: '' });
+  const fetchClassesData = async () => {
+    if (!user?.school_id) return;
+    try {
+      const [streamsData, teachersData] = await Promise.all([
+        api.getStreamsWithDetails(user.school_id),
+        api.getTeachers(user.school_id)
+      ]);
+      setStreams(streamsData || []);
+      setTeachers(teachersData || []);
+    } catch (error) {
+      console.error('Failed to fetch class data:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleEdit = (c: any) => {
-    setEditingId(c.id);
-    setFormData({ ...c });
+  useEffect(() => {
+    fetchClassesData();
+  }, [user?.school_id]);
+
+  const filteredStreams = streams.filter(s => 
+    `${s.class?.name} ${s.name}`.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const handleEdit = (s: any) => {
+    setEditingStream(s);
+    setSelectedTeacherId(s.class_teacher_id || '');
     setIsModalOpen(true);
   };
 
+  const handleUpdateTeacher = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStream) return;
+    try {
+      await api.updateStreamTeacher(editingStream.id, selectedTeacherId);
+      await fetchClassesData();
+      setIsModalOpen(false);
+    } catch (error) {
+      alert('Failed to update class teacher');
+    }
+  };
+
+  if (loading) return (
+    <div className="min-h-[60vh] flex flex-col items-center justify-center space-y-4">
+      <div className="w-12 h-12 border-4 border-zinc-100 border-t-zinc-900 rounded-full animate-spin" />
+      <p className="text-sm text-zinc-500 font-medium">Loading classes...</p>
+    </div>
+  );
+
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="max-w-7xl mx-auto space-y-10 py-6 animate-in fade-in duration-700">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-2">
         <div>
-          <h1 className="text-2xl font-bold">Manage Classes</h1>
-          <p className="text-gray-500 dark:text-zinc-400">Organize students and assign class teachers</p>
+          <h1 className="text-4xl font-semibold tracking-tight text-zinc-900">Classes</h1>
+          <p className="text-zinc-500 mt-2 font-medium">Manage student groups and teacher assignments</p>
         </div>
-        <Button onClick={() => setIsModalOpen(true)}><Plus size={18} /> Create Class</Button>
+        <Button className="rounded-2xl px-6 py-6 h-auto bg-zinc-900 hover:bg-zinc-800 shadow-xl shadow-zinc-200/50">
+          <Plus size={20} className="mr-2" /> New Class
+        </Button>
       </div>
 
-      <Card>
-        <div className="flex items-center gap-4 mb-6">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Search classes..." 
-              className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50 outline-none focus:ring-2 focus:ring-blue-500"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+      <div className="grid grid-cols-1 gap-8">
+        <Card className="border-zinc-100/80 shadow-sm rounded-[2rem] overflow-hidden p-0 bg-white">
+          <div className="p-8 border-b border-zinc-50 flex items-center gap-4 bg-zinc-50/30">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+              <input 
+                type="text" 
+                placeholder="Search by class or stream name..." 
+                className="w-full pl-12 pr-4 py-4 rounded-2xl border border-transparent bg-white shadow-sm text-zinc-600 placeholder:text-zinc-400 outline-none focus:ring-2 focus:ring-zinc-100 transition-all"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
           </div>
+
+          <div className="overflow-x-auto">
+            <Table headers={['Level', 'Stream', 'Class Teacher', 'Students', 'Actions']}>
+              {filteredStreams.map(s => (
+                <tr key={s.id} className="group hover:bg-zinc-50/50 transition-colors">
+                  <td className="px-8 py-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-zinc-50 group-hover:bg-white rounded-2xl shadow-sm flex items-center justify-center text-zinc-900 transition-colors border border-zinc-100">
+                        <School size={20} />
+                      </div>
+                      <span className="font-semibold text-zinc-900 text-lg">Form {s.class?.level}</span>
+                    </div>
+                  </td>
+                  <td className="px-8 py-6">
+                     <div className="inline-flex items-center px-4 py-1.5 rounded-full bg-zinc-100 text-zinc-700 text-sm font-semibold border border-zinc-200/50">
+                       {s.name}
+                     </div>
+                  </td>
+                  <td className="px-8 py-6">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-zinc-100 border border-zinc-200/50 flex items-center justify-center text-zinc-500 font-bold text-xs shadow-inner">
+                        {s.teacher?.full_name?.charAt(0) || '?'}
+                      </div>
+                      <span className="text-zinc-700 font-medium">{s.teacher?.full_name || 'Unassigned'}</span>
+                    </div>
+                  </td>
+                  <td className="px-8 py-6">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-200" />
+                      <span className="text-zinc-900 font-bold text-lg">{s.students?.[0]?.count || 0}</span>
+                      <span className="text-zinc-400 font-medium text-sm">Students</span>
+                    </div>
+                  </td>
+                  <td className="px-8 py-6 text-right">
+                    <Button variant="ghost" className="h-10 px-4 rounded-xl hover:bg-white hover:shadow-md transition-all border border-transparent hover:border-zinc-100" onClick={() => handleEdit(s)}>
+                      <Edit size={18} className="text-zinc-400 group-hover:text-zinc-900 transition-colors" />
+                      <span className="ml-2 text-zinc-500 group-hover:text-zinc-900 font-medium">Edit</span>
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </Table>
+          </div>
+        </Card>
+      </div>
+
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Change Class Teacher">
+        <div className="space-y-6">
+          <div className="p-6 bg-zinc-50 rounded-[1.5rem] border border-zinc-100/50">
+             <p className="text-xs text-zinc-400 font-semibold mb-1 uppercase tracking-wider">Current Selection</p>
+             <p className="text-xl font-bold text-zinc-900">Form {editingStream?.class?.level} - {editingStream?.name}</p>
+          </div>
+          
+          <form onSubmit={handleUpdateTeacher} className="space-y-6">
+            <div>
+              <label className="block text-sm font-semibold text-zinc-700 mb-2 ml-1">New Class Teacher</label>
+              <select 
+                className="w-full px-5 py-4 rounded-2xl border border-zinc-200 bg-white text-zinc-800 shadow-sm outline-none focus:ring-2 focus:ring-zinc-100 transition-all appearance-none"
+                value={selectedTeacherId}
+                onChange={(e) => setSelectedTeacherId(e.target.value)}
+                required
+              >
+                <option value="">Select a teacher...</option>
+                {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+              </select>
+            </div>
+            
+            <div className="pt-4 flex gap-3">
+              <Button variant="outline" className="flex-1 py-4 border-2 rounded-2xl font-semibold" type="button" onClick={() => setIsModalOpen(false)}>Cancel</Button>
+              <Button type="submit" className="flex-2 py-4 rounded-2xl bg-zinc-900 shadow-xl shadow-zinc-200 font-semibold px-8"><Save size={18} className="mr-2" /> Update Assignment</Button>
+            </div>
+          </form>
         </div>
-
-        <Table headers={['Class Name', 'Class Teacher', 'Students Count', 'Actions']}>
-          {filteredClasses.map(c => (
-            <tr key={c.id}>
-              <td className="px-4 py-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-blue-600">
-                    <BookOpen size={20} />
-                  </div>
-                  <span className="font-bold">{c.name}</span>
-                </div>
-              </td>
-              <td className="px-4 py-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 bg-gray-100 dark:bg-zinc-800 rounded-full flex items-center justify-center text-[10px] font-bold">
-                    {teachers.find(t => t.id === c.teacherId)?.name.charAt(0)}
-                  </div>
-                  <span className="text-sm">{teachers.find(t => t.id === c.teacherId)?.name || 'Unassigned'}</span>
-                </div>
-              </td>
-              <td className="px-4 py-4">
-                <Badge variant="neutral">{students.filter(s => s.classId === c.id).length} Students</Badge>
-              </td>
-              <td className="px-4 py-4">
-                <div className="flex gap-2">
-                  <Button variant="ghost" className="p-2 h-auto" onClick={() => handleEdit(c)}><Edit size={16} /></Button>
-                  <Button variant="ghost" className="p-2 h-auto text-red-500"><Trash2 size={16} /></Button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </Table>
-      </Card>
-
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingId ? "Edit Class" : "Create New Class"}>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-semibold mb-1">Class Name</label>
-            <input 
-              type="text" 
-              className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="e.g. Form 4 East"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold mb-1">Assign Class Teacher</label>
-            <select 
-              className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none"
-              value={formData.teacherId}
-              onChange={(e) => setFormData({ ...formData, teacherId: e.target.value })}
-              required
-            >
-              <option value="">Select a teacher...</option>
-              {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-          </div>
-          <Button type="submit" className="w-full py-4 mt-4"><Save size={18} /> {editingId ? "Update Class" : "Create Class"}</Button>
-        </form>
       </Modal>
     </div>
   );

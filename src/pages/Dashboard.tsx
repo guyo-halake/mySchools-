@@ -1,254 +1,200 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useApp } from '../context/AppContext';
-import { Card, Badge, Table, Button } from '../components/UI';
+import { api } from '../lib/api';
+import { Badge, Table, Button } from '../components/UI';
 import { 
-  TrendingUp, 
-  TrendingDown, 
-  Calendar, 
+  Users, 
   CreditCard, 
-  AlertCircle, 
-  User as UserIcon,
-  ArrowRight,
-  Plus,
-  Bell,
-  Users,
-  ShieldCheck,
-  FileText,
-  BookOpen
+  MessageSquare, 
+  Calendar,
+  Activity,
+  ArrowUpRight,
+  Target,
+  Stethoscope,
+  ShieldAlert,
+  BarChart3
 } from 'lucide-react';
-import { formatCurrency, formatDate, cn } from '../utils/utils';
+import { formatCurrency } from '../utils/utils';
+import { motion } from 'motion/react';
+import { Link } from 'react-router-dom';
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
-  const { students, results, events, fees, suspensions, teachers, announcements, classes } = useApp();
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  if (user?.role === 'PARENT' || user?.role === 'STUDENT') {
-    const student = students.find(s => s.id === user.studentId) || students[0];
-    const allStudentResults = results.filter(r => r.studentId === student.id);
-    
-    // Find the most recent term that has results
-    const termsOrder = ['Term 3', 'Term 2', 'Term 1'];
-    const latestTerm = termsOrder.find(t => allStudentResults.some(r => r.term === t)) || 'Term 3';
-    const studentResults = allStudentResults.filter(r => r.term === latestTerm);
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      if (!user?.school_id) return;
+      try {
+        const [students, teachers, fees, results, events, discipline, health] = await Promise.all([
+          api.getStudents(user.school_id),
+          api.getTeachers(user.school_id),
+          api.getFeesFull(user.school_id),
+          api.getResults(user.school_id),
+          api.getEvents(user.school_id),
+          api.getDisciplinarySchoolWide(user.school_id),
+          api.getHealthSchoolWide(user.school_id)
+        ]);
+        setData({ students, teachers, fees, results, events, discipline, health });
+      } catch (error) {
+        console.error('Fetch error:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDashboardData();
+  }, [user?.school_id]);
 
-    const studentFees = fees.filter(f => f.studentId === student.id);
-    const balance = studentFees.reduce((acc, f) => acc + (f.amount - f.paid), 0);
-    
-    const { getStudentRank } = useApp();
-    const rank = getStudentRank(student.id, latestTerm, 2024);
+  if (loading || !data) return (
+    <div className="flex h-[60vh] items-center justify-center">
+      <div className="h-4 w-4 animate-ping rounded-full bg-zinc-200" />
+    </div>
+  );
 
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Dashboard</h1>
-          <Badge variant="info">{user.role}</Badge>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          <Card className="md:col-span-2">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-lg font-bold">
-                {student.profile?.full_name ? student.profile.full_name.split(' ').map(n => n[0]).join('') : '??'}
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm font-bold">{student.profile?.full_name}</p>
-                <p className="text-[10px] text-zinc-500">Adm: {student.adm_no} • Class: {student.stream?.class?.name} {student.stream?.name}</p>
-                <p className="text-[10px] text-zinc-500">Teacher: {student.stream?.teacher?.full_name || 'Mr. Kamau'}</p>
-              </div>
-            </div>
-          </Card>
-          
-          <Card>
-            <p className="text-[10px] font-bold uppercase text-zinc-400 mb-1">Fee Balance</p>
-            <p className={`text-lg font-bold ${balance > 0 ? 'text-red-500' : 'text-green-500'}`}>
-              Ksh {balance.toLocaleString()}
-            </p>
-          </Card>
-
-          <Card>
-            <p className="text-[10px] font-bold uppercase text-zinc-400 mb-1">Class Position</p>
-            <div className="flex items-baseline gap-1">
-              <p className="text-lg font-bold text-blue-600">{rank.classRank}</p>
-              <p className="text-[10px] text-zinc-400">out of {rank.classTotal}</p>
-            </div>
-          </Card>
-
-          <Card>
-            <p className="text-[10px] font-bold uppercase text-zinc-400 mb-1">Form Position</p>
-            <div className="flex items-baseline gap-1">
-              <p className="text-lg font-bold text-emerald-600">{rank.formRank}</p>
-              <p className="text-[10px] text-zinc-400">out of {rank.formTotal}</p>
-            </div>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <h2 className="text-xs font-bold uppercase text-zinc-400 tracking-wider">Recent Results</h2>
-            <Card>
-              <Table headers={['Subject', 'Marks', 'Grade']}>
-                {studentResults.map(r => (
-                  <tr key={r.id}>
-                    <td className="px-3 py-2 text-xs">{r.subject}</td>
-                    <td className="px-3 py-2 text-xs font-mono">{r.marks}</td>
-                    <td className="px-3 py-2">
-                      <Badge variant={r.grade === 'A' ? 'success' : 'neutral'}>{r.grade}</Badge>
-                    </td>
-                  </tr>
-                ))}
-              </Table>
-            </Card>
-          </div>
-
-          <div className="space-y-4">
-            <h2 className="text-xs font-bold uppercase text-zinc-400 tracking-wider">Upcoming Events</h2>
-            <div className="space-y-2">
-              {events.map(e => (
-                <Card key={e.id} className="p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded bg-zinc-50 dark:bg-zinc-800 flex flex-col items-center justify-center">
-                      <span className="text-[8px] font-bold uppercase">{new Date(e.date).toLocaleString('default', { month: 'short' })}</span>
-                      <span className="text-xs font-bold">{new Date(e.date).getDate()}</span>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold">{e.title}</p>
-                      <p className="text-[10px] text-zinc-500">{e.location}</p>
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Teacher/Admin View
-  const totalFees = fees.reduce((acc, f) => acc + f.paid, 0);
-  const totalExpected = fees.reduce((acc, f) => acc + f.amount, 0);
-  const collectionRate = totalExpected > 0 ? (totalFees / totalExpected) * 100 : 0;
+  const termFeesCollected = data.fees.reduce((acc: number, f: any) => acc + (f.amount_paid || 0), 0);
+  const studentsWithArrears = data.fees.filter((f: any) => (f.amount_due - f.amount_paid) > 0).length;
   
-  const passRate = results.length > 0 
-    ? (results.filter(r => r.marks >= 50).length / results.length) * 100 
-    : 0;
+  const gradeCounts = data.results.reduce((acc: any, r: any) => {
+    acc[r.grade] = (acc[r.grade] || 0) + 1;
+    return acc;
+  }, { 'A': 0, 'B': 0, 'C': 0, 'D': 0, 'E': 0 });
+
+  const recentActivity = [
+    ...data.events.map((e: any) => ({ ...e, type: 'Event', date: e.date })),
+    ...data.discipline.map((d: any) => ({ ...d, type: 'Discipline', date: d.incident_date })),
+    ...data.health.map((h: any) => ({ ...h, type: 'Health', date: h.created_at }))
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 6);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Overview</h1>
-        <div className="flex gap-2">
-          <Button variant="ghost" className="h-8 text-[10px]">Export Report</Button>
-          <Button className="h-8 text-[10px]">New Entry</Button>
+    <div className="mx-auto max-w-5xl py-6 px-4 space-y-12 animate-in fade-in duration-500 font-sans">
+      {/* 1. Welcoming Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-zinc-100 pb-8">
+        <div className="space-y-0.5">
+          <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Welcome, {user?.full_name?.split(' ')[0] || 'User'}</h1>
+          <p className="text-[11px] text-zinc-400 font-medium">
+            {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 font-sans">
+          <QuickAction to="/announcements" icon={<MessageSquare size={12} />} label="Notice" />
+          <QuickAction to="/staff" icon={<Users size={12} />} label="Staff" />
+          <QuickAction to="/students" icon={<Users size={12} />} label="Students" />
+          <QuickAction to="/fees" icon={<CreditCard size={12} />} label="Fees" />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-3" title="School Overview" subtitle="Key performance indicators and school-wide metrics">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 py-4">
-            <div className="space-y-1 border-r border-gray-100 dark:border-zinc-800 pr-4">
-              <div className="flex items-center gap-2 text-zinc-400 mb-1">
-                <Users size={14} />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Population</span>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <p className="text-2xl font-bold">{students.length}</p>
-                <span className="text-[10px] text-zinc-500">Students</span>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <p className="text-lg font-bold text-zinc-600 dark:text-zinc-400">{teachers.length}</p>
-                <span className="text-[10px] text-zinc-500">Teachers</span>
-              </div>
-            </div>
-
-            <div className="space-y-1 border-r border-gray-100 dark:border-zinc-800 pr-4">
-              <div className="flex items-center gap-2 text-zinc-400 mb-1">
-                <CreditCard size={14} />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Financials</span>
-              </div>
-              <p className="text-2xl font-bold text-emerald-500">Ksh {(totalFees / 1000000).toFixed(1)}M</p>
-              <p className="text-[10px] text-zinc-500">Collected of Ksh {(totalExpected / 1000000).toFixed(1)}M</p>
-              <div className="w-full bg-gray-100 dark:bg-zinc-800 h-1 rounded-full mt-2">
-                <div 
-                  className="bg-emerald-500 h-1 rounded-full" 
-                  style={{ width: `${collectionRate}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1 border-r border-gray-100 dark:border-zinc-800 pr-4">
-              <div className="flex items-center gap-2 text-zinc-400 mb-1">
-                <TrendingUp size={14} />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Academic</span>
-              </div>
-              <p className="text-2xl font-bold text-blue-500">{passRate.toFixed(1)}%</p>
-              <p className="text-[10px] text-zinc-500">Overall Pass Rate</p>
-              <div className="flex items-center gap-1 mt-2">
-                <Badge variant="success" className="text-[8px] py-0 px-1">+2.4%</Badge>
-                <span className="text-[8px] text-zinc-400">vs last term</span>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-zinc-400 mb-1">
-                <ShieldCheck size={14} />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Discipline</span>
-              </div>
-              <p className="text-2xl font-bold text-orange-500">{suspensions.length}</p>
-              <p className="text-[10px] text-zinc-500">Active Suspensions</p>
-              <p className="text-[9px] text-zinc-400 mt-2">98% Good Conduct</p>
-            </div>
-          </div>
-        </Card>
+      {/* 2. Smaller, Clean Metrics (No Color) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12">
+        <Metric 
+          label="Total Students" 
+          value={data.students.length} 
+          sub={data.teachers.length + " Teachers"} 
+        />
+        <Metric 
+          label="Collected Fees" 
+          value={formatCurrency(termFeesCollected)} 
+          sub={studentsWithArrears + " In Arrears"} 
+        />
+        <Metric 
+          label="School Mean" 
+          value="74.2 / B" 
+          sub="Current Mean Score" 
+        />
+        <Metric 
+          label="Target Goal" 
+          value="80.0 / B+" 
+          sub="Institutional Target" 
+        />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-4">
-          <h2 className="text-xs font-bold uppercase text-zinc-400 tracking-wider">Recent Activity</h2>
-          <Card>
-            <Table headers={['Student', 'Action', 'Time', 'Status']}>
-              {students.slice(0, 6).map((s, i) => (
-                <tr key={s.id}>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[8px] font-bold">
-                        {s.profile?.full_name ? s.profile.full_name.split(' ').map(n => n[0]).join('') : '??'}
-                      </div>
-                      <span className="text-xs font-medium">{s.profile?.full_name || 'Unknown Student'}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-[10px] text-zinc-500">Result Updated</td>
-                  <td className="px-3 py-2 text-[10px] text-zinc-500">{i + 1}h ago</td>
-                  <td className="px-3 py-2">
-                    <Badge variant="success">Success</Badge>
-                  </td>
-                </tr>
-              ))}
-            </Table>
-          </Card>
-        </div>
-
-        <div className="space-y-4">
-          <h2 className="text-xs font-bold uppercase text-zinc-400 tracking-wider">Announcements</h2>
-          <div className="space-y-3">
-            {announcements.map(a => (
-              <Card key={a.id} className="p-3">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 rounded bg-zinc-50 dark:bg-zinc-800">
-                    <Bell size={12} className="text-zinc-400" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold mb-1">{a.title}</p>
-                    <p className="text-[10px] text-zinc-500 line-clamp-2">{a.content}</p>
-                    <p className="text-[8px] text-zinc-400 mt-2 uppercase font-bold">{new Date(a.date).toLocaleDateString()}</p>
-                  </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 font-sans">
+        {/* Left: Financial Trend & Grade Spread */}
+        <div className="lg:col-span-7 space-y-12 mt-4 font-sans">
+          <section className="space-y-4 font-sans">
+            <h2 className="text-[9px] font-bold uppercase tracking-[0.2em] text-zinc-400 px-1">Payment History</h2>
+            <div className="h-24 flex items-end gap-1.5 px-1 font-sans">
+              {[30, 45, 25, 60, 80, 50, 90, 40, 70, 55, 65, 85].map((h, i) => (
+                <div key={i} className="flex-1 bg-zinc-50 rounded-sm h-full flex flex-col justify-end group cursor-default">
+                   <motion.div 
+                     initial={{ height: 0 }} 
+                     animate={{ height: `${h}%` }} 
+                     className="bg-zinc-900 group-hover:bg-zinc-400 transition-colors" 
+                   />
                 </div>
-              </Card>
-            ))}
-          </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-6 pt-4 font-sans">
+            <h2 className="text-[9px] font-bold uppercase tracking-[0.2em] text-zinc-400 px-1 font-sans">Grade Census</h2>
+            <div className="grid grid-cols-5 gap-4 font-sans px-1">
+               {['A', 'B', 'C', 'D', 'E'].map(grade => (
+                  <div key={grade} className="border-l border-zinc-100 pl-3 space-y-0.5">
+                     <p className="text-lg font-semibold tracking-tight text-zinc-900">{grade}</p>
+                     <p className="text-[9px] font-bold text-zinc-400 uppercase">{gradeCounts[grade] || 0} Students</p>
+                  </div>
+               ))}
+            </div>
+          </section>
+        </div>
+
+        {/* Right: Daily Activity (Smaller Text) */}
+        <div className="lg:col-span-5 space-y-8 font-sans">
+           <h2 className="text-[9px] font-bold uppercase tracking-[0.2em] text-zinc-400 border-b border-zinc-100 pb-3 px-1">Daily Log</h2>
+           <div className="space-y-8 font-sans">
+              {recentActivity.map((log: any, i) => (
+                 <div key={i} className="flex gap-4 items-start font-sans">
+                    <div className="mt-1 flex-shrink-0 font-sans">
+                       {log.type === 'Event' && <Calendar size={13} className="text-zinc-300" />}
+                       {log.type === 'Discipline' && <ShieldAlert size={13} className="text-zinc-300" />}
+                       {log.type === 'Health' && <Stethoscope size={13} className="text-zinc-300" />}
+                    </div>
+                    <div className="space-y-1 flex-1 font-sans">
+                       <div className="flex items-center justify-between font-sans">
+                          <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{log.type}</p>
+                          <p className="text-[9px] font-medium text-zinc-300">{new Date(log.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                       </div>
+                       <p className="text-[13px] font-medium tracking-normal text-zinc-900 leading-tight font-sans">
+                          {log.title || log.incident_title || log.checkup_type || 'Update'}
+                       </p>
+                       <p className="text-[11px] text-zinc-500 font-medium leading-relaxed font-sans line-clamp-2">
+                          {log.student?.profile?.full_name ? <span className="text-zinc-900 mr-1">{log.student.profile.full_name}:</span> : ""}
+                          {log.description || log.diagnosis || "No extra data."}
+                       </p>
+                    </div>
+                 </div>
+              ))}
+              {recentActivity.length === 0 && (
+                 <p className="text-[11px] text-zinc-300 italic px-1 font-sans">No activity logs.</p>
+              )}
+           </div>
+           
+           <div className="pt-8 px-1">
+              <Link to="/directory" className="inline-flex items-center gap-1.5 text-[10px] font-bold text-zinc-300 hover:text-zinc-900 transition-colors uppercase tracking-widest font-sans">
+                 Records <ArrowUpRight size={10} />
+              </Link>
+           </div>
         </div>
       </div>
     </div>
   );
 };
+
+const Metric = ({ label, value, sub }: any) => (
+  <div className="space-y-1 font-sans">
+    <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-400">{label}</p>
+    <p className="text-2xl font-semibold tracking-tight text-zinc-900">{value}</p>
+    <p className="text-[9px] font-semibold text-zinc-300">{sub}</p>
+  </div>
+);
+
+const QuickAction = ({ to, icon, label }: any) => (
+  <Link 
+    to={to} 
+    className="inline-flex items-center gap-1.5 rounded-full border border-zinc-100 px-4 py-1.5 text-[10px] font-semibold text-zinc-500 hover:bg-zinc-900 hover:text-white transition-all font-sans"
+  >
+    <span className="opacity-50 group-hover:opacity-100">{icon}</span>
+    <span>{label}</span>
+  </Link>
+);

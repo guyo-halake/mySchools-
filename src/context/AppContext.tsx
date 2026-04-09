@@ -109,7 +109,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         streams,
         announcements,
         events,
-        schoolInfo
+        schoolInfo: schoolInfo || prev.schoolInfo
       }));
     } catch (error) {
       console.error('Failed to fetch data from Supabase:', error);

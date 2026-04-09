@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -59,6 +60,7 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, logout, isDarkMode, toggleDarkMode, switchRole } = useAuth();
+  const { schoolInfo } = useApp();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -155,36 +157,62 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Topbar */}
-        <header className="h-14 bg-white dark:bg-zinc-900 border-b border-gray-100 dark:border-zinc-800 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30">
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setIsSidebarOpen(true)}
-              className="p-1.5 hover:bg-gray-50 dark:hover:bg-zinc-800 rounded-lg lg:hidden"
-            >
-              <Menu size={18} />
-            </button>
-            <h2 className="font-bold text-sm">
-              {links.find(l => l.path === location.pathname)?.label || 'Dashboard'}
-            </h2>
+        {/* Enhanced Identity Topbar */}
+        <header className="bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 sticky top-0 z-30 font-sans">
+          {/* Row 1: Identity & Tools */}
+          <div className="h-14 flex items-center justify-between px-6">
+            <div className="flex items-center gap-3">
+              {schoolInfo?.logo_url ? (
+                <img src={schoolInfo.logo_url} alt="Logo" className="w-8 h-8 object-contain rounded" />
+              ) : (
+                <div className="w-8 h-8 bg-zinc-900 dark:bg-zinc-100 rounded flex items-center justify-center text-white dark:text-zinc-900 font-bold text-xs shadow-sm">
+                  {schoolInfo?.name?.[0] || 'S'}
+                </div>
+              )}
+              <div>
+                <h1 className="text-[13px] font-bold tracking-tight text-zinc-900 dark:text-zinc-100 uppercase">
+                  {schoolInfo?.name || 'School System'}
+                </h1>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button className="p-1.5 text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded transition-all relative">
+                <Bell size={15} />
+                <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-rose-500 rounded-full border border-white dark:border-zinc-900" />
+              </button>
+              
+              <button 
+                onClick={toggleDarkMode}
+                className="p-1.5 text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded transition-all"
+              >
+                {isDarkMode ? <Sun size={15} /> : <Moon size={15} />}
+              </button>
+              
+              <div className="flex items-center gap-3 pl-3 border-l border-zinc-100 dark:border-zinc-800 ml-1">
+                <div className="text-right hidden sm:block">
+                  <p className="text-[11px] font-semibold leading-none text-zinc-900 dark:text-zinc-100">{user.full_name}</p>
+                  <p className="text-[9px] text-zinc-400 mt-0.5 uppercase tracking-widest font-bold">{user.role}</p>
+                </div>
+                <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 shadow-sm overflow-hidden shrink-0">
+                  {getUserInitials(user.full_name)}
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          {/* Row 2: Navigation Control */}
+          <div className="h-10 border-t border-zinc-50 dark:border-zinc-800/50 flex items-center px-6">
             <button 
-              onClick={toggleDarkMode}
-              className="p-1.5 hover:bg-gray-50 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+              onClick={() => setIsSidebarOpen(true)}
+              className="flex items-center gap-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors lg:hidden"
             >
-              {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+              <Menu size={16} />
+              <span className="text-[10px] font-bold uppercase tracking-widest">Menu</span>
             </button>
-            
-            <div className="flex items-center gap-2.5 pl-4 border-l border-gray-100 dark:border-zinc-800">
-              <div className="text-right hidden sm:block">
-                <p className="text-xs font-bold leading-none">{user.full_name}</p>
-                <p className="text-[9px] text-zinc-400 mt-0.5 uppercase tracking-tighter font-bold">{user.role}</p>
-              </div>
-              <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-600 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700">
-                {getUserInitials(user.full_name)}
-              </div>
+            <div className="hidden lg:flex items-center gap-2 text-zinc-400">
+               <Menu size={14} className="opacity-50" />
+               <span className="text-[9px] font-bold uppercase tracking-[0.2em]">{links.find(l => l.path === location.pathname)?.label || 'Overview'}</span>
             </div>
           </div>
         </header>
