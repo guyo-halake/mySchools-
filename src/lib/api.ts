@@ -107,5 +107,82 @@ export const api = {
       .single();
     if (error) throw error;
     return data;
+  },
+
+  // 6. RECORD MANAGEMENT (NEW)
+  async getStudentSubjects(studentId: string) {
+    const { data, error } = await supabase
+      .from('student_subjects')
+      .select('*, subject:subjects(*)')
+      .eq('student_id', studentId);
+    if (error) throw error;
+    return data;
+  },
+
+  async enrollSubject(enrollment: { student_id: string, subject_id: string, school_id: string }) {
+    const { data, error } = await supabase
+      .from('student_subjects')
+      .insert(enrollment)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async getHealthRecord(studentId: string) {
+    const { data, error } = await supabase
+      .from('student_health')
+      .select('*')
+      .eq('student_id', studentId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  },
+
+  async getDisciplinaryRecords(studentId: string) {
+    const { data, error } = await supabase
+      .from('disciplinary_records')
+      .select('*')
+      .eq('student_id', studentId)
+      .order('incident_date', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  async addDisciplinaryRecord(record: any) {
+    const { data, error } = await supabase
+      .from('disciplinary_records')
+      .insert(record)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async getActivities(schoolId: string) {
+    const { data, error } = await supabase
+      .from('activities')
+      .select('*')
+      .eq('school_id', schoolId);
+    if (error) throw error;
+    return data;
+  },
+
+  async getStudentActivities(studentId: string) {
+    const { data, error } = await supabase
+      .from('student_activities')
+      .select('*, activity:activities(*)')
+      .eq('student_id', studentId);
+    if (error) throw error;
+    return data;
+  },
+  
+  async getStudentResultsAll(studentId: string) {
+    const { data, error } = await supabase
+      .from('exam_results')
+      .select('*, subject:subjects(*), exam:exams!exam_results_exam_id_fkey(*, term:terms!exams_term_id_fkey(*))')
+      .eq('student_id', studentId);
+    if (error) throw error;
+    return data;
   }
 };

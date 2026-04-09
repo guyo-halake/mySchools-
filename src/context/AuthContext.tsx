@@ -87,13 +87,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password?: string) => {
     console.log('--- Attempting Login ---');
-    console.log('Email:', email);
+    const cleanEmail = email.trim().toLowerCase();
+    console.log('Email:', cleanEmail);
 
     // 1. Check if the user exists at all (Case-insensitive email)
     const { data: userExists, error: existError } = await supabase
       .from('profiles')
       .select('email, password')
-      .ilike('email', email)
+      .ilike('email', cleanEmail)
       .maybeSingle();
 
     if (existError) {
@@ -118,7 +119,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
-      .ilike('email', email)
+      .ilike('email', cleanEmail)
       .single();
 
     if (profile && !profileError) {
