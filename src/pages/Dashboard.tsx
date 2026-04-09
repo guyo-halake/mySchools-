@@ -49,12 +49,12 @@ export const Dashboard: React.FC = () => {
           <Card className="md:col-span-2">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-lg font-bold">
-                {student.name.split(' ').map(n => n[0]).join('')}
+                {student.profile?.full_name ? student.profile.full_name.split(' ').map(n => n[0]).join('') : '??'}
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-bold">{student.name}</p>
-                <p className="text-[10px] text-zinc-500">Adm: {student.admissionNumber} • Class: {student.classId}</p>
-                <p className="text-[10px] text-zinc-500">Teacher: Mr. Kamau</p>
+                <p className="text-sm font-bold">{student.profile?.full_name}</p>
+                <p className="text-[10px] text-zinc-500">Adm: {student.adm_no} • Class: {student.stream?.class?.name} {student.stream?.name}</p>
+                <p className="text-[10px] text-zinc-500">Teacher: {student.stream?.teacher?.full_name || 'Mr. Kamau'}</p>
               </div>
             </div>
           </Card>
@@ -213,9 +213,9 @@ export const Dashboard: React.FC = () => {
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
                       <div className="w-6 h-6 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[8px] font-bold">
-                        {s.name.split(' ').map(n => n[0]).join('')}
+                        {s.profile?.full_name ? s.profile.full_name.split(' ').map(n => n[0]).join('') : '??'}
                       </div>
-                      <span className="text-xs font-medium">{s.name}</span>
+                      <span className="text-xs font-medium">{s.profile?.full_name || 'Unknown Student'}</span>
                     </div>
                   </td>
                   <td className="px-3 py-2 text-[10px] text-zinc-500">Result Updated</td>

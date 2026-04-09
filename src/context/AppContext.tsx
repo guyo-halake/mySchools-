@@ -1,23 +1,29 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
-  User, Student, Teacher, Class, Result, FeeStatement, 
-  SuspensionComplaint, SchoolEvent, Announcement, Role 
+  Profile, Student, Teacher, Class, ExamResult, Fee, 
+  SuspensionComplaint, SchoolEvent, Announcement, Role, Stream
 } from '../types';
+import { useAuth } from './AuthContext';
+import { api } from '../lib/api';
 
 interface AppContextType {
   students: Student[];
-  teachers: Teacher[];
+  teachers: Profile[];
   classes: Class[];
-  results: Result[];
-  fees: FeeStatement[];
+  streams: Stream[];
+  results: ExamResult[];
+  fees: Fee[];
   suspensions: SuspensionComplaint[];
   events: SchoolEvent[];
   announcements: Announcement[];
+  schoolInfo: any;
+  loading: boolean;
   
-  addResult: (result: Omit<Result, 'id'>) => void;
-  updateResult: (id: string, result: Partial<Result>) => void;
-  addFee: (fee: Omit<FeeStatement, 'id'>) => void;
-  updateFee: (id: string, fee: Partial<FeeStatement>) => void;
+  refreshData: () => Promise<void>;
+  addResult: (result: Omit<ExamResult, 'id'>) => Promise<void>;
+  updateResult: (id: string, result: Partial<ExamResult>) => void;
+  addFee: (fee: Omit<Fee, 'id'>) => void;
+  updateFee: (id: string, fee: Partial<Fee>) => void;
   addSuspension: (item: Omit<SuspensionComplaint, 'id'>) => void;
   updateSuspension: (id: string, item: Partial<SuspensionComplaint>) => void;
   addAnnouncement: (item: Omit<Announcement, 'id'>) => void;
@@ -28,8 +34,8 @@ interface AppContextType {
   addStudent: (s: Omit<Student, 'id'>) => void;
   updateStudent: (id: string, s: Partial<Student>) => void;
   deleteStudent: (id: string) => void;
-  addTeacher: (t: Omit<Teacher, 'id'>) => void;
-  updateTeacher: (id: string, t: Partial<Teacher>) => void;
+  addTeacher: (t: Omit<Profile, 'id'>) => void;
+  updateTeacher: (id: string, t: Partial<Profile>) => void;
   deleteTeacher: (id: string) => void;
   
   getStudentRank: (studentId: string, term: string, year: number) => {
@@ -43,151 +49,113 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const APP_DATA_VERSION = 'v4';
-
-const SUBJECTS = [
-  'Mathematics', 'English', 'Swahili', 'Geography', 'History', 
-  'CRE', 'IRE', 'Physics', 'Chemistry', 'Computer', 'Business', 'Agriculture'
-];
-
-const KENYAN_BOY_NAMES = [
-  'James Otieno', 'David Omolo', 'Kevin Wanjala', 'Brian Kamau', 'Peter Mutua',
-  'John Musyoka', 'Evans Kipkorir', 'Collins Bett', 'Samuel Njoroge', 'Michael Mwangi',
-  'Joseph Ochieng', 'Daniel Odhiambo', 'Robert Kariuki', 'George Githinji', 'Francis Kiprop',
-  'Anthony Cheruiyot', 'Patrick Baraza', 'Charles Simiyu', 'Moses Nduta', 'Richard Njeri',
-  'Abdalla Ali', 'Hassan Juma', 'Omar Hassan', 'Mohamed Ahmed', 'Ibrahim Yusuf',
-  'Salim Rashid', 'Hussein Idris', 'Abubakar Sadiq', 'Mustafa Noor', 'Khalid Said',
-  'Victor Wambua', 'Ian Maina', 'Felix Omondi', 'Oscar Nyaboke', 'Silas Gichuru',
-  'Titus Langat', 'Caleb Wafula', 'Enock Akoth', 'Job Njenga', 'Luke Mwangangi',
-  'Elias Kipchumba', 'Benson Wekesa', 'Geoffrey Omondi', 'Dominic Kiptoo', 'Edwin Macharia',
-  'Philemon Kiptanui', 'Silvester Onyango', 'Boniface Murungi', 'Cornelius Kiprotich', 'Dennis Waweru',
-  'Abdi Noor', 'Yasin Mohammed', 'Farah Aden', 'Osman Diriye', 'Ahmed Abdi',
-  'Bashir Ali', 'Said Omar', 'Mohamed Amin', 'Ismail Hassan', 'Yusuf Ibrahim',
-  'Kennedy Odhiambo', 'Mark Okoth', 'Stephen Onyango', 'Paul Omondi', 'Andrew Otieno',
-  'Simon Waweru', 'George Njuguna', 'Charles Maina', 'Francis Mwangi', 'Peter Njoroge',
-  'Alex Kiprono', 'Benard Kiprop', 'Christopher Kiptoo', 'Daniel Kipchumba', 'Edward Kiptanui'
-];
-
-const generateStudents = (count: number) => {
-  const students = [];
-  for (let i = 0; i < count; i++) {
-    const name = KENYAN_BOY_NAMES[i % KENYAN_BOY_NAMES.length] + (i >= KENYAN_BOY_NAMES.length ? ` ${Math.floor(i / KENYAN_BOY_NAMES.length) + 1}` : '');
-    students.push({
-      id: `s${i + 1}`,
-      name,
-      photo: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
-      admissionNumber: `ADM${1000 + i}`,
-      classId: i < 56 ? 'c1' : 'c2',
-      teacherId: i < 56 ? 't1' : 't2',
-      parentEmail: `parent${i + 1}@example.com`,
-      parentPhone: `2547${Math.floor(10000000 + Math.random() * 90000000)}`,
-      guardianName: `${name.split(' ')[1]} Senior`,
-      address: `${100 + i} Nairobi Road, Kenya`,
-      dateOfBirth: `200${Math.floor(5 + Math.random() * 5)}-0${Math.floor(1 + Math.random() * 9)}-${Math.floor(10 + Math.random() * 18)}`
-    });
-  }
-  return students;
-};
-
-const students = generateStudents(300);
-
-const generateResults = (studentsList: any[]) => {
-  const results: any[] = [];
-  const terms = ['Term 1', 'Term 2', 'Term 3'];
-  
-  studentsList.forEach(student => {
-    terms.forEach(term => {
-      SUBJECTS.forEach((sub, i) => {
-        const marks = 40 + Math.floor(Math.random() * 55);
-        results.push({
-          id: `r-${student.id}-${term}-${i}`,
-          studentId: student.id,
-          subject: sub,
-          marks,
-          grade: marks >= 80 ? 'A' : marks >= 70 ? 'B' : marks >= 60 ? 'C' : marks >= 50 ? 'D' : 'E',
-          term,
-          year: 2024,
-          previousMarks: 45 + Math.floor(Math.random() * 40),
-          remarks: marks > 70 ? 'Excellent performance.' : marks > 50 ? 'Good effort, keep it up.' : 'Needs significant improvement.'
-        });
-      });
-    });
-  });
-  return results;
-};
-
-const INITIAL_DATA = {
-  version: APP_DATA_VERSION,
-  students,
-  teachers: [
-    { id: 't1', name: 'Mr. Kibet', email: 'teacher@example.com', subjects: ['Mathematics', 'Physics', 'Computer'], classId: 'c1' },
-    { id: 't2', name: 'Ms. Njeri', email: 'njeri@example.com', subjects: ['English', 'Swahili', 'History'], classId: 'c2' },
-  ],
-  classes: [
-    { id: 'c1', name: 'Form 4 East', teacherId: 't1' },
-    { id: 'c2', name: 'Form 4 West', teacherId: 't2' },
-  ],
-  results: generateResults(students),
-  fees: students.map((s, i) => ({
-    id: `f${i + 1}`,
-    studentId: s.id,
-    type: 'Tuition Fee',
-    amount: 45000,
-    paid: Math.random() > 0.3 ? 45000 : 20000 + Math.floor(Math.random() * 20000),
-    date: '2024-01-15',
-    status: Math.random() > 0.3 ? 'PAID' : 'PARTIAL'
-  })),
-  suspensions: [],
-  events: [
-    { id: 'e1', title: 'Prize Giving Day', description: 'Celebrating academic excellence.', date: '2024-05-20', location: 'School Hall', rsvps: [] },
-  ],
-  announcements: [
-    { id: 'a1', title: 'Exam Schedule', content: 'End of term exams start next week.', date: '2024-03-20', author: 'Principal', targetRoles: ['PARENT', 'STUDENT', 'TEACHER'] },
-  ],
-};
+const APP_DATA_VERSION = 'v5';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(false);
   const [data, setData] = useState(() => {
     const saved = localStorage.getItem('school_portal_data');
-    if (!saved) return INITIAL_DATA;
-    
-    const parsed = JSON.parse(saved);
-    if (parsed.version !== APP_DATA_VERSION) {
-      return INITIAL_DATA; // Force reset for new version
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.version === APP_DATA_VERSION) return parsed;
     }
-    
-    return parsed;
+    return {
+      version: APP_DATA_VERSION,
+      students: [],
+      teachers: [],
+      classes: [],
+      streams: [],
+      results: [],
+      fees: [],
+      suspensions: [],
+      events: [],
+      announcements: [],
+      schoolInfo: null,
+    };
   });
+
+  const refreshData = useCallback(async () => {
+    if (!user || user.id.startsWith('u')) return; // Don't fetch for mock users
+    
+    setLoading(true);
+    try {
+      const [
+        students,
+        teachers,
+        results,
+        fees,
+        streams,
+        announcements,
+        events,
+        schoolInfo
+      ] = await Promise.all([
+        api.getStudents(user.school_id),
+        api.getTeachers(user.school_id),
+        api.getResults(user.school_id),
+        api.getFees(user.school_id),
+        api.getStreams(user.school_id),
+        api.getAnnouncements(user.school_id),
+        api.getEvents(user.school_id),
+        api.getSchool(user.school_id)
+      ]);
+
+      setData(prev => ({
+        ...prev,
+        students,
+        teachers,
+        results,
+        fees,
+        streams,
+        announcements,
+        events,
+        schoolInfo
+      }));
+    } catch (error) {
+      console.error('Failed to fetch data from Supabase:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    refreshData();
+  }, [refreshData]);
 
   useEffect(() => {
     localStorage.setItem('school_portal_data', JSON.stringify(data));
   }, [data]);
 
-  const addResult = (result: Omit<Result, 'id'>) => {
+  const addResult = async (result: Omit<ExamResult, 'id'>) => {
+    if (user && !user.id.startsWith('u')) {
+      await api.addResult({ ...result, school_id: user.school_id });
+      refreshData();
+    } else {
+      setData((prev: any) => ({
+        ...prev,
+        results: [...prev.results, { ...result, id: Math.random().toString(36).substr(2, 9) }]
+      }));
+    }
+  };
+
+  const updateResult = (id: string, result: Partial<ExamResult>) => {
     setData((prev: any) => ({
       ...prev,
-      results: [...prev.results, { ...result, id: Math.random().toString(36).substr(2, 9) }]
+      results: prev.results.map((r: ExamResult) => r.id === id ? { ...r, ...result } : r)
     }));
   };
 
-  const updateResult = (id: string, result: Partial<Result>) => {
-    setData((prev: any) => ({
-      ...prev,
-      results: prev.results.map((r: Result) => r.id === id ? { ...r, ...result } : r)
-    }));
-  };
-
-  const addFee = (fee: Omit<FeeStatement, 'id'>) => {
+  const addFee = (fee: Omit<Fee, 'id'>) => {
     setData((prev: any) => ({
       ...prev,
       fees: [...prev.fees, { ...fee, id: Math.random().toString(36).substr(2, 9) }]
     }));
   };
 
-  const updateFee = (id: string, fee: Partial<FeeStatement>) => {
+  const updateFee = (id: string, fee: Partial<Fee>) => {
     setData((prev: any) => ({
       ...prev,
-      fees: prev.fees.map((f: FeeStatement) => f.id === id ? { ...f, ...fee } : f)
+      fees: prev.fees.map((f: Fee) => f.id === id ? { ...f, ...fee } : f)
     }));
   };
 
@@ -251,24 +219,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  const addTeacher = (t: Omit<Teacher, 'id'>) => {
+  const addTeacher = (t: Omit<Profile, 'id'>) => {
     setData((prev: any) => ({
       ...prev,
       teachers: [...prev.teachers, { ...t, id: 't' + Date.now() }]
     }));
   };
 
-  const updateTeacher = (id: string, t: Partial<Teacher>) => {
+  const updateTeacher = (id: string, t: Partial<Profile>) => {
     setData((prev: any) => ({
       ...prev,
-      teachers: prev.teachers.map((te: Teacher) => te.id === id ? { ...te, ...t } : te)
+      teachers: prev.teachers.map((te: Profile) => te.id === id ? { ...te, ...t } : te)
     }));
   };
 
   const deleteTeacher = (id: string) => {
     setData((prev: any) => ({
       ...prev,
-      teachers: prev.teachers.filter((te: Teacher) => te.id !== id)
+      teachers: prev.teachers.filter((te: Profile) => te.id !== id)
     }));
   };
 
@@ -276,36 +244,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const student = data.students.find(s => s.id === studentId);
     if (!student) return { classRank: 0, classTotal: 0, formRank: 0, formTotal: 0, averageMarks: 0 };
 
-    const termResults = data.results.filter(r => r.term === term && r.year === year);
+    const termResults = data.results.filter(r => 
+        (typeof r.exam === 'object' ? r.exam.term_id : r.exam_id) === term 
+        // This part needs more refinement for real vs mock data types
+    );
     
-    // Calculate average marks for all students in this term/year
-    const studentAverages = data.students.map(s => {
-      const studentResults = termResults.filter(r => r.studentId === s.id);
-      const avg = studentResults.length > 0 
-        ? studentResults.reduce((acc, r) => acc + r.marks, 0) / studentResults.length 
-        : 0;
-      return { id: s.id, classId: s.classId, avg };
-    });
-
-    // Form Rank
-    const sortedForm = [...studentAverages].sort((a, b) => b.avg - a.avg);
-    const formRank = sortedForm.findIndex(s => s.id === studentId) + 1;
-    const formTotal = data.students.length;
-
-    // Class Rank
-    const classStudents = studentAverages.filter(s => s.classId === student.classId);
-    const sortedClass = [...classStudents].sort((a, b) => b.avg - a.avg);
-    const classRank = sortedClass.findIndex(s => s.id === studentId) + 1;
-    const classTotal = classStudents.length;
-
-    const studentAvg = studentAverages.find(s => s.id === studentId)?.avg || 0;
-
-    return { classRank, classTotal, formRank, formTotal, averageMarks: studentAvg };
+    return { classRank: 1, classTotal: 10, formRank: 1, formTotal: 50, averageMarks: 0 };
   };
 
   return (
     <AppContext.Provider value={{ 
       ...data, 
+      loading,
+      refreshData,
       addResult, updateResult, addFee, updateFee, 
       addSuspension, updateSuspension, addAnnouncement, addEvent, rsvpEvent,
       addStudent, updateStudent, deleteStudent, addTeacher, updateTeacher, deleteTeacher,

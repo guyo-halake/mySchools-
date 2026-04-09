@@ -67,7 +67,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   const links = sidebarLinks[user.role] || [];
 
-  const getUserInitials = (name: string) => {
+  const getUserInitials = (name?: string) => {
+    if (!name) return '??';
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
@@ -178,11 +179,11 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             
             <div className="flex items-center gap-2.5 pl-4 border-l border-gray-100 dark:border-zinc-800">
               <div className="text-right hidden sm:block">
-                <p className="text-xs font-bold leading-none">{user.name}</p>
+                <p className="text-xs font-bold leading-none">{user.full_name}</p>
                 <p className="text-[9px] text-zinc-400 mt-0.5 uppercase tracking-tighter font-bold">{user.role}</p>
               </div>
               <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-600 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700">
-                {getUserInitials(user.name)}
+                {getUserInitials(user.full_name)}
               </div>
             </div>
           </div>

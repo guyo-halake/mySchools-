@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, Role } from '../types';
+import { Profile, Role } from '../types';
+import { supabase } from '../lib/supabase';
 
 interface AuthContextType {
-  user: User | null;
-  login: (email: string, role: Role) => void;
-  logout: () => void;
+  user: Profile | null;
+  loading: boolean;
+  login: (email: string, password?: string) => Promise<void>;
+  logout: () => Promise<void>;
   switchRole: (role: Role) => void;
   isDarkMode: boolean;
   toggleDarkMode: () => void;
@@ -12,28 +14,58 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const USERS: User[] = [
-  { id: 'u1', name: 'Otieno Omolo', email: 'parent@example.com', role: 'PARENT', studentId: 's1' },
-  { id: 'u2', name: 'Otieno Omolo Jr.', email: 'student@example.com', role: 'STUDENT', studentId: 's1' },
-  { id: 'u3', name: 'Mr. Kibet', email: 'teacher@example.com', role: 'TEACHER', teacherId: 't1' },
-  { id: 'u4', name: 'School Admin', email: 'admin@example.com', role: 'ADMIN' },
-];
-
-const KENYAN_NAMES_POOL = [
-  'James Otieno', 'David Omolo', 'Kevin Wanjala', 'Brian Kamau', 'Peter Mutua',
-  'John Musyoka', 'Evans Kipkorir', 'Collins Bett', 'Samuel Njoroge', 'Michael Mwangi'
+const USERS: Profile[] = [
+  { id: 'u1', full_name: 'Otieno Omolo', email: 'parent@example.com', role: 'PARENT', school_id: 's1' },
+  { id: 'u2', full_name: 'Mr. Kibet', email: 'teacher@example.com', role: 'TEACHER', school_id: 's1' },
+  { id: 'u3', full_name: 'School Admin', email: 'admin@example.com', role: 'ADMIN', school_id: 's1' },
 ];
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('school_portal_user');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [user, setUser] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('theme') === 'dark');
 
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('theme');
-    return saved === 'dark'; // Defaults to false (light) if null
-  });
+  useEffect(() => {
+    // 1. Initial Session Check
+    const initAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+          
+        if (profile) setUser(profile);
+      } else {
+        // Fallback to local storage for MOCK data if no Supabase session
+        const saved = localStorage.getItem('school_portal_user');
+        if (saved) setUser(JSON.parse(saved));
+      }
+      setLoading(false);
+    };
+
+    initAuth();
+
+    // 2. Listen for Auth Changes - Disabled for custom auth persistence
+    /*
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        if (profile) setUser(profile);
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+    */
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -53,33 +85,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [isDarkMode]);
 
-  const login = (email: string, role: Role) => {
-    const found = USERS.find(u => u.email === email && u.role === role);
-    if (found) {
-      setUser(found);
+  const login = async (email: string, password?: string) => {
+    console.log('--- Attempting Login ---');
+    console.log('Email:', email);
+
+    // 1. Check if the user exists at all (Case-insensitive email)
+    const { data: userExists, error: existError } = await supabase
+      .from('profiles')
+      .select('email, password')
+      .ilike('email', email)
+      .maybeSingle();
+
+    if (existError) {
+      console.error('Database query error:', existError);
+      throw new Error('Database connection issue.');
+    }
+
+    if (!userExists) {
+      console.warn('Login Failed: User not found with email:', email);
+      throw new Error('No account found with this email.');
+    }
+
+    // 2. Check password if provided
+    if (password) {
+      if (userExists.password !== password) {
+        console.warn('Login Failed: Incorrect password for:', email);
+        throw new Error('Incorrect password. Please try again.');
+      }
+    }
+
+    // 3. Fetch full profile (Case-insensitive)
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .ilike('email', email)
+      .single();
+
+    if (profile && !profileError) {
+       console.log('Login Success! Profile:', profile.full_name, 'Role:', profile.role);
+       setUser(profile);
     } else {
-      // Assign a random Kenyan name for new logins to avoid "John Doe" or email-based names
-      const randomName = KENYAN_NAMES_POOL[Math.floor(Math.random() * KENYAN_NAMES_POOL.length)];
-      setUser({
-        id: 'u' + Date.now(),
-        name: randomName,
-        email,
-        role,
-      });
+       throw new Error('Failed to load user profile.');
     }
   };
 
-  const logout = () => setUser(null);
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
 
   const switchRole = (role: Role) => {
-    const found = USERS.find(u => u.role === role);
+    const found = USERS.find(u => u.role === (role as any));
     if (found) setUser(found);
   };
 
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, switchRole, isDarkMode, toggleDarkMode }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, switchRole, isDarkMode, toggleDarkMode }}>
       {children}
     </AuthContext.Provider>
   );

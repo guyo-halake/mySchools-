@@ -11,15 +11,23 @@ import { Suspensions } from './pages/Suspensions';
 import { Events } from './pages/Events';
 import { Announcements } from './pages/Announcements';
 import { FeesManagement } from './pages/FeesManagement';
-import { StudentsManagement } from './pages/StudentsManagement';
-import { TeachersManagement } from './pages/TeachersManagement';
+import { UserDirectory } from './pages/UserDirectory';
 import { ClassesManagement } from './pages/ClassesManagement';
 import { InputResults } from './pages/InputResults';
 import { Chat } from './pages/Chat';
 import { Assignments } from './pages/Assignments';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-zinc-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-zinc-900 dark:border-white border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   if (!user) return <Navigate to="/login" />;
   return <Layout>{children}</Layout>;
 };
@@ -47,8 +55,8 @@ export default function App() {
             <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
             
             {/* Admin Routes */}
-            <Route path="/students" element={<ProtectedRoute><StudentsManagement /></ProtectedRoute>} />
-            <Route path="/teachers" element={<ProtectedRoute><TeachersManagement /></ProtectedRoute>} />
+            <Route path="/students" element={<ProtectedRoute><UserDirectory /></ProtectedRoute>} />
+            <Route path="/teachers" element={<ProtectedRoute><UserDirectory /></ProtectedRoute>} />
             <Route path="/classes" element={<ProtectedRoute><ClassesManagement /></ProtectedRoute>} />
             
             <Route path="/" element={<Navigate to="/dashboard" />} />
