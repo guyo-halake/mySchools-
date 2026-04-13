@@ -10,6 +10,77 @@
 -- 
 -- ==============================================================================
 
+CREATE OR REPLACE FUNCTION public.current_user_school_id()
+RETURNS UUID
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT school_id
+  FROM profiles
+  WHERE id = auth.uid()
+  LIMIT 1;
+$$;
+
+REVOKE ALL ON FUNCTION public.current_user_school_id() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.current_user_school_id() TO authenticated;
+
+DROP POLICY IF EXISTS "profiles_select_own_school" ON profiles;
+DROP POLICY IF EXISTS "profiles_update_own_profile" ON profiles;
+DROP POLICY IF EXISTS "classes_select_own_school" ON classes;
+DROP POLICY IF EXISTS "classes_modify_own_school" ON classes;
+DROP POLICY IF EXISTS "streams_select_own_school" ON streams;
+DROP POLICY IF EXISTS "streams_modify_own_school" ON streams;
+DROP POLICY IF EXISTS "subjects_select_own_school" ON subjects;
+DROP POLICY IF EXISTS "subjects_modify_own_school" ON subjects;
+DROP POLICY IF EXISTS "students_select_own_school" ON students;
+DROP POLICY IF EXISTS "students_modify_own_school" ON students;
+DROP POLICY IF EXISTS "student_subjects_select_own_school" ON student_subjects;
+DROP POLICY IF EXISTS "student_subjects_modify_own_school" ON student_subjects;
+DROP POLICY IF EXISTS "student_health_select_own_school" ON student_health;
+DROP POLICY IF EXISTS "student_health_modify_own_school" ON student_health;
+DROP POLICY IF EXISTS "activities_select_own_school" ON activities;
+DROP POLICY IF EXISTS "activities_modify_own_school" ON activities;
+DROP POLICY IF EXISTS "student_activities_select_own_school" ON student_activities;
+DROP POLICY IF EXISTS "disciplinary_records_select_own_school" ON disciplinary_records;
+DROP POLICY IF EXISTS "disciplinary_records_modify_own_school" ON disciplinary_records;
+DROP POLICY IF EXISTS "terms_select_own_school" ON terms;
+DROP POLICY IF EXISTS "terms_modify_own_school" ON terms;
+DROP POLICY IF EXISTS "exams_select_own_school" ON exams;
+DROP POLICY IF EXISTS "exams_modify_own_school" ON exams;
+DROP POLICY IF EXISTS "grading_systems_select_own_school" ON grading_systems;
+DROP POLICY IF EXISTS "grading_systems_modify_own_school" ON grading_systems;
+DROP POLICY IF EXISTS "exam_results_select_own_school" ON exam_results;
+DROP POLICY IF EXISTS "exam_results_modify_own_school" ON exam_results;
+DROP POLICY IF EXISTS "fees_select_own_school" ON fees;
+DROP POLICY IF EXISTS "fees_modify_own_school" ON fees;
+DROP POLICY IF EXISTS "attendance_select_own_school" ON attendance;
+DROP POLICY IF EXISTS "announcements_select_own_school" ON announcements;
+DROP POLICY IF EXISTS "announcements_modify_own_school" ON announcements;
+DROP POLICY IF EXISTS "events_select_own_school" ON events;
+DROP POLICY IF EXISTS "events_modify_own_school" ON events;
+DROP POLICY IF EXISTS "results_workflow_select_own_school" ON results_workflow;
+DROP POLICY IF EXISTS "results_workflow_insert_own_school" ON results_workflow;
+DROP POLICY IF EXISTS "results_workflow_update_own_school" ON results_workflow;
+DROP POLICY IF EXISTS "results_workflow_delete_own_school" ON results_workflow;
+DROP POLICY IF EXISTS "physical_timetable_select_own_school" ON physical_timetable_entries;
+DROP POLICY IF EXISTS "physical_timetable_modify_own_school" ON physical_timetable_entries;
+DROP POLICY IF EXISTS "physical_actions_select_own_school" ON physical_timetable_card_actions;
+DROP POLICY IF EXISTS "live_timetable_select_own_school" ON live_timetable_entries;
+DROP POLICY IF EXISTS "live_timetable_modify_own_school" ON live_timetable_entries;
+DROP POLICY IF EXISTS "classroom_sessions_select_own_school" ON classroom_sessions;
+DROP POLICY IF EXISTS "classroom_sessions_modify_own_school" ON classroom_sessions;
+DROP POLICY IF EXISTS "classroom_attendance_select_own_school" ON classroom_attendance;
+DROP POLICY IF EXISTS "classroom_hand_queue_select_own_school" ON classroom_hand_queue;
+DROP POLICY IF EXISTS "classroom_spotlight_select_own_school" ON classroom_spotlight;
+DROP POLICY IF EXISTS "classroom_notes_select_own_school" ON classroom_notes;
+DROP POLICY IF EXISTS "classroom_notes_modify_own_school" ON classroom_notes;
+DROP POLICY IF EXISTS "classroom_recordings_select_own_school" ON classroom_recordings;
+DROP POLICY IF EXISTS "classroom_assignments_select_own_school" ON classroom_assignments;
+DROP POLICY IF EXISTS "classroom_assignments_modify_own_school" ON classroom_assignments;
+DROP POLICY IF EXISTS "classroom_assignment_questions_select_own_school" ON classroom_assignment_questions;
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- SECTION 1: CORE IDENTITY & ORGANIZATIONAL TABLES
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -21,20 +92,14 @@ ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "profiles_select_own_school" ON profiles
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
+    OR id = auth.uid()
   );
 
 CREATE POLICY "profiles_update_own_profile" ON profiles
   FOR UPDATE
   USING (id = auth.uid())
-  WITH CHECK (
-    id = auth.uid() AND
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
-  );
+  WITH CHECK (id = auth.uid());
 
 -- CLASSES TABLE - Only see classes from your school
 DROP POLICY IF EXISTS "classes_select_own_school" ON classes;
@@ -43,17 +108,13 @@ ALTER TABLE classes ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "classes_select_own_school" ON classes
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "classes_modify_own_school" ON classes
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- STREAMS TABLE - Only see streams from your school
@@ -63,17 +124,13 @@ ALTER TABLE streams ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "streams_select_own_school" ON streams
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "streams_modify_own_school" ON streams
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- SUBJECTS TABLE - Only see subjects from your school
@@ -83,17 +140,13 @@ ALTER TABLE subjects ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "subjects_select_own_school" ON subjects
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "subjects_modify_own_school" ON subjects
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -107,17 +160,13 @@ ALTER TABLE students ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "students_select_own_school" ON students
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "students_modify_own_school" ON students
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- STUDENT_SUBJECTS TABLE
@@ -127,17 +176,13 @@ ALTER TABLE student_subjects ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "student_subjects_select_own_school" ON student_subjects
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "student_subjects_modify_own_school" ON student_subjects
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- STUDENT_HEALTH TABLE
@@ -150,9 +195,7 @@ CREATE POLICY "student_health_select_own_school" ON student_health
     EXISTS (
       SELECT 1 FROM students
       WHERE students.id = student_health.student_id
-      AND students.school_id IN (
-        SELECT school_id FROM profiles WHERE id = auth.uid()
-      )
+      AND students.school_id = public.current_user_school_id()
     )
   );
 
@@ -162,9 +205,7 @@ CREATE POLICY "student_health_modify_own_school" ON student_health
     EXISTS (
       SELECT 1 FROM students
       WHERE students.id = student_health.student_id
-      AND students.school_id IN (
-        SELECT school_id FROM profiles WHERE id = auth.uid()
-      )
+      AND students.school_id = public.current_user_school_id()
     )
   );
 
@@ -179,17 +220,13 @@ ALTER TABLE activities ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "activities_select_own_school" ON activities
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "activities_modify_own_school" ON activities
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- STUDENT_ACTIVITIES TABLE
@@ -202,9 +239,7 @@ CREATE POLICY "student_activities_select_own_school" ON student_activities
     EXISTS (
       SELECT 1 FROM students
       WHERE students.id = student_activities.student_id
-      AND students.school_id IN (
-        SELECT school_id FROM profiles WHERE id = auth.uid()
-      )
+      AND students.school_id = public.current_user_school_id()
     )
   );
 
@@ -215,17 +250,13 @@ ALTER TABLE disciplinary_records ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "disciplinary_records_select_own_school" ON disciplinary_records
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "disciplinary_records_modify_own_school" ON disciplinary_records
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -239,17 +270,13 @@ ALTER TABLE terms ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "terms_select_own_school" ON terms
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "terms_modify_own_school" ON terms
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- EXAMS TABLE
@@ -259,17 +286,13 @@ ALTER TABLE exams ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "exams_select_own_school" ON exams
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "exams_modify_own_school" ON exams
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- GRADING_SYSTEMS TABLE
@@ -279,17 +302,13 @@ ALTER TABLE grading_systems ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "grading_systems_select_own_school" ON grading_systems
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "grading_systems_modify_own_school" ON grading_systems
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- EXAM_RESULTS TABLE
@@ -299,17 +318,13 @@ ALTER TABLE exam_results ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "exam_results_select_own_school" ON exam_results
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "exam_results_modify_own_school" ON exam_results
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -323,17 +338,13 @@ ALTER TABLE fees ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "fees_select_own_school" ON fees
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "fees_modify_own_school" ON fees
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- ATTENDANCE TABLE
@@ -346,9 +357,7 @@ CREATE POLICY "attendance_select_own_school" ON attendance
     EXISTS (
       SELECT 1 FROM students
       WHERE students.id = attendance.student_id
-      AND students.school_id IN (
-        SELECT school_id FROM profiles WHERE id = auth.uid()
-      )
+      AND students.school_id = public.current_user_school_id()
     )
   );
 
@@ -363,17 +372,13 @@ ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "announcements_select_own_school" ON announcements
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "announcements_modify_own_school" ON announcements
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- EVENTS TABLE
@@ -383,17 +388,13 @@ ALTER TABLE events ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "events_select_own_school" ON events
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "events_modify_own_school" ON events
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -408,38 +409,28 @@ ALTER TABLE results_workflow ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "results_workflow_select_own_school" ON results_workflow
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "results_workflow_insert_own_school" ON results_workflow
   FOR INSERT
   WITH CHECK (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "results_workflow_update_own_school" ON results_workflow
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   )
   WITH CHECK (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "results_workflow_delete_own_school" ON results_workflow
   FOR DELETE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -453,17 +444,13 @@ ALTER TABLE physical_timetable_entries ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "physical_timetable_select_own_school" ON physical_timetable_entries
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "physical_timetable_modify_own_school" ON physical_timetable_entries
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- PHYSICAL_TIMETABLE_CARD_ACTIONS TABLE
@@ -473,9 +460,7 @@ ALTER TABLE physical_timetable_card_actions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "physical_actions_select_own_school" ON physical_timetable_card_actions
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- LIVE_TIMETABLE_ENTRIES TABLE
@@ -485,17 +470,13 @@ ALTER TABLE live_timetable_entries ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "live_timetable_select_own_school" ON live_timetable_entries
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "live_timetable_modify_own_school" ON live_timetable_entries
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -509,17 +490,13 @@ ALTER TABLE classroom_sessions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "classroom_sessions_select_own_school" ON classroom_sessions
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "classroom_sessions_modify_own_school" ON classroom_sessions
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- CLASSROOM_ATTENDANCE TABLE
@@ -529,9 +506,7 @@ ALTER TABLE classroom_attendance ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "classroom_attendance_select_own_school" ON classroom_attendance
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- CLASSROOM_HAND_QUEUE TABLE
@@ -541,9 +516,7 @@ ALTER TABLE classroom_hand_queue ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "classroom_hand_queue_select_own_school" ON classroom_hand_queue
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- CLASSROOM_SPOTLIGHT TABLE
@@ -553,9 +526,7 @@ ALTER TABLE classroom_spotlight ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "classroom_spotlight_select_own_school" ON classroom_spotlight
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- CLASSROOM_NOTES TABLE
@@ -565,17 +536,13 @@ ALTER TABLE classroom_notes ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "classroom_notes_select_own_school" ON classroom_notes
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "classroom_notes_modify_own_school" ON classroom_notes
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- CLASSROOM_RECORDINGS TABLE
@@ -585,9 +552,7 @@ ALTER TABLE classroom_recordings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "classroom_recordings_select_own_school" ON classroom_recordings
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- CLASSROOM_ASSIGNMENTS TABLE
@@ -597,17 +562,13 @@ ALTER TABLE classroom_assignments ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "classroom_assignments_select_own_school" ON classroom_assignments
   FOR SELECT
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 CREATE POLICY "classroom_assignments_modify_own_school" ON classroom_assignments
   FOR UPDATE
   USING (
-    school_id IN (
-      SELECT school_id FROM profiles WHERE id = auth.uid()
-    )
+    school_id = public.current_user_school_id()
   );
 
 -- CLASSROOM_ASSIGNMENT_QUESTIONS TABLE
@@ -620,9 +581,7 @@ CREATE POLICY "classroom_assignment_questions_select_own_school" ON classroom_as
     EXISTS (
       SELECT 1 FROM classroom_assignments
       WHERE classroom_assignments.id = classroom_assignment_questions.assignment_id
-      AND classroom_assignments.school_id IN (
-        SELECT school_id FROM profiles WHERE id = auth.uid()
-      )
+      AND classroom_assignments.school_id = public.current_user_school_id()
     )
   );
 

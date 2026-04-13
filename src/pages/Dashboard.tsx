@@ -9,7 +9,19 @@ import {
   Activity,
   ArrowUpRight,
   ShieldAlert,
-  Target
+  Target,
+  LayoutDashboard,
+  BookOpen,
+  TrendingUp,
+  TrendingDown,
+  Download,
+  Bell,
+  CheckCircle,
+  AlertTriangle,
+  Plus,
+  ArrowRight,
+  ChevronRight,
+  MoreHorizontal
 } from 'lucide-react';
 import { formatCurrency } from '../utils/utils';
 import { Link } from 'react-router-dom';
@@ -59,6 +71,7 @@ const TeacherView = ({ user }: any) => {
   if (!data) return <div className="py-20 text-red-500 font-bold">Failed to load academic data. Please refresh.</div>;
 
   const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const streamLabel = [data.stream?.class?.name, data.stream?.name].filter(Boolean).join(' ');
 
   return (
     <div className="space-y-12">
@@ -69,7 +82,7 @@ const TeacherView = ({ user }: any) => {
           <p className="text-zinc-500 font-medium">It is {today}</p>
           {data.stream && (
             <p className="inline-block mt-2 px-2.5 py-0.5 bg-zinc-100 rounded-md text-[11px] font-semibold text-zinc-600 uppercase tracking-wide">
-              {data.stream.class.name} {data.stream.name} Teacher
+              {streamLabel || 'Assigned Stream'} Teacher
             </p>
           )}
         </div>
@@ -98,10 +111,10 @@ const TeacherView = ({ user }: any) => {
               <div key={s.id} className="py-3 flex items-center justify-between group">
                 <div className="flex items-center gap-4">
                   <div className="w-8 h-8 rounded bg-zinc-50 flex items-center justify-center text-xs font-medium text-zinc-400 group-hover:bg-zinc-100 group-hover:text-zinc-900 transition-colors">
-                    {s.profile.full_name[0]}
+                    {s.profile?.full_name?.[0] || '?'}
                   </div>
                   <div>
-                    <p className="text-sm font-medium">{s.profile.full_name}</p>
+                    <p className="text-sm font-medium">{s.profile?.full_name || 'Unnamed Student'}</p>
                     <p className="text-[11px] text-zinc-400 uppercase font-medium">{s.adm_no}</p>
                   </div>
                 </div>
