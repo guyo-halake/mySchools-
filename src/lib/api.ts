@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { 
-  Student, Teacher, Class, Stream, Exam, 
+  Student, Teacher, Class, Stream, Exam, Subject,
   ExamResult, Fee, Announcement, SchoolEvent 
 } from '../types';
 
@@ -48,6 +48,37 @@ export const api = {
       .eq('school_id', schoolId);
     if (error) throw error;
     return data as any[];
+  },
+
+  async getSubjects(schoolId: string): Promise<Subject[]> {
+    const { data, error } = await supabase
+      .from('subjects')
+      .select('*')
+      .eq('school_id', schoolId)
+      .order('name', { ascending: true });
+    if (error) throw error;
+    return (data || []) as Subject[];
+  },
+
+  async getExams(schoolId: string): Promise<Exam[]> {
+    const { data, error } = await supabase
+      .from('exams')
+      .select('*, term:terms!exams_term_id_fkey(*)')
+      .eq('school_id', schoolId)
+      .order('date', { ascending: false, nullsFirst: false });
+    if (error) throw error;
+    return (data || []) as any[];
+  },
+
+  async getTerms(schoolId: string) {
+    const { data, error } = await supabase
+      .from('terms')
+      .select('*')
+      .eq('school_id', schoolId)
+      .order('year', { ascending: false })
+      .order('name', { ascending: true });
+    if (error) throw error;
+    return data || [];
   },
 
   async addResult(result: Partial<ExamResult>) {
@@ -100,12 +131,17 @@ export const api = {
   },
 
   async getSchool(schoolId: string) {
+    console.log("API: Fetching School Info:", schoolId);
     const { data, error } = await supabase
       .from('schools')
       .select('*')
       .eq('id', schoolId)
-      .single();
-    if (error) throw error;
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      console.error("API ERROR [getSchool]:", error);
+      throw error;
+    }
     return data;
   },
 
@@ -186,6 +222,59 @@ export const api = {
     return data;
   },
 
+  async recomputeStudentTermAverages(schoolId?: string, termId?: string, studentId?: string) {
+    const { error } = await supabase.rpc('recompute_student_term_averages', {
+      p_school_id: schoolId || null,
+      p_term_id: termId || null,
+      p_student_id: studentId || null
+    });
+    if (error) throw error;
+  },
+
+  async getStudentSubjectTermAverages(schoolId: string, studentId: string, termId?: string) {
+    let query = supabase
+      .from('student_subject_term_averages')
+      .select('*, subject:subjects!student_subject_term_averages_subject_id_fkey(id, name), term:terms!student_subject_term_averages_term_id_fkey(id, name, year)')
+      .eq('school_id', schoolId)
+      .eq('student_id', studentId)
+      .order('subject_id', { ascending: true });
+
+    if (termId) query = query.eq('term_id', termId);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getStudentTermAverage(schoolId: string, studentId: string, termId?: string) {
+    let query = supabase
+      .from('student_term_averages')
+      .select('*, term:terms!student_term_averages_term_id_fkey(id, name, year)')
+      .eq('school_id', schoolId)
+      .eq('student_id', studentId)
+      .order('calculated_at', { ascending: false });
+
+    if (termId) query = query.eq('term_id', termId);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getStudentTermAveragesByStudents(schoolId: string, termId: string, studentIds: string[]) {
+    if (!studentIds.length) return [];
+
+    const { data, error } = await supabase
+      .from('student_term_averages')
+      .select('student_id, term_id, average_mark, average_grade, subjects_count, calculated_at')
+      .eq('school_id', schoolId)
+      .eq('term_id', termId)
+      .in('student_id', studentIds);
+
+    if (error) throw error;
+    return data || [];
+  },
+
   // 7. PRINCIPAL MANAGEMENT
   async getStreamsWithDetails(schoolId: string) {
     const { data, error } = await supabase
@@ -258,5 +347,245 @@ export const api = {
     
     if (error) throw error;
     return (data || []).filter((h: any) => h.student?.school_id === schoolId).slice(0, 10);
+  },
+
+  // 8. ATTENDANCE & TEACHER DASHBOARD
+  async getTeacherStream(teacherId: string) {
+    const { data, error } = await supabase
+      .from('streams')
+      .select('*, class:classes!streams_class_id_fkey(*)')
+      .eq('class_teacher_id', teacherId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  },
+
+  async getStudentsByStream(streamId: string) {
+    const { data, error } = await supabase
+      .from('students')
+      .select('*, profile:profiles!students_id_fkey(*)')
+      .eq('stream_id', streamId);
+    if (error) throw error;
+    return data;
+  },
+
+  async getAttendanceByStream(streamId: string, date: string) {
+    const { data, error } = await supabase
+      .from('attendance')
+      .select('*')
+      .in('student_id', (await supabase.from('students').select('id').eq('stream_id', streamId)).data?.map(s => s.id) || [])
+      .eq('date', date);
+    if (error) throw error;
+    return data;
+  },
+
+  async markAttendance(records: { student_id: string, status: string, date: string, term_id: string }[]) {
+     const { data, error } = await supabase
+       .from('attendance')
+       .upsert(records, { onConflict: 'student_id,date' });
+     if (error) throw error;
+     return data;
+  },
+
+  // 9. RESULTS WORKFLOW
+  async getWorkflowStudents(streamId: string, subjectId?: string, search?: string) {
+    let query = supabase
+      .from('students')
+      .select('*, profile:profiles!students_id_fkey(*)')
+      .eq('stream_id', streamId)
+      .order('adm_no', { ascending: true });
+
+    if (search?.trim()) {
+      const needle = `%${search.trim()}%`;
+      query = query.or(`adm_no.ilike.${needle},profile.full_name.ilike.${needle}` as any);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const isUuid = !!subjectId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(subjectId);
+    if (!isUuid) return data || [];
+
+    const studentIds = (data || []).map((s: any) => s.id);
+    if (studentIds.length === 0) return [];
+
+    const { data: enrolled, error: enrolledErr } = await supabase
+      .from('student_subjects')
+      .select('student_id')
+      .eq('subject_id', subjectId)
+      .in('student_id', studentIds);
+    if (enrolledErr) throw enrolledErr;
+
+    if (!enrolled || enrolled.length === 0) {
+      return data || [];
+    }
+
+    const allowed = new Set((enrolled || []).map((e: any) => e.student_id));
+    return (data || []).filter((s: any) => allowed.has(s.id));
+  },
+
+  async getResultsWorkflow(params: {
+    schoolId: string;
+    streamId?: string;
+    subjectId?: string;
+    termId?: string;
+    examType?: string;
+    status?: string;
+  }) {
+    let query = supabase
+      .from('results_workflow')
+      .select(`
+        *,
+        student:students!results_workflow_student_id_fkey(id, adm_no, profile:profiles!students_id_fkey(full_name)),
+        subject:subjects!results_workflow_subject_id_fkey(id, name),
+        term:terms!results_workflow_term_id_fkey(id, name, year),
+        submitted_by_profile:profiles!results_workflow_submitted_by_fkey(id, full_name),
+        class_teacher_profile:profiles!results_workflow_class_teacher_id_fkey(id, full_name)
+      `)
+      .eq('school_id', params.schoolId)
+      .order('updated_at', { ascending: false });
+
+    if (params.streamId) query = query.eq('stream_id', params.streamId);
+    if (params.subjectId) query = query.eq('subject_id', params.subjectId);
+    if (params.termId) query = query.eq('term_id', params.termId);
+    if (params.examType) query = query.eq('exam_type', params.examType as any);
+    if (params.status) query = query.eq('status', params.status as any);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  },
+
+  async upsertResultsWorkflow(records: any[]) {
+    if (!records.length) return [];
+    const { data, error } = await supabase
+      .from('results_workflow')
+      .upsert(records, {
+        onConflict: 'school_id,student_id,subject_id,term_id,exam_type,exam_name'
+      })
+      .select('*');
+    if (error) throw error;
+    return data || [];
+  },
+
+  async updateWorkflowStatus(ids: string[], patch: any) {
+    if (!ids.length) return [];
+    const { data, error } = await supabase
+      .from('results_workflow')
+      .update(patch)
+      .in('id', ids)
+      .select('*');
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getLatestPublishedByStudents(studentIds: string[], subjectId?: string) {
+    if (!studentIds.length) return [];
+    let query = supabase
+      .from('exam_results')
+      .select('id, student_id, marks, grade, created_at, subject_id, exam:exams!exam_results_exam_id_fkey(id, date, name, type), subject:subjects!exam_results_subject_id_fkey(id, name)')
+      .in('student_id', studentIds)
+      .order('created_at', { ascending: false });
+
+    if (subjectId) query = query.eq('subject_id', subjectId);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  },
+
+  async publishWorkflow(ids: string[], publisherId: string) {
+    if (!ids.length) return { published: 0 };
+
+    const { data: rows, error: rowsErr } = await supabase
+      .from('results_workflow')
+      .select('*')
+      .in('id', ids)
+      .eq('status', 'APPROVED');
+    if (rowsErr) throw rowsErr;
+
+    const approvedRows = rows || [];
+    if (!approvedRows.length) return { published: 0 };
+
+    const examsCache = new Map<string, string>();
+    const getExamId = async (row: any) => {
+      const key = `${row.term_id}|${row.exam_type}|${row.exam_name}`;
+      const cached = examsCache.get(key);
+      if (cached) return cached;
+
+      const { data: found, error: foundErr } = await supabase
+        .from('exams')
+        .select('id')
+        .eq('school_id', row.school_id)
+        .eq('term_id', row.term_id)
+        .eq('type', row.exam_type)
+        .eq('name', row.exam_name)
+        .maybeSingle();
+      if (foundErr) throw foundErr;
+
+      if (found?.id) {
+        examsCache.set(key, found.id);
+        return found.id;
+      }
+
+      const { data: created, error: createErr } = await supabase
+        .from('exams')
+        .insert({
+          school_id: row.school_id,
+          term_id: row.term_id,
+          type: row.exam_type,
+          name: row.exam_name,
+          date: new Date().toISOString().slice(0, 10)
+        })
+        .select('id')
+        .single();
+      if (createErr) throw createErr;
+
+      examsCache.set(key, created.id);
+      return created.id;
+    };
+
+    const payload = [] as any[];
+    for (const row of approvedRows) {
+      const examId = await getExamId(row);
+      payload.push({
+        school_id: row.school_id,
+        student_id: row.student_id,
+        exam_id: examId,
+        subject_id: row.subject_id,
+        marks: row.marks,
+        grade: row.grade
+      });
+    }
+
+    const { error: insertErr } = await supabase
+      .from('exam_results')
+      .insert(payload);
+    if (insertErr) throw insertErr;
+
+    const now = new Date().toISOString();
+    const { error: updateErr } = await supabase
+      .from('results_workflow')
+      .update({
+        status: 'PUBLISHED',
+        published_by: publisherId,
+        published_at: now
+      })
+      .in('id', approvedRows.map((r: any) => r.id));
+    if (updateErr) throw updateErr;
+
+    const termPairs = new Set(
+      approvedRows
+        .map((r: any) => `${r.school_id}::${r.term_id}`)
+        .filter((k: string) => !k.includes('::undefined') && !k.includes('::null'))
+    );
+
+    for (const key of termPairs) {
+      const [schoolId, termId] = key.split('::');
+      await this.recomputeStudentTermAverages(schoolId, termId);
+    }
+
+    return { published: approvedRows.length };
   }
 };

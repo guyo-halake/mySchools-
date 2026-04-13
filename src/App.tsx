@@ -13,7 +13,7 @@ import { Announcements } from './pages/Announcements';
 import { FeesManagement } from './pages/FeesManagement';
 import { UserDirectory } from './pages/UserDirectory';
 import { ClassesManagement } from './pages/ClassesManagement';
-import { InputResults } from './pages/InputResults';
+import { ResultsManagement } from './pages/ResultsManagement';
 import { Chat } from './pages/Chat';
 import { Assignments } from './pages/Assignments';
 
@@ -42,6 +42,7 @@ export default function App() {
             
             {/* Common Routes */}
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/results-management" element={<ProtectedRoute><ResultsManagement /></ProtectedRoute>} />
             <Route path="/results" element={<ProtectedRoute><Results /></ProtectedRoute>} />
             <Route path="/fees" element={<ProtectedRoute><Fees /></ProtectedRoute>} />
             <Route path="/suspensions" element={<ProtectedRoute><Suspensions /></ProtectedRoute>} />
@@ -49,8 +50,7 @@ export default function App() {
             <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
             <Route path="/assignments" element={<ProtectedRoute><Assignments /></ProtectedRoute>} />
             
-            {/* Teacher Routes */}
-            <Route path="/input-results" element={<ProtectedRoute><InputResults /></ProtectedRoute>} />
+            {/* Functional Routes */}
             <Route path="/fees-management" element={<ProtectedRoute><FeesManagement /></ProtectedRoute>} />
             <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
             

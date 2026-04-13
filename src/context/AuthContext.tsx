@@ -68,12 +68,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    // Wait until initial auth hydration is complete before syncing storage.
+    // Otherwise a hard refresh can clear stored user data before it is restored.
+    if (loading) return;
+
     if (user) {
       localStorage.setItem('school_portal_user', JSON.stringify(user));
     } else {
       localStorage.removeItem('school_portal_user');
     }
-  }, [user]);
+  }, [user, loading]);
 
   useEffect(() => {
     if (isDarkMode) {
