@@ -48,6 +48,15 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
     { label: 'Chat Parents', icon: MessageSquare, path: '/chat' },
     { label: 'My Classroom', icon: Calendar, path: '/my-classroom' },
   ],
+  PRINCIPAL: [
+    { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+    { label: 'Results and Student mngt', icon: FileText, path: '/results-management' },
+    { label: 'Students', icon: Users, path: '/students' },
+    { label: 'Teachers', icon: ShieldCheck, path: '/teachers' },
+    { label: 'Classes', icon: BookOpen, path: '/classes' },
+    { label: 'Announcements', icon: Bell, path: '/announcements' },
+    { label: 'My Classroom', icon: Calendar, path: '/my-classroom' },
+  ],
   ADMIN: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'Results and Student mngt', icon: FileText, path: '/results-management' },
@@ -69,6 +78,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   if (!user) return <>{children}</>;
 
   const links = sidebarLinks[user.role] || [];
+  const linksWithTemplates = [...links];
+  const roleName = String(user.role || '').toUpperCase();
+  if (['TEACHER', 'ADMIN', 'PRINCIPAL'].includes(roleName)) {
+    if (!linksWithTemplates.some((l) => l.path === '/templates')) {
+      linksWithTemplates.push({ label: 'Templates', icon: Settings, path: '/templates' });
+    }
+  }
 
   const getUserInitials = (name?: string) => {
     if (!name) return '??';
@@ -101,7 +117,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </div>
 
           <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-            {links.map((link) => (
+            {linksWithTemplates.map((link) => (
               <Link
                 key={link.path}
                 to={link.path}
@@ -125,7 +141,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <div className="bg-gray-50 dark:bg-zinc-800/30 rounded-lg p-2">
               <p className="text-[8px] uppercase tracking-widest font-bold text-zinc-400 mb-1.5 px-1">Switch View</p>
               <div className="grid grid-cols-2 gap-1">
-                {(['PARENT', 'STUDENT', 'TEACHER', 'ADMIN'] as Role[]).map(role => (
+                {(['PARENT', 'STUDENT', 'TEACHER', 'PRINCIPAL', 'ADMIN'] as Role[]).map(role => (
                   <button
                     key={role}
                     onClick={() => {
@@ -213,7 +229,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </button>
             <div className="hidden lg:flex items-center gap-2 text-zinc-400">
                <Menu size={14} className="opacity-50" />
-               <span className="text-[9px] font-bold uppercase tracking-[0.2em]">{links.find(l => l.path === location.pathname)?.label || 'Overview'}</span>
+               <span className="text-[9px] font-bold uppercase tracking-[0.2em]">{linksWithTemplates.find(l => l.path === location.pathname)?.label || 'Overview'}</span>
             </div>
           </div>
         </header>

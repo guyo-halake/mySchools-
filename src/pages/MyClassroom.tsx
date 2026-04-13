@@ -1,22 +1,36 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   CalendarDays,
   Video,
   FileText,
   Upload,
-  Clock3,
   CircleDot,
   Hand,
   Star,
   Sparkles,
   Activity,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Play,
+  Pause,
+  Save,
+  Share2,
+  NotebookPen,
+  Eraser,
+  X,
+  Mic,
+  MicOff,
+  VideoOff,
+  Send,
+  Check,
+  Bookmark,
+  Users
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
-import { Button, Card, Badge } from '../components/UI';
+import { Button, Card, Badge, Modal } from '../components/UI';
 
 type TabKey = 'LIVE' | 'RECORDINGS' | 'NOTES' | 'ASSIGNMENTS';
 type SessionStatus = 'LIVE' | 'UPCOMING' | 'COMPLETED';
@@ -32,6 +46,10 @@ type SessionItem = {
   classLabel: string;
   streamId?: string;
   subjectId?: string;
+  topic?: string;
+  scheduledStartAt?: string;
+  scheduledEndAt?: string;
+  source?: 'TIMETABLE' | 'CUSTOM';
   db?: any;
 };
 
@@ -49,6 +67,8 @@ type ActivityItem = {
   type: string;
   message: string;
   createdAt: string;
+  actorName?: string | null;
+  payload?: any;
 };
 
 type QuestionItem = {
@@ -80,6 +100,25 @@ type OrchestrationState = {
   roomUrl: string;
   startedAt: string;
   closesAt: string;
+};
+
+type MomentTag = 'IMPORTANT' | 'REPEAT_THIS' | 'EXAM_TIP';
+
+type MomentBookmark = {
+  id: string;
+  sessionId: string;
+  tag: MomentTag;
+  note: string;
+  createdAt: string;
+};
+
+type BreakoutRoom = {
+  id: string;
+  sessionId: string;
+  roomLabel: string;
+  roomUrl: string;
+  endsAt: string;
+  isActive: boolean;
 };
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -143,6 +182,7 @@ const sanitizeFileName = (name: string) => {
 
 export const MyClassroom: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [now, setNow] = useState(new Date());
   const [loading, setLoading] = useState(true);
@@ -153,6 +193,10 @@ export const MyClassroom: React.FC = () => {
   const [assignmentRows, setAssignmentRows] = useState<any[]>([]);
 
   const [activeTab, setActiveTab] = useState<TabKey>('LIVE');
+  const [workspaceMode, setWorkspaceMode] = useState<'LIVE' | 'LIBRARY'>('LIVE');
+  const [libraryTab, setLibraryTab] = useState<'VIDEOS' | 'NOTES' | 'ASSIGNMENTS'>('VIDEOS');
+  const [livePaused, setLivePaused] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState('');
 
   const [recordings, setRecordings] = useState<any[]>([]);
@@ -166,6 +210,19 @@ export const MyClassroom: React.FC = () => {
   const [questionPrompt, setQuestionPrompt] = useState('');
   const [mcqOptions, setMcqOptions] = useState('A|B|C|D');
   const [mcqAnswerKey, setMcqAnswerKey] = useState('A');
+  const [chatMessage, setChatMessage] = useState('');
+  const [micEnabled, setMicEnabled] = useState(true);
+  const [cameraEnabled, setCameraEnabled] = useState(true);
+  const [isStartClassModalOpen, setIsStartClassModalOpen] = useState(false);
+  const [startClassMode, setStartClassMode] = useState<'CHOICE' | 'CUSTOM'>('CHOICE');
+  const [customSessions, setCustomSessions] = useState<SessionItem[]>([]);
+  const [customClassForm, setCustomClassForm] = useState({
+    streamId: '',
+    subjectId: '',
+    topic: '',
+    startAt: '',
+    endAt: ''
+  });
 
   const [questions, setQuestions] = useState<QuestionItem[]>([]);
   const [submissions, setSubmissions] = useState<SubmissionItem[]>([]);
@@ -173,12 +230,36 @@ export const MyClassroom: React.FC = () => {
   const [spotlightStudentId, setSpotlightStudentId] = useState<string | null>(null);
   const [activityFeed, setActivityFeed] = useState<ActivityItem[]>([]);
   const [orchestration, setOrchestration] = useState<OrchestrationState | null>(null);
+  const [closedSummary, setClosedSummary] = useState<any | null>(null);
+  const [momentBookmarks, setMomentBookmarks] = useState<MomentBookmark[]>([]);
+  const [breakoutRooms, setBreakoutRooms] = useState<BreakoutRoom[]>([]);
+  const [breakoutMinutes, setBreakoutMinutes] = useState(8);
+  const [breakoutCount, setBreakoutCount] = useState(3);
 
   const classroomChannelRef = useRef<any>(null);
+  const jitsiContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 15000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const defaultStart = new Date(Date.now() + 5 * 60 * 1000);
+    const defaultEnd = new Date(defaultStart.getTime() + 45 * 60 * 1000);
+    const toInputValue = (value: Date) => {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
+    };
+
+    setCustomClassForm((prev: typeof customClassForm) => {
+      if (prev.startAt && prev.endAt) return prev;
+      return {
+        ...prev,
+        startAt: prev.startAt || toInputValue(defaultStart),
+        endAt: prev.endAt || toInputValue(defaultEnd)
+      };
+    });
   }, []);
 
   useEffect(() => {
@@ -204,6 +285,33 @@ export const MyClassroom: React.FC = () => {
             .eq('active', true);
           setAssignmentRows(data || []);
         }
+
+        const { data: dbCustomSessions } = await supabase
+          .from('classroom_sessions')
+          .select('*')
+          .eq('school_id', user.school_id)
+          .eq('teacher_id', user.id)
+          .eq('template_key', 'CLASSROOM_CUSTOM')
+          .in('status', ['SCHEDULED', 'LIVE'])
+          .order('scheduled_start_at', { ascending: true });
+
+        const mappedCustom = (dbCustomSessions || []).map((row: any) => ({
+          id: row.id,
+          day: row.day_name || 'Monday',
+          start: row.start_time || '08:00',
+          end: row.end_time || '08:40',
+          subject: row.title || 'Custom Class',
+          teacher: user?.full_name || 'Teacher',
+          classLabel: row.class_label || 'Custom class',
+          streamId: row.stream_id || undefined,
+          subjectId: row.subject_id || undefined,
+          topic: row.topic || undefined,
+          scheduledStartAt: row.scheduled_start_at || undefined,
+          scheduledEndAt: row.scheduled_end_at || undefined,
+          source: 'CUSTOM' as const,
+          db: row
+        }));
+        setCustomSessions(mappedCustom);
       } catch (error) {
         console.error('Failed to initialize classroom page', error);
       } finally {
@@ -232,6 +340,16 @@ export const MyClassroom: React.FC = () => {
     return subjects.filter((sub: any) => subjectIds.has(sub.id));
   }, [assignmentRows, subjects]);
 
+  useEffect(() => {
+    if (!isStartClassModalOpen || startClassMode !== 'CUSTOM') return;
+
+    setCustomClassForm((prev: typeof customClassForm) => ({
+      ...prev,
+      streamId: prev.streamId || teacherStreams[0]?.id || '',
+      subjectId: prev.subjectId || subjects[0]?.id || ''
+    }));
+  }, [isStartClassModalOpen, startClassMode, subjects, teacherStreams]);
+
   const sessions = useMemo(() => {
     const list: SessionItem[] = [];
 
@@ -250,7 +368,8 @@ export const MyClassroom: React.FC = () => {
           teacher: user?.full_name || 'Teacher',
           classLabel: `${stream.class?.name || 'Form'} ${stream.name || ''}`.trim(),
           streamId: stream.id,
-          subjectId: subject.id
+          subjectId: subject.id,
+          source: 'TIMETABLE'
         });
 
         index += 1;
@@ -266,17 +385,26 @@ export const MyClassroom: React.FC = () => {
         end: '08:40',
         subject: 'General Classroom',
         teacher: user?.full_name || 'Teacher',
-        classLabel: 'No assigned stream yet'
+        classLabel: 'No assigned stream yet',
+        source: 'TIMETABLE'
       });
     }
 
-    return list;
-  }, [now, teacherStreams, teacherSubjects, user]);
+    return [...list, ...customSessions];
+  }, [customSessions, now, teacherStreams, teacherSubjects, user]);
 
   const syncSessionsToDb = async (source: SessionItem[]) => {
-    if (!user?.school_id || !source.length) return;
+    if (!user?.school_id || !source.length) {
+      console.log('ℹ️ syncSessionsToDb skipped:', { hasSchoolId: !!user?.school_id, sourceLength: source.length });
+      return;
+    }
 
-    const rows = source.map((s) => ({
+    const timetableSource = source.filter((s) => s.source !== 'CUSTOM');
+    if (!timetableSource.length) return;
+
+    console.log('🔄 Syncing sessions to DB:', timetableSource.map(s => ({ id: s.id, subject: s.subject })));
+
+    const rows = timetableSource.map((s) => ({
       id: s.id,
       school_id: user.school_id,
       teacher_id: user.id,
@@ -295,19 +423,25 @@ export const MyClassroom: React.FC = () => {
       .upsert(rows, { onConflict: 'id' });
 
     if (error) {
+      console.error('❌ Session sync failed:', error);
       const message = String(error.message || '').toLowerCase();
       if (message.includes('classroom_sessions')) {
+        console.warn('⚠️ classroom_sessions table not found - schema not ready');
         setSchemaReady(false);
         return;
       }
       throw error;
     }
 
+    console.log('✅ Sessions synced to DB successfully');
     setSchemaReady(true);
   };
 
   useEffect(() => {
-    syncSessionsToDb(sessions).catch((err) => console.error('Failed to sync sessions', err));
+    syncSessionsToDb(sessions).catch((err) => {
+      console.error('❌ Failed to sync sessions:', err);
+      // Don't block the app - continue with client-side state
+    });
   }, [sessions]);
 
   const getSessionMoment = (session: SessionItem) => {
@@ -352,7 +486,9 @@ export const MyClassroom: React.FC = () => {
       recordingsRes,
       assignmentsRes,
       assignmentFilesRes,
-      activityRes
+      activityRes,
+      bookmarksRes,
+      breakoutsRes
     ] = await Promise.all([
       supabase.from('classroom_attendance').select('*').eq('session_id', sessionId).order('student_name', { ascending: true }),
       supabase.from('classroom_spotlight').select('*').eq('session_id', sessionId).maybeSingle(),
@@ -360,11 +496,34 @@ export const MyClassroom: React.FC = () => {
       supabase.from('classroom_recordings').select('*').eq('session_id', sessionId).order('recorded_at', { ascending: false }),
       supabase.from('classroom_assignments').select('*').eq('session_id', sessionId).order('created_at', { ascending: false }),
       supabase.from('classroom_assignment_files').select('*').eq('session_id', sessionId).order('uploaded_at', { ascending: false }),
-      supabase.from('classroom_activity_feed').select('*').eq('session_id', sessionId).order('created_at', { ascending: false }).limit(50)
+      supabase.from('classroom_activity_feed').select('*').eq('session_id', sessionId).order('created_at', { ascending: false }).limit(50),
+      supabase.from('classroom_moment_bookmarks').select('*').eq('session_id', sessionId).order('created_at', { ascending: false }).limit(20),
+      supabase.from('classroom_breakout_rooms').select('*').eq('session_id', sessionId).order('created_at', { ascending: false }).limit(10)
     ]);
 
     if (attendanceRes.error || notesRes.error || recordingsRes.error || assignmentsRes.error || assignmentFilesRes.error || activityRes.error) {
-      console.error('Failed to load one or more classroom entities', attendanceRes.error || notesRes.error || recordingsRes.error || assignmentsRes.error || assignmentFilesRes.error || activityRes.error);
+      console.warn('Classroom persistence tables are unavailable; using local classroom fallback state.');
+
+      const fallbackAttendance = seedStudents.map((student, idx) => ({
+        id: student.id,
+        name: student.name,
+        status: idx === 0 ? 'PRESENT' : idx % 3 === 0 ? 'LATE' : 'DISCONNECTED',
+        handRaised: false,
+        joinedAt: new Date().toISOString()
+      }));
+
+      setAttendance(fallbackAttendance);
+      setSpotlightStudentId(null);
+      setNotes([]);
+      setRecordings([]);
+      setAssignments([]);
+      setAssignmentFiles([]);
+      setQuestions([]);
+      setSubmissions([]);
+      setActivityFeed([]);
+      setMomentBookmarks([]);
+      setBreakoutRooms([]);
+      setOrchestration(null);
       return;
     }
 
@@ -446,7 +605,26 @@ export const MyClassroom: React.FC = () => {
       sessionId: a.session_id,
       type: a.event_type,
       message: a.message,
-      createdAt: a.created_at
+      createdAt: a.created_at,
+      actorName: a.actor_name,
+      payload: a.payload
+    })));
+
+    setMomentBookmarks((bookmarksRes.data || []).map((b: any) => ({
+      id: b.id,
+      sessionId: b.session_id,
+      tag: b.tag as MomentTag,
+      note: b.note || '',
+      createdAt: b.created_at
+    })));
+
+    setBreakoutRooms((breakoutsRes.data || []).map((r: any) => ({
+      id: r.id,
+      sessionId: r.session_id,
+      roomLabel: r.room_label,
+      roomUrl: r.room_url,
+      endsAt: r.ends_at,
+      isActive: !!r.is_active
     })));
 
     const sessionRow = await supabase.from('classroom_sessions').select('*').eq('id', sessionId).maybeSingle();
@@ -465,13 +643,65 @@ export const MyClassroom: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!selectedSession?.id || !schemaReady) return;
+    if (!selectedSession?.id) return;
     loadSessionData(selectedSession.id).catch((err) => console.error('Failed loading session data', err));
-  }, [selectedSession?.id, schemaReady]);
+  }, [selectedSession?.id]);
 
   const addActivity = async (sessionId: string, type: string, message: string, payload?: any) => {
-    if (!user?.school_id) return;
+    console.log('addActivity called:', { sessionId, type, message, userSchoolId: user?.school_id, userId: user?.id });
+    if (!user?.school_id) {
+      console.error('❌ addActivity BLOCKED: user.school_id is missing!', { userId: user?.id, userName: user?.full_name });
+      return;
+    }
+    if (!sessionId) {
+      console.error('❌ addActivity BLOCKED: sessionId is missing!');
+      return;
+    }
 
+    // Defensive: Verify session exists, or create it if it's the fallback
+    const sessionExists = await supabase
+      .from('classroom_sessions')
+      .select('id')
+      .eq('id', sessionId)
+      .maybeSingle();
+
+    if (sessionExists.error && !sessionExists.error.message?.includes('expected one result')) {
+      console.error('❌ Failed to check if session exists:', sessionExists.error);
+      return;
+    }
+
+    if (!sessionExists.data) {
+      console.warn('⚠️ Session does not exist in DB:', sessionId);
+      
+      // If it's the fallback session, try to create it
+      if (sessionId === 'fallback-1') {
+        console.log('🆕 Creating fallback session...');
+        const { error: createError } = await supabase
+          .from('classroom_sessions')
+          .insert({
+            id: sessionId,
+            school_id: user.school_id,
+            teacher_id: user.id,
+            title: 'General Classroom',
+            class_label: 'No assigned stream yet',
+            day_name: 'Monday',
+            start_time: '08:00',
+            end_time: '08:40',
+            status: 'SCHEDULED'
+          });
+
+        if (createError) {
+          console.error('❌ Failed to create fallback session:', createError);
+          return;
+        }
+        console.log('✅ Fallback session created');
+      } else {
+        console.error('❌ addActivity BLOCKED: session does not exist and is not fallback', { sessionId });
+        return;
+      }
+    }
+
+    console.log('✅ Inserting activity to Supabase...');
     const { data, error } = await supabase
       .from('classroom_activity_feed')
       .insert({
@@ -487,46 +717,202 @@ export const MyClassroom: React.FC = () => {
       .single();
 
     if (error) {
-      console.error('Failed to persist activity', error);
+      console.error('❌ Supabase insert failed:', error);
       return;
     }
+    console.log('✅ Activity saved to DB:', data);
 
     const entry = {
       id: data.id,
       sessionId: data.session_id,
       type: data.event_type,
       message: data.message,
-      createdAt: data.created_at
+      createdAt: data.created_at,
+      actorName: data.actor_name,
+      payload: data.payload
     } as ActivityItem;
 
-    setActivityFeed((prev) => [entry, ...prev].slice(0, 120));
+    console.log('📥 Adding entry to local feed state:', { entrySessionId: entry.sessionId, currentSelectedSessionId: selectedSession?.id });
+    setActivityFeed((prev) => {
+      const updated = [entry, ...prev].slice(0, 120);
+      console.log('📥 Feed state updated. New feed size:', updated.length, 'Filtered for session:', updated.filter((i) => i.sessionId === selectedSession?.id).length);
+      return updated;
+    });
 
     const channel = classroomChannelRef.current;
+    console.log('📡 Broadcasting to channel:', { channelExists: !!channel, channelId: channel?.topic || 'none' });
     if (channel) {
       channel.send({
         type: 'broadcast',
         event: 'classroom-activity',
         payload: entry
       });
+      console.log('📡 Broadcast sent');
+    } else {
+      console.warn('⚠️ No channel to broadcast to');
     }
   };
 
-  useEffect(() => {
-    if (!user?.school_id) return;
+  const addMomentBookmark = async (tag: MomentTag) => {
+    if (!selectedSession || !user?.school_id || !orchestrationForSelected) return;
 
+    const labels: Record<MomentTag, string> = {
+      IMPORTANT: 'important',
+      REPEAT_THIS: 'repeat this',
+      EXAM_TIP: 'exam tip'
+    };
+    const note = `Marked as ${labels[tag]} at ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}.`;
+
+    const { data, error } = await supabase
+      .from('classroom_moment_bookmarks')
+      .insert({
+        school_id: user.school_id,
+        session_id: selectedSession.id,
+        teacher_id: user.id,
+        tag,
+        note,
+        marker_time_seconds: Math.max(0, Math.floor((Date.now() - new Date(orchestrationForSelected.startedAt).getTime()) / 1000))
+      })
+      .select('*')
+      .single();
+
+    if (!error && data) {
+      setMomentBookmarks((prev: MomentBookmark[]) => [{
+        id: data.id,
+        sessionId: data.session_id,
+        tag: data.tag as MomentTag,
+        note: data.note,
+        createdAt: data.created_at
+      }, ...prev].slice(0, 20));
+    }
+
+    await addActivity(selectedSession.id, 'BOOKMARK_ADDED', `Bookmark added: ${labels[tag]}.`, { tag });
+  };
+
+  const generateCatchUpPack = async () => {
+    if (!selectedSession || !user?.school_id) return;
+
+    const absent = attendance.filter((p) => p.status === 'DISCONNECTED');
+    if (absent.length === 0) {
+      await addActivity(selectedSession.id, 'FEEDBACK_SENT', 'Catch-up pack skipped: no absent learners.');
+      return;
+    }
+
+    const latestRecording = recordings[0] || null;
+    const latestNote = notes[0] || null;
+    const latestAssignment = assignments.find((a: any) => a.status === 'OPEN') || assignments[0] || null;
+    const dueAt = latestAssignment?.due_at || new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+
+    const payload = {
+      sessionId: selectedSession.id,
+      sessionTitle: selectedSession.subject,
+      absentStudents: absent.map((s) => ({ id: s.id, name: s.name })),
+      recording: latestRecording ? { id: latestRecording.id, title: latestRecording.title, url: latestRecording.file_url || latestRecording.recording_url } : null,
+      note: latestNote ? { id: latestNote.id, title: latestNote.title, url: latestNote.file_url || null } : null,
+      assignment: latestAssignment ? { id: latestAssignment.id, title: latestAssignment.title, dueAt } : null,
+      deadline: dueAt
+    };
+
+    await supabase.from('classroom_catchup_packs').insert({
+      school_id: user.school_id,
+      session_id: selectedSession.id,
+      teacher_id: user.id,
+      payload,
+      deadline: dueAt
+    });
+
+    await addActivity(selectedSession.id, 'CATCHUP_PACK_CREATED', `Catch-up pack generated for ${absent.length} absent learner(s).`, {
+      absentCount: absent.length,
+      deadline: dueAt
+    });
+  };
+
+  const startBreakoutRooms = async () => {
+    if (!selectedSession || !user?.school_id || breakoutCount < 1 || breakoutMinutes < 1) return;
+
+    const endsAt = new Date(Date.now() + breakoutMinutes * 60 * 1000).toISOString();
+    const rooms = Array.from({ length: breakoutCount }).map((_, idx) => {
+      const roomLabel = `Room ${idx + 1}`;
+      const roomId = `${selectedSession.id}-breakout-${idx + 1}-${Date.now()}`;
+      return {
+        school_id: user.school_id,
+        session_id: selectedSession.id,
+        room_label: roomLabel,
+        room_url: `https://meet.jit.si/${roomId}`,
+        ends_at: endsAt,
+        is_active: true
+      };
+    });
+
+    const { data } = await supabase.from('classroom_breakout_rooms').insert(rooms).select('*');
+    if (data) {
+      setBreakoutRooms((data as any[]).map((r: any) => ({
+        id: r.id,
+        sessionId: r.session_id,
+        roomLabel: r.room_label,
+        roomUrl: r.room_url,
+        endsAt: r.ends_at,
+        isActive: !!r.is_active
+      })));
+    }
+
+    await addActivity(selectedSession.id, 'BREAKOUT_STARTED', `Started ${breakoutCount} breakout room(s) for ${breakoutMinutes} minutes.`, {
+      breakoutCount,
+      breakoutMinutes,
+      endsAt
+    });
+  };
+
+  const returnFromBreakouts = async () => {
+    if (!selectedSession) return;
+    await supabase.from('classroom_breakout_rooms').update({ is_active: false }).eq('session_id', selectedSession.id).eq('is_active', true);
+    setBreakoutRooms((prev: BreakoutRoom[]) => prev.map((r) => ({ ...r, isActive: false })));
+    await addActivity(selectedSession.id, 'BREAKOUT_ENDED', 'Breakout rooms ended. Everyone return to main room.');
+  };
+
+  useEffect(() => {
+    if (!user?.school_id) {
+      console.log('⏸️ Channel subscription skipped: no school_id');
+      return;
+    }
+
+    console.log('🔌 Setting up realtime channel:', `my-classroom-live-${user.school_id}`);
     const channel = supabase
       .channel(`my-classroom-live-${user.school_id}`)
       .on('broadcast', { event: 'classroom-activity' }, ({ payload }: any) => {
-        if (!payload || !selectedSession || payload.sessionId !== selectedSession.id) return;
+        console.log('📨 Broadcast received:', payload);
+        console.log('📋 Current selectedSession:', selectedSession?.id, 'Payload sessionId:', payload?.sessionId);
+        
+        if (!payload) {
+          console.warn('⚠️ Broadcast rejected: no payload');
+          return;
+        }
+        if (!selectedSession) {
+          console.warn('⚠️ Broadcast rejected: no selected session');
+          return;
+        }
+        if (payload.sessionId !== selectedSession.id) {
+          console.warn('⚠️ Broadcast rejected: session mismatch', { payloadSessionId: payload.sessionId, selectedSessionId: selectedSession.id });
+          return;
+        }
+        
+        console.log('✅ Broadcast accepted, updating feed');
         setActivityFeed((prev) => {
-          if (prev.some((item) => item.id === payload.id)) return prev;
+          if (prev.some((item) => item.id === payload.id)) {
+            console.log('⏭️  Item already in feed, skipping duplicate');
+            return prev;
+          }
+          console.log('✨ Adding broadcast item to feed');
           return [payload as ActivityItem, ...prev].slice(0, 120);
         });
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('📡 Channel subscription status:', status);
+      });
 
     classroomChannelRef.current = channel;
     return () => {
+      console.log('🔌 Cleaning up realtime channel');
       classroomChannelRef.current = null;
       supabase.removeChannel(channel);
     };
@@ -764,12 +1150,137 @@ export const MyClassroom: React.FC = () => {
     }
   };
 
-  const startSessionTemplate = async () => {
+  const handleSaveClassRecording = async () => {
+    if (!selectedSession || !user?.school_id || !orchestrationForSelected) return;
+
+    const { data, error } = await supabase
+      .from('classroom_recordings')
+      .insert({
+        school_id: user.school_id,
+        session_id: selectedSession.id,
+        teacher_id: user.id,
+        title: `${selectedSession.subject} Live Recording`,
+        recording_url: orchestrationForSelected.roomUrl,
+        file_url: orchestrationForSelected.roomUrl,
+        recorded_at: new Date().toISOString()
+      })
+      .select('*')
+      .single();
+
+    if (error || !data) return;
+
+    setRecordings((prev) => [data, ...prev]);
+    await addActivity(selectedSession.id, 'FEEDBACK_SENT', 'Saved live class recording.');
+  };
+
+  const sendChatMessage = async () => {
+    const targetSessionId = selectedSession?.id || selectedSessionId;
+    if (!targetSessionId || !chatMessage.trim()) {
+      console.warn('⚠️ sendChatMessage blocked:', { targetSessionId, hasMessage: !!chatMessage.trim() });
+      return;
+    }
+    const message = chatMessage.trim();
+    console.log('📤 Sending chat:', { message, targetSessionId });
+
+    await addActivity(targetSessionId, 'CHAT_MESSAGE', message, {
+      kind: 'teacher-chat'
+    });
+
+    setChatMessage('');
+  };
+
+  const raiseHandFromComposer = async () => {
+    const targetSessionId = selectedSession?.id || selectedSessionId;
+    if (!targetSessionId) {
+      console.warn('⚠️ raiseHandFromComposer blocked: no session ID');
+      return;
+    }
+    console.log('✋ Raising hand:', { targetSessionId, attendanceCount: attendance.length });
+
+    const liveStudents = attendance.filter((student) => student.status === 'PRESENT' || student.status === 'LATE');
+    if (liveStudents.length === 0) {
+      console.warn('⚠️ No live students to raise hand for');
+      return;
+    }
+
+    const student = randomFrom(liveStudents as Participant[]);
+    if (!student.handRaised) {
+      await toggleRaiseHand(student.id);
+    }
+
+    console.log('📢 Recording hand raise activity:', { studentName: student.name, studentId: student.id });
+    await addActivity(targetSessionId, 'HAND_RAISED', `${student.name} raised his hand.`, {
+      kind: 'hand-raise',
+      studentId: student.id,
+      studentName: student.name,
+      accepted: false
+    });
+  };
+
+  const acceptRaisedHand = async (studentId: string, studentName: string) => {
     if (!selectedSession || !user?.school_id) return;
+
+    await supabase
+      .from('classroom_attendance')
+      .update({ hand_raised: false, last_seen_at: new Date().toISOString() })
+      .eq('session_id', selectedSession.id)
+      .eq('student_id', studentId);
+
+    await supabase
+      .from('classroom_hand_queue')
+      .update({ is_active: false, lowered_at: new Date().toISOString() })
+      .eq('session_id', selectedSession.id)
+      .eq('student_id', studentId)
+      .eq('is_active', true);
+
+    setAttendance((prev) => prev.map((student) => student.id === studentId ? { ...student, handRaised: false } : student));
+    await setSpotlight(studentId);
+    await addActivity(selectedSession.id, 'HAND_ACCEPTED', `${user.full_name || 'Teacher'} accepted ${studentName}'s hand.`, {
+      kind: 'hand-accepted',
+      studentId,
+      studentName
+    });
+  };
+
+  const persistClassTemplateRegistry = async () => {
+    if (!user?.school_id) return;
+
+    await supabase
+      .from('templates')
+      .upsert({
+        school_id: user.school_id,
+        key: 'CLASSROOM_START',
+        name: 'Classroom Start Template',
+        category: 'CLASSROOM',
+        config: {
+          modes: ['CUSTOM', 'TEMPLATE'],
+          fields: ['stream', 'subject', 'topic', 'startAt', 'endAt']
+        },
+        active: true,
+        updated_by: user.id
+      }, { onConflict: 'school_id,key' });
+
+    await supabase
+      .from('template_permissions')
+      .upsert([
+        { school_id: user.school_id, template_key: 'CLASSROOM_START', role: 'TEACHER', can_view: true, can_use: true, can_edit: false },
+        { school_id: user.school_id, template_key: 'CLASSROOM_START', role: 'ADMIN', can_view: true, can_use: true, can_edit: true },
+        { school_id: user.school_id, template_key: 'CLASSROOM_START', role: 'PRINCIPAL', can_view: true, can_use: true, can_edit: true }
+      ], { onConflict: 'school_id,template_key,role' });
+  };
+
+  useEffect(() => {
+    persistClassTemplateRegistry().catch((err) => {
+      console.warn('Template registry tables unavailable yet:', err?.message || err);
+    });
+  }, [user?.id, user?.school_id]);
+
+  const startSessionLive = async (session: SessionItem, topic?: string) => {
+    if (!user?.school_id) return;
 
     const startTime = new Date();
     const closeTime = new Date(startTime.getTime() + 45 * 60 * 1000);
-    const roomUrl = `https://meet.jit.si/${selectedSession.id.replace(/[^a-zA-Z0-9-]/g, '-')}`;
+    const roomUrl = `https://meet.jit.si/${session.id.replace(/[^a-zA-Z0-9-]/g, '-')}`;
 
     await supabase
       .from('classroom_sessions')
@@ -779,38 +1290,180 @@ export const MyClassroom: React.FC = () => {
         template_started_at: startTime.toISOString(),
         auto_close_at: closeTime.toISOString(),
         archived: false,
-        closed_at: null
+        closed_at: null,
+        topic: topic || null
       })
-      .eq('id', selectedSession.id);
+      .eq('id', session.id);
 
-    const { data: noteRow } = await supabase
-      .from('classroom_notes')
-      .insert({
-        school_id: user.school_id,
-        session_id: selectedSession.id,
-        teacher_id: user.id,
-        title: `${selectedSession.subject} Live Session Notes`,
-        note_type: 'TEXT',
-        content: 'Session notes created by template.'
-      })
-      .select('*')
-      .single();
-
-    if (noteRow) setNotes((prev) => [noteRow, ...prev]);
-
-    const assignment = await getActiveAssignment(selectedSession.id);
-
+    setSelectedSessionId(session.id);
     setOrchestration({
       isActive: true,
-      sessionId: selectedSession.id,
+      sessionId: session.id,
       roomUrl,
       startedAt: startTime.toISOString(),
       closesAt: closeTime.toISOString()
     });
+    setClosedSummary(null);
+    setLivePaused(false);
+    setWorkspaceMode('LIVE');
+    setIsStartClassModalOpen(false);
+    setStartClassMode('CHOICE');
 
-    await addActivity(selectedSession.id, 'SESSION_STARTED', 'Session template started. Live room opened.');
-    await addActivity(selectedSession.id, 'FEEDBACK_SENT', 'Session notes posted to class.');
-    await addActivity(selectedSession.id, 'ASSIGNMENT_SUBMITTED', assignment ? 'Assignment opened with deadline.' : 'Assignment open action attempted.');
+    await addActivity(session.id, 'SESSION_STARTED', topic ? `Class started: ${topic}` : 'Class started. Live room opened.');
+  };
+
+  const handleStartNowCustom = async () => {
+    if (!user?.school_id) return;
+    const stream = teacherStreams.find((s: any) => s.id === customClassForm.streamId);
+    const subject = subjects.find((s: any) => s.id === customClassForm.subjectId);
+    if (!stream || !subject || !customClassForm.startAt || !customClassForm.endAt) return;
+
+    const startDate = new Date(customClassForm.startAt);
+    const endDate = new Date(customClassForm.endAt);
+    const day = startDate.toLocaleDateString('en-GB', { weekday: 'long' });
+    const fmt = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const id = `custom-${Date.now()}`;
+    const classLabel = `${stream.class?.name || 'Form'} ${stream.name || ''}`.trim();
+    const topic = customClassForm.topic.trim();
+
+    const sessionItem: SessionItem = {
+      id,
+      day,
+      start: fmt(startDate),
+      end: fmt(endDate),
+      subject: subject.name,
+      teacher: user.full_name || 'Teacher',
+      classLabel,
+      streamId: stream.id,
+      subjectId: subject.id,
+      topic: topic || undefined,
+      scheduledStartAt: startDate.toISOString(),
+      scheduledEndAt: endDate.toISOString(),
+      source: 'CUSTOM'
+    };
+
+    await supabase
+      .from('classroom_sessions')
+      .insert({
+        id,
+        school_id: user.school_id,
+        teacher_id: user.id,
+        stream_id: stream.id,
+        subject_id: subject.id,
+        title: subject.name,
+        class_label: classLabel,
+        day_name: day,
+        start_time: fmt(startDate),
+        end_time: fmt(endDate),
+        status: 'SCHEDULED',
+        topic: topic || null,
+        template_key: 'CLASSROOM_CUSTOM',
+        scheduled_start_at: startDate.toISOString(),
+        scheduled_end_at: endDate.toISOString()
+      });
+
+    setCustomSessions((prev: SessionItem[]) => [sessionItem, ...prev]);
+    await startSessionLive(sessionItem, topic || undefined);
+  };
+
+  const handleSaveCustomForLater = async () => {
+    if (!user?.school_id) return;
+    const stream = teacherStreams.find((s: any) => s.id === customClassForm.streamId);
+    const subject = subjects.find((s: any) => s.id === customClassForm.subjectId);
+    if (!stream || !subject || !customClassForm.startAt || !customClassForm.endAt) return;
+
+    const startDate = new Date(customClassForm.startAt);
+    const endDate = new Date(customClassForm.endAt);
+    const day = startDate.toLocaleDateString('en-GB', { weekday: 'long' });
+    const fmt = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const id = `custom-${Date.now()}`;
+    const classLabel = `${stream.class?.name || 'Form'} ${stream.name || ''}`.trim();
+    const topic = customClassForm.topic.trim();
+
+    const sessionItem: SessionItem = {
+      id,
+      day,
+      start: fmt(startDate),
+      end: fmt(endDate),
+      subject: subject.name,
+      teacher: user.full_name || 'Teacher',
+      classLabel,
+      streamId: stream.id,
+      subjectId: subject.id,
+      topic: topic || undefined,
+      scheduledStartAt: startDate.toISOString(),
+      scheduledEndAt: endDate.toISOString(),
+      source: 'CUSTOM'
+    };
+
+    await supabase
+      .from('classroom_sessions')
+      .insert({
+        id,
+        school_id: user.school_id,
+        teacher_id: user.id,
+        stream_id: stream.id,
+        subject_id: subject.id,
+        title: subject.name,
+        class_label: classLabel,
+        day_name: day,
+        start_time: fmt(startDate),
+        end_time: fmt(endDate),
+        status: 'SCHEDULED',
+        topic: topic || null,
+        template_key: 'CLASSROOM_CUSTOM',
+        scheduled_start_at: startDate.toISOString(),
+        scheduled_end_at: endDate.toISOString()
+      });
+
+    setCustomSessions((prev: SessionItem[]) => [sessionItem, ...prev]);
+    setIsStartClassModalOpen(false);
+    setStartClassMode('CHOICE');
+  };
+
+  useEffect(() => {
+    if (!user?.school_id || orchestration?.isActive) return;
+
+    const timer = setInterval(async () => {
+      const { data, error } = await supabase
+        .from('classroom_sessions')
+        .select('*')
+        .eq('school_id', user.school_id)
+        .eq('teacher_id', user.id)
+        .eq('status', 'SCHEDULED')
+        .eq('template_key', 'CLASSROOM_CUSTOM')
+        .lte('scheduled_start_at', new Date().toISOString())
+        .order('scheduled_start_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (error || !data) return;
+
+      const dueSession: SessionItem = {
+        id: data.id,
+        day: data.day_name || 'Monday',
+        start: data.start_time || '08:00',
+        end: data.end_time || '08:40',
+        subject: data.title || 'Custom Class',
+        teacher: user.full_name || 'Teacher',
+        classLabel: data.class_label || 'Custom class',
+        streamId: data.stream_id || undefined,
+        subjectId: data.subject_id || undefined,
+        topic: data.topic || undefined,
+        scheduledStartAt: data.scheduled_start_at || undefined,
+        scheduledEndAt: data.scheduled_end_at || undefined,
+        source: 'CUSTOM'
+      };
+
+      await startSessionLive(dueSession, data.topic || undefined);
+    }, 30000);
+
+    return () => clearInterval(timer);
+  }, [orchestration?.isActive, user?.id, user?.school_id]);
+
+  const startSessionTemplate = async () => {
+    if (!selectedSession || !user?.school_id) return;
+    await startSessionLive(selectedSession);
   };
 
   const closeSessionAndArchive = async (reason: 'AUTO' | 'MANUAL') => {
@@ -850,6 +1503,17 @@ export const MyClassroom: React.FC = () => {
     setNotes((prev) => prev.map((n) => n.session_id === selectedSession.id ? { ...n, archived: true } : n));
 
     setOrchestration(null);
+    setClosedSummary({
+      sessionTitle: selectedSession.subject,
+      sessionLabel: selectedSession.classLabel,
+      closedAt: nowIso,
+      present: attendance.filter((p) => p.status === 'PRESENT'),
+      late: attendance.filter((p) => p.status === 'LATE'),
+      disconnected: attendance.filter((p) => p.status === 'DISCONNECTED'),
+      recordings: recordings.length,
+      notes: notes.length,
+      submissions: submissions.length
+    });
     await addActivity(selectedSession.id, 'SESSION_CLOSED', reason === 'AUTO' ? 'Session auto-closed and archived.' : 'Session closed and archived.');
   };
 
@@ -1021,356 +1685,668 @@ export const MyClassroom: React.FC = () => {
 
   const orchestrationForSelected = orchestration && selectedSession && orchestration.sessionId === selectedSession.id ? orchestration : null;
 
+  // Initialize Jitsi Meet when class goes live
+  useEffect(() => {
+    if (!orchestrationForSelected || !jitsiContainerRef.current || !selectedSession) {
+      console.log('⏸️  Jitsi setup skipped:', { hasOrchestration: !!orchestrationForSelected, hasContainer: !!jitsiContainerRef.current, hasSession: !!selectedSession });
+      return;
+    }
+
+    console.log('🎥 Initializing Jitsi Meet for room:', selectedSession.id);
+
+    // Load Jitsi API script if not already loaded
+    if (!(window as any).JitsiMeetExternalAPI) {
+      const script = document.createElement('script');
+      script.src = 'https://meet.jit.si/external_api.js';
+      script.async = true;
+      script.onload = () => {
+        console.log('✅ Jitsi API loaded');
+      };
+      document.head.appendChild(script);
+    }
+
+    // Give Jitsi API time to load
+    const initTimer = setTimeout(() => {
+      const JitsiMeetExternalAPI = (window as any).JitsiMeetExternalAPI;
+      if (!JitsiMeetExternalAPI) {
+        console.error('❌ Jitsi API not available');
+        return;
+      }
+
+      try {
+        const roomName = selectedSession.id.replace(/[^a-zA-Z0-9-]/g, '-');
+        const options = {
+          roomName: roomName,
+          parentNode: jitsiContainerRef.current,
+          configOverwrite: {
+            disableAudioLevels: false,
+            startAudioMuted: !micEnabled,
+            startVideoMuted: !cameraEnabled,
+            enableLobbyChat: false,
+            prejoinPageEnabled: false
+          },
+          interfaceConfigOverwrite: {
+            DEFAULT_WELCOME_PAGE_LOGO_URL: '',
+            TOOLBAR_BUTTONS: [
+              'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
+              'foyer', 'hangup', 'help', 'highlight', 'raisehand', 'recording',
+              'settings', 'shareaudio', 'sharedvideo', 'stats', 'tileview',
+              'toggle-camera', 'videoquality'
+            ],
+            SHOW_BRAND_WATERMARK: false,
+            MOBILE_APP_PROMO: false,
+            ENABLE_DESKTOP_DEEPLINK: false
+          },
+          userInfo: {
+            displayName: user?.full_name || 'Teacher',
+            email: user?.email || 'teacher@school.com'
+          }
+        };
+
+        const api = new JitsiMeetExternalAPI('meet.jit.si', options);
+        console.log('✅ Jitsi conference initialized:', roomName);
+
+        // Listen for hand raise events
+        api.addEventListener('raiseHandUpdated', (data: any) => {
+          console.log('✋ Hand raised event from Jitsi:', data);
+        });
+
+        // Listen for recording updates
+        api.addEventListener('recordingStatusChanged', (data: any) => {
+          console.log('📹 Recording status:', data);
+        });
+
+        // Cleanup on unmount or when orchestration ends
+        return () => {
+          console.log('🔌 Cleaning up Jitsi');
+          api.dispose();
+        };
+      } catch (error) {
+        console.error('❌ Failed to initialize Jitsi:', error);
+      }
+    }, 500);
+
+    return () => clearTimeout(initTimer);
+  }, [orchestrationForSelected?.sessionId, selectedSession?.id, user, micEnabled, cameraEnabled]);
+
+  const downloadPresentList = () => {
+    if (!selectedSession) return;
+    const rows = ['Student,Status,Joined At'];
+    attendance.forEach((student) => {
+      rows.push(`${student.name},${student.status},${student.joinedAt || ''}`);
+    });
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${selectedSession.subject.replace(/\s+/g, '_')}_attendance.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const printPresentList = () => {
+    const printWindow = window.open('', '_blank', 'width=900,height=700');
+    if (!printWindow || !selectedSession) return;
+    const presentRows = attendance.filter((student) => student.status === 'PRESENT' || student.status === 'LATE');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Attendance Summary</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
+            h1 { font-size: 20px; margin-bottom: 8px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+            th, td { border-bottom: 1px solid #ddd; text-align: left; padding: 8px; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <h1>${selectedSession.subject} Attendance Summary</h1>
+          <p>${selectedSession.classLabel}</p>
+          <table>
+            <thead><tr><th>Student</th><th>Status</th><th>Joined</th></tr></thead>
+            <tbody>
+              ${presentRows.map((student) => `<tr><td>${student.name}</td><td>${student.status}</td><td>${student.joinedAt || '-'}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
+
+  const MeetingControl: React.FC<{
+    label: string;
+    icon: React.ReactNode;
+    onClick: () => void;
+    disabled?: boolean;
+    variant?: 'outline' | 'danger';
+  }> = ({ label, icon, onClick, disabled, variant = 'outline' }) => (
+    <Button
+      title={label}
+      aria-label={label}
+      variant={variant}
+      className="group relative h-10 w-10 justify-center px-0"
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {icon}
+      <span className="pointer-events-none absolute -top-9 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-zinc-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100 dark:bg-white dark:text-zinc-900">
+        {label}
+      </span>
+    </Button>
+  );
+
+  const relativeTime = (iso: string) => {
+    const diffMs = Math.max(0, Date.now() - new Date(iso).getTime());
+    const sec = Math.floor(diffMs / 1000);
+    if (sec < 5) return 'just now';
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const days = Math.floor(hr / 24);
+    return `${days}d ago`;
+  };
+
+  const customClassFormValid = Boolean(
+    customClassForm.streamId &&
+    customClassForm.subjectId &&
+    customClassForm.startAt &&
+    customClassForm.endAt &&
+    new Date(customClassForm.endAt).getTime() > new Date(customClassForm.startAt).getTime()
+  );
+
   if (loading) {
     return <div className="py-14 text-sm font-semibold text-zinc-500">Loading My Classroom...</div>;
   }
 
   return (
     <div className="space-y-6">
-      {!schemaReady && (
-        <Card className="border-amber-200 bg-amber-50">
-          <p className="text-sm text-amber-800">
-            Classroom persistence tables are not ready yet. Apply migration file 20260413_my_classroom.sql first.
-          </p>
-        </Card>
-      )}
-
-      <Card className="bg-gradient-to-r from-zinc-900 to-zinc-700 text-white border-none">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <style>{`
+        @keyframes liveFeedPopIn {
+          from { opacity: 0; transform: translateY(10px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .live-feed-pop {
+          animation: liveFeedPopIn 220ms ease-out;
+        }
+      `}</style>
+      <Card className="border-none bg-white dark:bg-zinc-900">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-zinc-300">My Classroom</p>
-            <h1 className="text-2xl font-bold mt-1">
-              {now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-            </h1>
-            <p className="text-sm text-zinc-200 mt-2">
-              {currentClass ? `Now: ${currentClass.subject} • ${currentClass.classLabel}` : nextClass ? `Next: ${nextClass.subject} at ${nextClass.start}` : 'No active class right now'}
-            </p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-zinc-400">My Classroom</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Teacher studio</h1>
+            <p className="mt-1 text-xs text-zinc-500">{now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {currentClass ? (
-              <Button className="bg-emerald-500 hover:bg-emerald-600 text-white">
-                <Video size={14} /> Join Live Class
-              </Button>
-            ) : (
-              <Button variant="outline" className="border-zinc-300 text-zinc-100 hover:bg-white/10">
-                <Clock3 size={14} /> Awaiting Live Session
-              </Button>
-            )}
-            <Button variant="outline" className="border-zinc-300 text-zinc-100 hover:bg-white/10" onClick={startSessionTemplate}>
-              <Sparkles size={14} /> Start Session Template
+            <Button
+              title="Start Live Class"
+              variant="primary"
+              onClick={() => {
+                setIsStartClassModalOpen(true);
+                setStartClassMode('CHOICE');
+              }}
+              disabled={!!orchestrationForSelected}
+            >
+              <Sparkles size={14} /> Start Live Class
+            </Button>
+            <Button
+              title="Upload"
+              variant="outline"
+              onClick={() => {
+                setWorkspaceMode('LIBRARY');
+                setActiveTab('RECORDINGS');
+                setLibraryTab('VIDEOS');
+              }}
+            >
+              <Upload size={14} /> Upload
+            </Button>
+            <Button title="My Timetable" variant="outline" onClick={() => navigate('/timetable')}>
+              <CalendarDays size={14} /> My Timetable
             </Button>
           </div>
         </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+          <Button title="Live Class" variant={workspaceMode === 'LIVE' ? 'primary' : 'outline'} onClick={() => setWorkspaceMode('LIVE')}>
+            Live Class
+          </Button>
+          <Button title="Recordings & Uploads" variant={workspaceMode === 'LIBRARY' ? 'primary' : 'outline'} onClick={() => setWorkspaceMode('LIBRARY')}>
+            Recordings & Uploads
+          </Button>
+          {workspaceMode === 'LIBRARY' && (
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <Button title="Videos" variant={libraryTab === 'VIDEOS' ? 'primary' : 'outline'} onClick={() => setLibraryTab('VIDEOS')}>Videos</Button>
+              <Button title="Notes & PDFs" variant={libraryTab === 'NOTES' ? 'primary' : 'outline'} onClick={() => setLibraryTab('NOTES')}>Notes & PDFs</Button>
+              <Button title="Assignments" variant={libraryTab === 'ASSIGNMENTS' ? 'primary' : 'outline'} onClick={() => setLibraryTab('ASSIGNMENTS')}>Assignments</Button>
+            </div>
+          )}
+        </div>
       </Card>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        <div className="xl:col-span-5">
-          <Card title="Schedule Timeline" subtitle="Interactive daily class flow" icon={CalendarDays}>
-            <div className="space-y-3">
-              {orderedSessions.map((session) => {
-                const status = sessionStatus(session);
-                const selected = selectedSession?.id === session.id;
-                const tone = status === 'LIVE' ? 'border-red-300 bg-red-50' : status === 'UPCOMING' ? 'border-amber-300 bg-amber-50' : 'border-zinc-200 bg-zinc-50';
-
-                return (
-                  <button
-                    key={session.id}
-                    type="button"
-                    onClick={() => setSelectedSessionId(session.id)}
-                    className={`w-full text-left rounded-xl border px-3 py-3 transition ${tone} ${selected ? 'ring-2 ring-zinc-900/20' : ''}`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <p className="text-xs text-zinc-500">{session.day} • {session.start} - {session.end}</p>
-                        <p className="font-semibold text-sm mt-0.5">{session.subject}</p>
-                        <p className="text-xs text-zinc-600 mt-0.5">{session.teacher} • {session.classLabel}</p>
-                      </div>
-                      <Badge variant={status === 'LIVE' ? 'danger' : status === 'UPCOMING' ? 'warning' : 'neutral'}>
-                        <CircleDot size={10} /> {status}
-                      </Badge>
-                    </div>
-                  </button>
-                );
-              })}
+      {closedSummary && (
+        <Card className="border-zinc-200 bg-zinc-50 dark:bg-zinc-900/60">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Session summary</p>
+              <p className="text-sm font-semibold mt-1">{closedSummary.sessionTitle} • {closedSummary.sessionLabel}</p>
+              <p className="text-xs text-zinc-500 mt-1">Closed {new Date(closedSummary.closedAt).toLocaleString('en-GB')}</p>
             </div>
-          </Card>
-        </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={downloadPresentList}>Download present list</Button>
+              <Button variant="outline" onClick={printPresentList}>Print attendance</Button>
+              <Button variant="outline" onClick={() => setClosedSummary(null)}>Hide summary</Button>
+            </div>
+          </div>
+        </Card>
+      )}
 
-        <div className="xl:col-span-7 space-y-6">
-          <Card title={selectedSession ? `${selectedSession.subject} Classroom` : 'Classroom'} subtitle={selectedSession ? `${selectedSession.classLabel} • ${selectedSession.day} ${selectedSession.start}-${selectedSession.end}` : 'Select a class from timeline'}>
-            <div className="flex flex-wrap items-center gap-2 mb-4">
-              {([
-                ['LIVE', 'Live Class'],
-                ['RECORDINGS', 'Recordings'],
-                ['NOTES', 'Notes'],
-                ['ASSIGNMENTS', 'Assignments']
-              ] as Array<[TabKey, string]>).map(([key, label]) => (
-                <Button key={key} variant={activeTab === key ? 'primary' : 'outline'} onClick={() => setActiveTab(key)}>
-                  {label}
-                </Button>
-              ))}
+      <Modal
+        isOpen={isStartClassModalOpen}
+        onClose={() => {
+          setIsStartClassModalOpen(false);
+          setStartClassMode('CHOICE');
+        }}
+        title="Start Class"
+      >
+        {startClassMode === 'CHOICE' ? (
+          <div className="space-y-3">
+            <Button
+              variant="primary"
+              className="w-full justify-center py-2"
+              onClick={() => setStartClassMode('CUSTOM')}
+            >
+              Start a custom class
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-center py-2"
+              disabled={!selectedSession}
+              onClick={() => startSessionTemplate().catch((err) => console.error('Failed to start from template', err))}
+            >
+              Start from template
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">Class (stream)</label>
+                      <select
+                        value={customClassForm.streamId}
+                        onChange={(e) => setCustomClassForm((prev: typeof customClassForm) => ({ ...prev, streamId: e.target.value }))}
+                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+              >
+                <option value="">Select class and stream</option>
+                {teacherStreams.map((stream: any) => (
+                  <option key={stream.id} value={stream.id}>{`${stream.class?.name || 'Form'} ${stream.name || ''}`.trim()}</option>
+                ))}
+              </select>
             </div>
 
-            {orchestrationForSelected && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 mb-4 text-xs text-emerald-700">
-                Template active. Live room: {orchestrationForSelected.roomUrl} • auto closes at {new Date(orchestrationForSelected.closesAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">Subject</label>
+              <select
+                value={customClassForm.subjectId}
+                onChange={(e) => setCustomClassForm((prev: typeof customClassForm) => ({ ...prev, subjectId: e.target.value }))}
+                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+              >
+                <option value="">Select subject</option>
+                {subjects.map((subject: any) => (
+                  <option key={subject.id} value={subject.id}>{subject.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">Today's topic (optional)</label>
+              <input
+                value={customClassForm.topic}
+                onChange={(e) => setCustomClassForm((prev: typeof customClassForm) => ({ ...prev, topic: e.target.value }))}
+                placeholder="Enter topic"
+                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">Start date & time</label>
+                <input
+                  type="datetime-local"
+                  value={customClassForm.startAt}
+                  onChange={(e) => setCustomClassForm((prev: typeof customClassForm) => ({ ...prev, startAt: e.target.value }))}
+                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                />
               </div>
-            )}
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">End date & time</label>
+                <input
+                  type="datetime-local"
+                  value={customClassForm.endAt}
+                  onChange={(e) => setCustomClassForm((prev: typeof customClassForm) => ({ ...prev, endAt: e.target.value }))}
+                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                />
+              </div>
+            </div>
 
-            {activeTab === 'LIVE' && (
-              <div className="space-y-4">
-                <div className="rounded-xl border border-zinc-200 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setStartClassMode('CHOICE')}>Back</Button>
+              <Button
+                variant="outline"
+                disabled={!customClassFormValid}
+                onClick={() => handleSaveCustomForLater().catch((err) => console.error('Failed to save class for later', err))}
+              >
+                Save for later
+              </Button>
+              <Button
+                variant="primary"
+                disabled={!customClassFormValid}
+                onClick={() => handleStartNowCustom().catch((err) => console.error('Failed to start custom class', err))}
+              >
+                Start now
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {workspaceMode === 'LIVE' ? (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+          <div className="xl:col-span-9">
+            <Card
+              title={selectedSession ? `${selectedSession.subject} live room` : 'No live class available.'}
+              subtitle={selectedSession ? `${selectedSession.classLabel} • ${selectedSession.day} ${selectedSession.start}-${selectedSession.end}` : 'Choose a class or start one from the top bar.'}
+              className="border-zinc-200 bg-white dark:bg-zinc-900"
+            >
+              <div className="rounded-[28px] border border-zinc-200 bg-zinc-50 p-5 text-zinc-900 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
+                {orchestrationForSelected ? (
+                  <div
+                    ref={jitsiContainerRef}
+                    className="flex aspect-video rounded-[28px] overflow-hidden border border-zinc-200 bg-black shadow-sm dark:border-zinc-800"
+                    style={{ minHeight: '500px' }}
+                  />
+                ) : (
+                  <div className="flex aspect-video items-center justify-center rounded-[28px] border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-slate-100 text-center shadow-sm dark:border-zinc-800 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
                     <div>
-                      <p className="text-sm font-semibold">Live Session Control</p>
-                      <p className="text-xs text-zinc-500 mt-1">Presence, hand queue and spotlight mode.</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button onClick={simulateStudentJoin} variant="outline">Simulate Join</Button>
-                      <Button onClick={() => closeSessionAndArchive('MANUAL')} variant="outline">Close & Archive</Button>
+                      <Video size={46} className="mx-auto text-zinc-400 dark:text-zinc-500" />
+                      <p className="mt-3 text-lg font-semibold text-zinc-900 dark:text-zinc-100">No live class available</p>
+                      <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Start a live class from the top bar when you are ready.</p>
                     </div>
                   </div>
+                )}
 
-                  <div className="flex flex-wrap items-center gap-2 mt-3">
-                    <Badge variant="success">Present {presentCount}</Badge>
-                    <Badge variant="warning">Late {lateCount}</Badge>
-                    <Badge variant="danger">Disconnected {disconnectedCount}</Badge>
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  <MeetingControl label={micEnabled ? 'Mute microphone' : 'Unmute microphone'} icon={micEnabled ? <Mic size={16} /> : <MicOff size={16} />} onClick={() => setMicEnabled((prev) => !prev)} />
+                  <MeetingControl label={cameraEnabled ? 'Turn camera off' : 'Turn camera on'} icon={cameraEnabled ? <Video size={16} /> : <VideoOff size={16} />} onClick={() => setCameraEnabled((prev) => !prev)} />
+                  <MeetingControl label={livePaused ? 'Play' : 'Pause'} icon={livePaused ? <Play size={16} /> : <Pause size={16} />} onClick={() => setLivePaused((prev) => !prev)} />
+                  <MeetingControl label="Save recording" icon={<Save size={16} />} onClick={handleSaveClassRecording} disabled={!orchestrationForSelected} />
+                  <MeetingControl label="Share screen" icon={<Share2 size={16} />} onClick={() => addActivity(selectedSession?.id || 'none', 'SESSION_STARTED', 'Screen share started.')} disabled={!selectedSession} />
+                  <MeetingControl label="Bookmark: important" icon={<Bookmark size={16} />} onClick={() => addMomentBookmark('IMPORTANT')} disabled={!orchestrationForSelected} />
+                  <MeetingControl label="Bookmark: repeat this" icon={<Bookmark size={16} />} onClick={() => addMomentBookmark('REPEAT_THIS')} disabled={!orchestrationForSelected} />
+                  <MeetingControl label="Bookmark: exam tip" icon={<Bookmark size={16} />} onClick={() => addMomentBookmark('EXAM_TIP')} disabled={!orchestrationForSelected} />
+                  <MeetingControl label="Mark students" icon={<NotebookPen size={16} />} onClick={simulateStudentJoin} disabled={!selectedSession} />
+                  <MeetingControl label="Clear spotlight" icon={<Eraser size={16} />} onClick={() => setSpotlight(null)} disabled={!selectedSession} />
+                  <MeetingControl label="End class" icon={<X size={16} />} onClick={() => closeSessionAndArchive('MANUAL')} disabled={!orchestrationForSelected} variant="danger" />
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          <div className="xl:col-span-3">
+            <Card title="Live room" subtitle="Chat and activity">
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+                  <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Catch-up and breakouts</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button variant="outline" className="h-8 px-2" onClick={() => generateCatchUpPack().catch((err) => console.error('Failed generating catch-up pack', err))}>
+                      Generate catch-up pack
+                    </Button>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={8}
+                      value={breakoutCount}
+                      onChange={(e) => setBreakoutCount(Math.max(1, Math.min(8, Number(e.target.value) || 1)))}
+                      className="h-9 rounded-lg border border-zinc-200 bg-white px-2 text-xs dark:border-zinc-800 dark:bg-zinc-950"
+                      placeholder="Rooms"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={breakoutMinutes}
+                      onChange={(e) => setBreakoutMinutes(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
+                      className="h-9 rounded-lg border border-zinc-200 bg-white px-2 text-xs dark:border-zinc-800 dark:bg-zinc-950"
+                      placeholder="Minutes"
+                    />
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button variant="outline" className="h-8 px-2" onClick={() => startBreakoutRooms().catch((err) => console.error('Failed starting breakouts', err))}>
+                      <Users size={12} /> Start breakouts
+                    </Button>
+                    <Button variant="outline" className="h-8 px-2" onClick={() => returnFromBreakouts().catch((err) => console.error('Failed ending breakouts', err))}>
+                      Return all
+                    </Button>
+                  </div>
+
+                  {breakoutRooms.filter((room) => room.isActive).length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {breakoutRooms.filter((room) => room.isActive).map((room) => (
+                        <p key={room.id} className="text-[11px] text-zinc-500">
+                          {room.roomLabel}: ends {new Date(room.endsAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="flex items-center justify-between gap-2">
+                    <Button
+                      title="Raise hand"
+                      aria-label="Raise hand"
+                      variant="outline"
+                      className="group relative h-11 w-11 justify-center px-0"
+                      onClick={() => raiseHandFromComposer().catch((err) => console.error('Failed to raise hand', err))}
+                    >
+                      <Hand size={18} />
+                      <span className="pointer-events-none absolute -top-9 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-zinc-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100 dark:bg-white dark:text-zinc-900">
+                        Raise hand
+                      </span>
+                    </Button>
+                  </div>
+
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      value={chatMessage}
+                      onChange={(e) => setChatMessage(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          sendChatMessage().catch((err) => console.error('Failed to send chat', err));
+                        }
+                      }}
+                      className="h-10 flex-1 rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
+                      placeholder="Send a message to the class..."
+                    />
+                    <Button title="Send chat" aria-label="Send chat" variant="primary" className="h-10 w-10 justify-center px-0" onClick={() => sendChatMessage().catch((err) => console.error('Failed to send chat', err))} disabled={!chatMessage.trim()}>
+                      <Send size={14} />
+                    </Button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {attendance.map((student) => (
-                    <div key={student.id} className={`rounded-lg border p-3 ${spotlightStudentId === student.id ? 'border-emerald-400 bg-emerald-50' : 'border-zinc-200'}`}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-medium">{student.name}</p>
-                          <p className="text-xs text-zinc-500 mt-0.5">Joined {new Date(student.joinedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
+                <div>
+                  <div className="mt-2 space-y-2">
+                    {(() => {
+                      const filtered = activityFeed.filter((item) => item.sessionId === selectedSession?.id);
+                      console.log('🎨 Rendering activity feed:', { totalItems: activityFeed.length, filteredItems: filtered.length, selectedSessionId: selectedSession?.id });
+                      if (filtered.length === 0) {
+                        return <p className="text-xs text-zinc-400">No activity yet.</p>;
+                      }
+                      return filtered
+                        .slice(0, 30)
+                        .reverse()
+                        .map((item) => (
+                      <div key={item.id} className={`live-feed-pop rounded-2xl border p-3 shadow-sm ${item.type === 'CHAT_MESSAGE' || item.type === 'HAND_RAISED' ? 'border-sky-200 bg-sky-50 dark:border-sky-900 dark:bg-sky-950/50' : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900'}`}>
+                        <div className="flex items-start gap-3">
+                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-[11px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                            {(item.actorName || 'T').slice(0, 1).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm leading-5 text-zinc-700 dark:text-zinc-200">
+                              <span className="font-semibold text-zinc-800 dark:text-zinc-100">{item.actorName || 'Teacher'}:</span> {item.message}
+                            </p>
+                            <p className="mt-1 text-[11px] text-zinc-500">{relativeTime(item.createdAt)}</p>
+                            {item.type === 'HAND_RAISED' && item.payload?.studentId && (
+                              <div className="mt-2">
+                                <Button
+                                  title="Accept hand"
+                                  aria-label="Accept hand"
+                                  variant="outline"
+                                  className="h-7 px-2"
+                                  onClick={() => acceptRaisedHand(item.payload.studentId, item.payload.studentName || 'Student').catch((err) => console.error('Failed to accept hand', err))}
+                                >
+                                  <Check size={12} /> Accept
+                                </Button>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <Badge variant={student.status === 'PRESENT' ? 'success' : student.status === 'LATE' ? 'warning' : 'danger'}>{student.status}</Badge>
                       </div>
-
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        <Button variant="ghost" className="h-7 px-2" onClick={() => setParticipantStatus(student.id, 'PRESENT')}>Present</Button>
-                        <Button variant="ghost" className="h-7 px-2" onClick={() => setParticipantStatus(student.id, 'LATE')}>Late</Button>
-                        <Button variant="ghost" className="h-7 px-2" onClick={() => setParticipantStatus(student.id, 'DISCONNECTED')}>Disconnect</Button>
-                        <Button variant="outline" className="h-7 px-2" onClick={() => toggleRaiseHand(student.id)}><Hand size={12} /> {student.handRaised ? 'Lower' : 'Raise'}</Button>
-                        <Button variant="outline" className="h-7 px-2" onClick={() => setSpotlight(student.id)}><Star size={12} /> Spotlight</Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="rounded-xl border border-zinc-200 p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold">Raise-hand Queue</p>
-                    <Button variant="outline" className="h-7 px-2" onClick={() => setSpotlight(null)}>Clear Spotlight</Button>
-                  </div>
-                  <div className="mt-2 space-y-1">
-                    {handQueue.length === 0 && <p className="text-xs text-zinc-400">No raised hands.</p>}
-                    {handQueue.map((p) => <div key={p.id} className="text-xs text-zinc-700">• {p.name}</div>)}
-                    {spotlightStudentId && <p className="text-xs text-emerald-700 mt-2">Spotlight: {attendance.find((s) => s.id === spotlightStudentId)?.name}</p>}
+                        ));
+                    })()}
                   </div>
                 </div>
               </div>
-            )}
-
-            {activeTab === 'RECORDINGS' && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <label className="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800 text-gray-600 dark:text-zinc-400 cursor-pointer inline-flex items-center gap-1.5">
-                    <Upload size={14} /> {uploading ? 'Uploading...' : 'Upload Recording'}
-                    <input
-                      type="file"
-                      accept="video/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleRecordingUpload(file);
-                        e.currentTarget.value = '';
-                      }}
-                    />
-                  </label>
-                </div>
+            </Card>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {libraryTab === 'VIDEOS' && (
+            <Card title="Video recordings" subtitle="Stored recordings from class sessions" icon={Video}>
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800">
+                  <Upload size={14} /> {uploading ? 'Uploading...' : 'Upload a Video'}
+                  <input type="file" accept="video/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleRecordingUpload(file); e.currentTarget.value = ''; }} />
+                </label>
+                <Button variant="outline" onClick={() => setWorkspaceMode('LIVE')}>Back to live</Button>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {recordings.map((item) => (
-                  <div key={item.id} className="rounded-xl border border-zinc-200 p-3">
-                    <p className="text-sm font-semibold">{item.title}</p>
-                    <p className="text-xs text-zinc-500 mt-1">{new Date(item.recorded_at || item.at).toLocaleString('en-GB')}</p>
+                  <div key={item.id} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:bg-zinc-900">
+                    <div className="flex aspect-video items-center justify-center bg-zinc-950 text-zinc-100">
+                      <div className="text-center">
+                        <Video size={20} className="mx-auto text-zinc-300" />
+                        <p className="mt-2 text-xs text-zinc-300">Video thumbnail</p>
+                      </div>
+                    </div>
+                    <div className="p-3">
+                      <p className="text-sm font-semibold">{item.title}</p>
+                      <p className="mt-1 text-xs text-zinc-500">Uploaded {new Date(item.recorded_at || item.at).toLocaleString('en-GB')}</p>
+                      <p className="mt-1 text-xs text-zinc-500">Teacher: {user?.full_name || 'Teacher'} • Students joined: {presentCount + lateCount}</p>
+                    </div>
                   </div>
                 ))}
               </div>
-            )}
+            </Card>
+          )}
 
-            {activeTab === 'NOTES' && (
+          {libraryTab === 'NOTES' && (
+            <Card title="Notes & PDFs" subtitle="Readable class notes and downloadable PDFs" icon={FileText}>
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800">
+                  <Upload size={14} /> {uploading ? 'Uploading...' : 'Upload PDF Note'}
+                  <input type="file" accept="application/pdf" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleNotePdfUpload(file); e.currentTarget.value = ''; }} />
+                </label>
+                <Button variant="outline" onClick={async () => {
+                  if (!selectedSession || !user?.school_id) return;
+                  const { data } = await supabase.from('classroom_notes').insert({ school_id: user.school_id, session_id: selectedSession.id, teacher_id: user.id, title: `${selectedSession.subject} Text Note`, note_type: 'TEXT', content: 'Text note from classroom panel.' }).select('*').single();
+                  if (data) setNotes((prev) => [data, ...prev]);
+                }}><FileText size={14} /> Add Text Note</Button>
+                <Button variant="outline" onClick={() => setWorkspaceMode('LIVE')}>Back to live</Button>
+              </div>
               <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <label className="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800 text-gray-600 dark:text-zinc-400 cursor-pointer inline-flex items-center gap-1.5">
-                    <Upload size={14} /> {uploading ? 'Uploading...' : 'Upload PDF Note'}
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleNotePdfUpload(file);
-                        e.currentTarget.value = '';
-                      }}
-                    />
-                  </label>
-                  <Button variant="outline" onClick={async () => {
-                    if (!selectedSession || !user?.school_id) return;
-                    const { data } = await supabase.from('classroom_notes').insert({
-                      school_id: user.school_id,
-                      session_id: selectedSession.id,
-                      teacher_id: user.id,
-                      title: `${selectedSession.subject} Text Note`,
-                      note_type: 'TEXT',
-                      content: 'Text note from classroom panel.'
-                    }).select('*').single();
-                    if (data) setNotes((prev) => [data, ...prev]);
-                  }}><FileText size={14} /> Add Text Note</Button>
-                </div>
                 {notes.map((item) => (
                   <div key={item.id} className="rounded-xl border border-zinc-200 p-3">
                     <p className="text-sm font-semibold">{item.title}</p>
-                    <p className="text-xs text-zinc-500 mt-1">{item.note_type || item.type} • Updated {new Date(item.updated_at || item.updatedAt).toLocaleString('en-GB')} {item.archived ? '• Archived' : ''}</p>
+                    <p className="mt-1 text-xs text-zinc-500">{item.note_type || item.type} • {item.file_url ? 'PDF upload' : 'Text note'} {item.archived ? '• Archived' : ''}</p>
                   </div>
                 ))}
               </div>
-            )}
+            </Card>
+          )}
 
-            {activeTab === 'ASSIGNMENTS' && (
-              <div className="space-y-4">
+          {libraryTab === 'ASSIGNMENTS' && (
+            <Card title="Assignments" subtitle="Holiday PDF tasks and in-app questions" icon={Sparkles}>
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800">
+                  <Upload size={14} /> {uploading ? 'Uploading...' : 'Upload Assignment PDF'}
+                  <input type="file" accept="application/pdf" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleAssignmentFileUpload(file); e.currentTarget.value = ''; }} />
+                </label>
+                <Button variant="outline" onClick={() => setWorkspaceMode('LIVE')}>Back to live</Button>
+              </div>
+              <div className="grid gap-4 xl:grid-cols-2">
                 <div className="rounded-xl border border-zinc-200 p-4 space-y-3">
-                  <p className="text-sm font-semibold">Assignment Intelligence</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <select value={questionType} onChange={(e) => setQuestionType(e.target.value as 'MCQ' | 'SHORT' | 'STRUCTURED')} className="px-3 py-2 rounded-lg border border-zinc-200 text-xs">
+                  <p className="text-sm font-semibold">Holiday assignment upload</p>
+                  <p className="text-xs text-zinc-500">Upload PDF homework or revision packs for students to print or complete later.</p>
+                  <div className="space-y-2">
+                    {assignmentFiles.length === 0 && <p className="text-xs text-zinc-400">No attached assignment files yet.</p>}
+                    {assignmentFiles.map((f) => (
+                      <div key={f.id} className="rounded-lg border border-zinc-200 p-3">
+                        <p className="text-sm font-medium">{f.title}</p>
+                        <p className="mt-1 text-xs text-zinc-500">Uploaded {new Date(f.uploaded_at || f.created_at).toLocaleString('en-GB')}</p>
+                        {f.file_url && <a href={f.file_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-emerald-700">Open file</a>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-zinc-200 p-4 space-y-3">
+                  <p className="text-sm font-semibold">In-app assignment builder</p>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <select value={questionType} onChange={(e) => setQuestionType(e.target.value as 'MCQ' | 'SHORT' | 'STRUCTURED')} className="rounded-lg border border-zinc-200 px-3 py-2 text-xs">
                       <option value="MCQ">Multiple Choice</option>
                       <option value="SHORT">Short Answer</option>
                       <option value="STRUCTURED">Structured Question</option>
                     </select>
-                    <input value={questionConcept} onChange={(e) => setQuestionConcept(e.target.value)} className="px-3 py-2 rounded-lg border border-zinc-200 text-xs" placeholder="Concept e.g. Algebra" />
+                    <input value={questionConcept} onChange={(e) => setQuestionConcept(e.target.value)} className="rounded-lg border border-zinc-200 px-3 py-2 text-xs" placeholder="Concept e.g. Algebra" />
                   </div>
-
-                  <input value={questionPrompt} onChange={(e) => setQuestionPrompt(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-xs" placeholder="Question prompt" />
-
+                  <input value={questionPrompt} onChange={(e) => setQuestionPrompt(e.target.value)} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs" placeholder="Question prompt" />
                   {questionType === 'MCQ' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      <input value={mcqOptions} onChange={(e) => setMcqOptions(e.target.value)} className="px-3 py-2 rounded-lg border border-zinc-200 text-xs" placeholder="Options separated by |" />
-                      <input value={mcqAnswerKey} onChange={(e) => setMcqAnswerKey(e.target.value)} className="px-3 py-2 rounded-lg border border-zinc-200 text-xs" placeholder="Correct option" />
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                      <input value={mcqOptions} onChange={(e) => setMcqOptions(e.target.value)} className="rounded-lg border border-zinc-200 px-3 py-2 text-xs" placeholder="Options separated by |" />
+                      <input value={mcqAnswerKey} onChange={(e) => setMcqAnswerKey(e.target.value)} className="rounded-lg border border-zinc-200 px-3 py-2 text-xs" placeholder="Correct option" />
                     </div>
                   )}
-
-                  <div className="flex items-center gap-2">
-                    <Button onClick={addQuestion}>Add Question</Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button onClick={addQuestion}>Publish Question</Button>
                     <Button variant="outline" onClick={() => questions[0] && simulateStudentSubmission(questions[0])}>Simulate Submission</Button>
-                    <label className="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800 text-gray-600 dark:text-zinc-400 cursor-pointer inline-flex items-center gap-1.5">
-                      <Upload size={14} /> {uploading ? 'Uploading...' : 'Attach Assignment File'}
-                      <input
-                        type="file"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleAssignmentFileUpload(file);
-                          e.currentTarget.value = '';
-                        }}
-                      />
-                    </label>
                   </div>
-                </div>
-
-                <div className="rounded-xl border border-zinc-200 p-4 space-y-2">
-                  <p className="text-sm font-semibold">Assignment Files</p>
-                  {assignmentFiles.length === 0 && <p className="text-xs text-zinc-400">No attached files yet.</p>}
-                  {assignmentFiles.map((f) => (
-                    <div key={f.id} className="rounded-lg border border-zinc-200 p-3">
-                      <p className="text-sm font-medium">{f.title}</p>
-                      <p className="text-xs text-zinc-500 mt-1">{new Date(f.uploaded_at || f.created_at).toLocaleString('en-GB')}</p>
-                      {f.file_url && (
-                        <a href={f.file_url} target="_blank" rel="noreferrer" className="text-xs text-emerald-700 mt-1 inline-block">Open file</a>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                <div className="rounded-xl border border-zinc-200 p-4 space-y-2">
-                  <p className="text-sm font-semibold">Questions</p>
-                  {questions.length === 0 && <p className="text-xs text-zinc-400">No questions yet for this class.</p>}
-                  {questions.map((q) => (
-                    <div key={q.id} className="rounded-lg border border-zinc-200 p-3">
-                      <p className="text-xs text-zinc-500">{q.type} • {q.concept}</p>
-                      <p className="text-sm font-medium mt-0.5">{q.prompt}</p>
-                      {q.options && <p className="text-xs text-zinc-500 mt-1">Options: {q.options.join(' | ')}</p>}
-                    </div>
-                  ))}
-                </div>
-
-                <div className="rounded-xl border border-zinc-200 p-4 space-y-2">
-                  <p className="text-sm font-semibold">Submissions & Marking</p>
-                  {submissions.length === 0 && <p className="text-xs text-zinc-400">No submissions yet.</p>}
-                  {submissions.map((sub) => (
-                    <div key={sub.id} className="rounded-lg border border-zinc-200 p-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium">{sub.studentName}</p>
-                        {typeof sub.autoScore === 'number' ? (
-                          <Badge variant={sub.autoScore === sub.maxScore ? 'success' : 'danger'}>
-                            <CheckCircle2 size={10} /> Auto {sub.autoScore}/{sub.maxScore}
-                          </Badge>
-                        ) : (
-                          <Badge variant="neutral">Structured</Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-zinc-500">Response: {sub.response}</p>
-
-                      {typeof sub.autoScore !== 'number' && (
-                        <div className="flex flex-wrap gap-2">
-                          <Button variant="outline" className="h-7 px-2" onClick={() => applyRubricScore(sub.id, 0.9, 0.8, 0.8)}>High Rubric</Button>
-                          <Button variant="outline" className="h-7 px-2" onClick={() => applyRubricScore(sub.id, 0.6, 0.6, 0.5)}>Mid Rubric</Button>
-                          <Button variant="outline" className="h-7 px-2" onClick={() => applyRubricScore(sub.id, 0.4, 0.4, 0.3)}>Low Rubric</Button>
-                        </div>
-                      )}
-
-                      {typeof sub.rubricScore === 'number' && (
-                        <p className="text-xs text-zinc-600">Rubric score: {sub.rubricScore}/10 • {sub.feedback}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                <div className="rounded-xl border border-zinc-200 p-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle size={14} className="text-amber-600" />
-                    <p className="text-sm font-semibold">Weak Concepts & Remedial Suggestions</p>
-                  </div>
-
-                  {weakConceptInsights.length === 0 && <p className="text-xs text-zinc-400">No high-risk concept detected yet.</p>}
-
-                  {weakConceptInsights.map((insight, idx) => (
-                    <div key={`${insight.student}-${insight.concept}-${idx}`} className="rounded-lg border border-zinc-200 p-3">
-                      <p className="text-sm font-medium">{insight.student} • {insight.concept}</p>
-                      <p className="text-xs text-zinc-500 mt-0.5">Weakness risk: {insight.score}%</p>
-                      <p className="text-xs text-zinc-600 mt-1">Remedial note: {insight.note}</p>
-                      <a className="text-xs text-emerald-700 mt-1 inline-block" href={insight.video} target="_blank" rel="noreferrer">Suggested video</a>
-                    </div>
-                  ))}
                 </div>
               </div>
-            )}
-          </Card>
 
-          <Card title="Realtime Classroom Feed" subtitle="All activity in this class block" icon={Activity}>
-            <div className="space-y-2">
-              {activityFeed.length === 0 && <p className="text-xs text-zinc-400">No activity yet.</p>}
-              {activityFeed.map((item) => (
-                <div key={item.id} className="rounded-lg border border-zinc-200 p-3">
-                  <p className="text-sm text-zinc-800">{item.message}</p>
-                  <p className="text-[11px] text-zinc-500 mt-1">{new Date(item.createdAt).toLocaleString('en-GB')}</p>
-                </div>
-              ))}
-            </div>
-          </Card>
+              <div className="mt-4 rounded-xl border border-zinc-200 p-4 space-y-2">
+                <p className="text-sm font-semibold">Questions in app</p>
+                {questions.length === 0 && <p className="text-xs text-zinc-400">No in-app questions yet.</p>}
+                {questions.map((q) => (
+                  <div key={q.id} className="rounded-lg border border-zinc-200 p-3">
+                    <p className="text-xs text-zinc-500">{q.type} • {q.concept}</p>
+                    <p className="mt-0.5 text-sm font-medium">{q.prompt}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 };

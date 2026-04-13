@@ -1,4 +1,4 @@
-export type Role = 'ADMIN' | 'TEACHER' | 'PARENT' | 'STUDENT' | 'STAFF';
+export type Role = 'ADMIN' | 'PRINCIPAL' | 'TEACHER' | 'PARENT' | 'STUDENT' | 'STAFF';
 export type ExamType = 'MID_TERM' | 'END_TERM';
 export type FeeStatus = 'PAID' | 'PARTIAL' | 'UNPAID';
 export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE';

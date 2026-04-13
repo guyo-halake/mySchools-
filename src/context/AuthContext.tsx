@@ -17,6 +17,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const USERS: Profile[] = [
   { id: 'u1', full_name: 'Otieno Omolo', email: 'parent@example.com', role: 'PARENT', school_id: 's1' },
   { id: 'u2', full_name: 'Mr. Kibet', email: 'teacher@example.com', role: 'TEACHER', school_id: 's1' },
+  { id: 'u4', full_name: 'Principal Wanjiku', email: 'principal@example.com', role: 'PRINCIPAL', school_id: 's1' },
   { id: 'u3', full_name: 'School Admin', email: 'admin@example.com', role: 'ADMIN', school_id: 's1' },
 ];
 
