@@ -16,6 +16,8 @@ import { ClassesManagement } from './pages/ClassesManagement';
 import { ResultsManagement } from './pages/ResultsManagement';
 import { Chat } from './pages/Chat';
 import { Assignments } from './pages/Assignments';
+import { Timetable } from './pages/Timetable';
+import { MyClassroom } from './pages/MyClassroom';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -53,6 +55,8 @@ export default function App() {
             {/* Functional Routes */}
             <Route path="/fees-management" element={<ProtectedRoute><FeesManagement /></ProtectedRoute>} />
             <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
+            <Route path="/timetable" element={<ProtectedRoute><Timetable /></ProtectedRoute>} />
+            <Route path="/my-classroom" element={<ProtectedRoute><MyClassroom /></ProtectedRoute>} />
             
             {/* Admin Routes */}
             <Route path="/students" element={<ProtectedRoute><UserDirectory /></ProtectedRoute>} />

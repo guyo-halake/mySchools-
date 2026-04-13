@@ -46,7 +46,7 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
     { label: 'Suspensions', icon: AlertTriangle, path: '/suspensions' },
     { label: 'Announcements', icon: Bell, path: '/announcements' },
     { label: 'Chat Parents', icon: MessageSquare, path: '/chat' },
-    { label: 'My Timetable', icon: Calendar, path: '/timetable' },
+    { label: 'My Classroom', icon: Calendar, path: '/my-classroom' },
   ],
   ADMIN: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
