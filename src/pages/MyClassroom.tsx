@@ -33,8 +33,20 @@ import { supabase } from '../lib/supabase';
 import { Button, Card, Badge, Modal } from '../components/UI';
 
 type TabKey = 'LIVE' | 'RECORDINGS' | 'NOTES' | 'ASSIGNMENTS';
+type LibraryTab = 'RECORDINGS' | 'NOTES' | 'ASSIGNMENTS' | 'SHARED' | 'ARCHIVE';
 type SessionStatus = 'LIVE' | 'UPCOMING' | 'COMPLETED';
 type AttendanceStatus = 'PRESENT' | 'LATE' | 'DISCONNECTED';
+
+type ContentFeedItem = {
+  id: string;
+  title: string;
+  type: 'RECORDING' | 'NOTE' | 'ASSIGNMENT' | 'HOLIDAY_WORK' | 'SHARED_FILE';
+  postedAt: string;
+  dueAt?: string;
+  fileUrl?: string;
+  preview?: string;
+  archived?: boolean;
+};
 
 type SessionItem = {
   id: string;
@@ -194,7 +206,7 @@ export const MyClassroom: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<TabKey>('LIVE');
   const [workspaceMode, setWorkspaceMode] = useState<'LIVE' | 'LIBRARY'>('LIVE');
-  const [libraryTab, setLibraryTab] = useState<'VIDEOS' | 'NOTES' | 'ASSIGNMENTS'>('VIDEOS');
+  const [libraryTab, setLibraryTab] = useState<LibraryTab>('RECORDINGS');
   const [livePaused, setLivePaused] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState('');
@@ -204,6 +216,7 @@ export const MyClassroom: React.FC = () => {
   const [assignments, setAssignments] = useState<any[]>([]);
   const [assignmentFiles, setAssignmentFiles] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState('Ready');
 
   const [questionType, setQuestionType] = useState<'MCQ' | 'SHORT' | 'STRUCTURED'>('MCQ');
   const [questionConcept, setQuestionConcept] = useState('General');
@@ -238,6 +251,10 @@ export const MyClassroom: React.FC = () => {
 
   const classroomChannelRef = useRef<any>(null);
   const jitsiContainerRef = useRef<HTMLDivElement>(null);
+  const recordingInputRef = useRef<HTMLInputElement>(null);
+  const notesInputRef = useRef<HTMLInputElement>(null);
+  const assignmentInputRef = useRef<HTMLInputElement>(null);
+  const sharedInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 15000);
@@ -1060,8 +1077,10 @@ export const MyClassroom: React.FC = () => {
   const handleRecordingUpload = async (file: File) => {
     if (!selectedSession || !user?.school_id) return;
     setUploading(true);
+    setUploadStatus('Uploading recording...');
     try {
       const uploaded = await uploadFileToStorage(file, 'recordings');
+      setUploadStatus('Processing recording...');
       const { data, error } = await supabase
         .from('classroom_recordings')
         .insert({
@@ -1078,10 +1097,12 @@ export const MyClassroom: React.FC = () => {
 
       if (!error && data) {
         setRecordings((prev) => [data, ...prev]);
-        await addActivity(selectedSession.id, 'ASSIGNMENT_SUBMITTED', `Uploaded recording: ${file.name}`);
+        setUploadStatus('Ready');
+        await addActivity(selectedSession.id, 'RECORDING_UPLOADED', `Uploaded recording: ${file.name}`);
       }
     } catch (error) {
       console.error('Recording upload failed', error);
+      setUploadStatus('Upload failed. Please retry.');
     } finally {
       setUploading(false);
     }
@@ -1090,8 +1111,10 @@ export const MyClassroom: React.FC = () => {
   const handleNotePdfUpload = async (file: File) => {
     if (!selectedSession || !user?.school_id) return;
     setUploading(true);
+    setUploadStatus('Uploading revision note...');
     try {
       const uploaded = await uploadFileToStorage(file, 'notes');
+      setUploadStatus('Processing revision note...');
       const { data, error } = await supabase
         .from('classroom_notes')
         .insert({
@@ -1107,10 +1130,12 @@ export const MyClassroom: React.FC = () => {
 
       if (!error && data) {
         setNotes((prev) => [data, ...prev]);
+        setUploadStatus('Ready');
         await addActivity(selectedSession.id, 'FEEDBACK_SENT', `Uploaded PDF note: ${file.name}`);
       }
     } catch (error) {
       console.error('Note PDF upload failed', error);
+      setUploadStatus('Upload failed. Please retry.');
     } finally {
       setUploading(false);
     }
@@ -1119,11 +1144,13 @@ export const MyClassroom: React.FC = () => {
   const handleAssignmentFileUpload = async (file: File) => {
     if (!selectedSession || !user?.school_id) return;
     setUploading(true);
+    setUploadStatus('Uploading holiday assignment...');
     try {
       const assignment = await getActiveAssignment(selectedSession.id);
       if (!assignment) return;
 
       const uploaded = await uploadFileToStorage(file, 'assignment-files');
+      setUploadStatus('Processing holiday assignment...');
       const { data, error } = await supabase
         .from('classroom_assignment_files')
         .insert({
@@ -1141,10 +1168,46 @@ export const MyClassroom: React.FC = () => {
 
       if (!error && data) {
         setAssignmentFiles((prev) => [data, ...prev]);
+        setUploadStatus('Ready');
         await addActivity(selectedSession.id, 'ASSIGNMENT_SUBMITTED', `Uploaded assignment file: ${file.name}`);
       }
     } catch (error) {
       console.error('Assignment file upload failed', error);
+      setUploadStatus('Upload failed. Please retry.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSharedFileUpload = async (file: File) => {
+    if (!selectedSession || !user?.school_id) return;
+    setUploading(true);
+    setUploadStatus('Uploading shared file...');
+    try {
+      const uploaded = await uploadFileToStorage(file, 'notes');
+      setUploadStatus('Processing shared file...');
+      const { data, error } = await supabase
+        .from('classroom_notes')
+        .insert({
+          school_id: user.school_id,
+          session_id: selectedSession.id,
+          teacher_id: user.id,
+          title: file.name,
+          note_type: 'SHARED_FILE',
+          file_url: uploaded.fileUrl,
+          content: 'Shared class resource'
+        })
+        .select('*')
+        .single();
+
+      if (!error && data) {
+        setNotes((prev) => [data, ...prev]);
+        setUploadStatus('Ready');
+        await addActivity(selectedSession.id, 'RESOURCE_SHARED', `Shared class file: ${file.name}`);
+      }
+    } catch (error) {
+      console.error('Shared file upload failed', error);
+      setUploadStatus('Upload failed. Please retry.');
     } finally {
       setUploading(false);
     }
@@ -1683,6 +1746,100 @@ export const MyClassroom: React.FC = () => {
   const disconnectedCount = attendance.filter((p) => p.status === 'DISCONNECTED').length;
   const handQueue = attendance.filter((p) => p.handRaised);
 
+  const activeStreamName = selectedSession?.classLabel || 'No assigned stream';
+  const activeSubjectName = selectedSession?.subject || 'General Classroom';
+  const termLabel = `Term ${Math.min(3, Math.max(1, Math.ceil((now.getMonth() + 1) / 4)))}, ${now.getFullYear()}`;
+
+  const openAssignments = assignments.filter((a: any) => (a.status || 'OPEN') === 'OPEN');
+  const lastUploadAt = useMemo(() => {
+    const timestamps = [
+      ...recordings.map((item: any) => item.recorded_at || item.created_at),
+      ...notes.map((item: any) => item.updated_at || item.created_at),
+      ...assignmentFiles.map((item: any) => item.uploaded_at || item.created_at)
+    ].filter(Boolean);
+
+    if (!timestamps.length) return null;
+    const latest = timestamps
+      .map((iso: string) => new Date(iso).getTime())
+      .sort((a: number, b: number) => b - a)[0];
+    return Number.isFinite(latest) ? new Date(latest).toISOString() : null;
+  }, [assignmentFiles, notes, recordings]);
+
+  const contentFeed = useMemo<ContentFeedItem[]>(() => {
+    const recordingItems: ContentFeedItem[] = recordings.map((item: any) => ({
+      id: `recording-${item.id}`,
+      title: item.title || 'Lesson recording',
+      type: 'RECORDING',
+      postedAt: item.recorded_at || item.created_at || new Date().toISOString(),
+      fileUrl: item.file_url || item.recording_url || undefined,
+      preview: 'Lesson recording available for replay.'
+    }));
+
+    const noteItems: ContentFeedItem[] = notes.map((item: any) => ({
+      id: `note-${item.id}`,
+      title: item.title || 'Revision note',
+      type: item.note_type === 'SHARED_FILE' ? 'SHARED_FILE' : 'NOTE',
+      postedAt: item.updated_at || item.created_at || new Date().toISOString(),
+      fileUrl: item.file_url || undefined,
+      preview: item.content || 'Revision material shared by teacher.',
+      archived: !!item.archived
+    }));
+
+    const assignmentItems: ContentFeedItem[] = openAssignments.map((assignment: any) => ({
+      id: `assignment-${assignment.id}`,
+      title: assignment.title || 'Holiday assignment',
+      type: 'ASSIGNMENT',
+      postedAt: assignment.created_at || new Date().toISOString(),
+      dueAt: assignment.due_at || undefined,
+      preview: assignment.description || 'Assignment published for learners.'
+    }));
+
+    const holidayFileItems: ContentFeedItem[] = assignmentFiles.map((item: any) => ({
+      id: `holiday-${item.id}`,
+      title: item.title || 'Holiday assignment file',
+      type: 'HOLIDAY_WORK',
+      postedAt: item.uploaded_at || item.created_at || new Date().toISOString(),
+      fileUrl: item.file_url || undefined,
+      preview: 'Holiday assignment material uploaded for students.'
+    }));
+
+    return [...recordingItems, ...noteItems, ...assignmentItems, ...holidayFileItems]
+      .sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
+  }, [assignmentFiles, notes, openAssignments, recordings]);
+
+  const feedForTab = useMemo(() => {
+    if (libraryTab === 'RECORDINGS') return contentFeed.filter((item) => item.type === 'RECORDING');
+    if (libraryTab === 'NOTES') return contentFeed.filter((item) => item.type === 'NOTE');
+    if (libraryTab === 'ASSIGNMENTS') return contentFeed.filter((item) => item.type === 'ASSIGNMENT' || item.type === 'HOLIDAY_WORK');
+    if (libraryTab === 'SHARED') return contentFeed.filter((item) => item.type === 'SHARED_FILE');
+    return contentFeed.filter((item) => item.archived || item.type === 'HOLIDAY_WORK');
+  }, [contentFeed, libraryTab]);
+
+  const upcomingDeadlines = useMemo(() => {
+    return openAssignments
+      .filter((item: any) => item.due_at)
+      .sort((a: any, b: any) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime())
+      .slice(0, 6);
+  }, [openAssignments]);
+
+  const recentlyAdded = useMemo(() => contentFeed.slice(0, 6), [contentFeed]);
+
+  const badgeVariantForType = (type: ContentFeedItem['type']) => {
+    if (type === 'RECORDING') return 'info';
+    if (type === 'NOTE') return 'success';
+    if (type === 'SHARED_FILE') return 'neutral';
+    if (type === 'ASSIGNMENT' || type === 'HOLIDAY_WORK') return 'warning';
+    return 'neutral';
+  };
+
+  const contentTypeLabel = (type: ContentFeedItem['type']) => {
+    if (type === 'RECORDING') return 'Recording';
+    if (type === 'NOTE') return 'Note';
+    if (type === 'ASSIGNMENT') return 'Assignment';
+    if (type === 'HOLIDAY_WORK') return 'Holiday Work';
+    return 'Shared File';
+  };
+
   const orchestrationForSelected = orchestration && selectedSession && orchestration.sessionId === selectedSession.id ? orchestration : null;
 
   // Initialize Jitsi Meet when class goes live
@@ -1878,8 +2035,6 @@ export const MyClassroom: React.FC = () => {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-zinc-400">My Classroom</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Teacher studio</h1>
-            <p className="mt-1 text-xs text-zinc-500">{now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -1900,7 +2055,7 @@ export const MyClassroom: React.FC = () => {
               onClick={() => {
                 setWorkspaceMode('LIBRARY');
                 setActiveTab('RECORDINGS');
-                setLibraryTab('VIDEOS');
+                setLibraryTab('RECORDINGS');
               }}
             >
               <Upload size={14} /> Upload
@@ -1918,13 +2073,6 @@ export const MyClassroom: React.FC = () => {
           <Button title="Recordings & Uploads" variant={workspaceMode === 'LIBRARY' ? 'primary' : 'outline'} onClick={() => setWorkspaceMode('LIBRARY')}>
             Recordings & Uploads
           </Button>
-          {workspaceMode === 'LIBRARY' && (
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              <Button title="Videos" variant={libraryTab === 'VIDEOS' ? 'primary' : 'outline'} onClick={() => setLibraryTab('VIDEOS')}>Videos</Button>
-              <Button title="Notes & PDFs" variant={libraryTab === 'NOTES' ? 'primary' : 'outline'} onClick={() => setLibraryTab('NOTES')}>Notes & PDFs</Button>
-              <Button title="Assignments" variant={libraryTab === 'ASSIGNMENTS' ? 'primary' : 'outline'} onClick={() => setLibraryTab('ASSIGNMENTS')}>Assignments</Button>
-            </div>
-          )}
         </div>
       </Card>
 
@@ -2229,122 +2377,95 @@ export const MyClassroom: React.FC = () => {
           </div>
         </div>
       ) : (
-        <div className="space-y-6">
-          {libraryTab === 'VIDEOS' && (
-            <Card title="Video recordings" subtitle="Stored recordings from class sessions" icon={Video}>
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800">
-                  <Upload size={14} /> {uploading ? 'Uploading...' : 'Upload a Video'}
-                  <input type="file" accept="video/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleRecordingUpload(file); e.currentTarget.value = ''; }} />
-                </label>
-                <Button variant="outline" onClick={() => setWorkspaceMode('LIVE')}>Back to live</Button>
+        <div className="space-y-5">
+          <section className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="mt-0.5 text-xs text-zinc-500">Last upload: {lastUploadAt ? new Date(lastUploadAt).toLocaleString('en-GB') : 'No uploads yet'}</p>
               </div>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {recordings.map((item) => (
-                  <div key={item.id} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:bg-zinc-900">
-                    <div className="flex aspect-video items-center justify-center bg-zinc-950 text-zinc-100">
-                      <div className="text-center">
-                        <Video size={20} className="mx-auto text-zinc-300" />
-                        <p className="mt-2 text-xs text-zinc-300">Video thumbnail</p>
-                      </div>
-                    </div>
-                    <div className="p-3">
-                      <p className="text-sm font-semibold">{item.title}</p>
-                      <p className="mt-1 text-xs text-zinc-500">Uploaded {new Date(item.recorded_at || item.at).toLocaleString('en-GB')}</p>
-                      <p className="mt-1 text-xs text-zinc-500">Teacher: {user?.full_name || 'Teacher'} • Students joined: {presentCount + lateCount}</p>
-                    </div>
-                  </div>
-                ))}
+              <div className="flex flex-wrap gap-2">
+                <Button variant="primary" onClick={() => {
+                  if (libraryTab === 'RECORDINGS') recordingInputRef.current?.click();
+                  if (libraryTab === 'NOTES') notesInputRef.current?.click();
+                  if (libraryTab === 'ASSIGNMENTS') assignmentInputRef.current?.click();
+                  if (libraryTab === 'SHARED') sharedInputRef.current?.click();
+                  if (libraryTab === 'ARCHIVE') setLibraryTab('RECORDINGS');
+                }}>
+                  <Upload size={14} /> Upload
+                </Button>
+                <Button variant="outline" onClick={() => setWorkspaceMode('LIVE')}>Live</Button>
               </div>
-            </Card>
-          )}
+            </div>
 
-          {libraryTab === 'NOTES' && (
-            <Card title="Notes & PDFs" subtitle="Readable class notes and downloadable PDFs" icon={FileText}>
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800">
-                  <Upload size={14} /> {uploading ? 'Uploading...' : 'Upload PDF Note'}
-                  <input type="file" accept="application/pdf" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleNotePdfUpload(file); e.currentTarget.value = ''; }} />
-                </label>
-                <Button variant="outline" onClick={async () => {
-                  if (!selectedSession || !user?.school_id) return;
-                  const { data } = await supabase.from('classroom_notes').insert({ school_id: user.school_id, session_id: selectedSession.id, teacher_id: user.id, title: `${selectedSession.subject} Text Note`, note_type: 'TEXT', content: 'Text note from classroom panel.' }).select('*').single();
-                  if (data) setNotes((prev) => [data, ...prev]);
-                }}><FileText size={14} /> Add Text Note</Button>
-                <Button variant="outline" onClick={() => setWorkspaceMode('LIVE')}>Back to live</Button>
-              </div>
-              <div className="space-y-3">
-                {notes.map((item) => (
-                  <div key={item.id} className="rounded-xl border border-zinc-200 p-3">
-                    <p className="text-sm font-semibold">{item.title}</p>
-                    <p className="mt-1 text-xs text-zinc-500">{item.note_type || item.type} • {item.file_url ? 'PDF upload' : 'Text note'} {item.archived ? '• Archived' : ''}</p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="ml-auto text-[11px] text-zinc-500">{uploading ? 'Uploading...' : uploadStatus}</span>
+            </div>
 
-          {libraryTab === 'ASSIGNMENTS' && (
-            <Card title="Assignments" subtitle="Holiday PDF tasks and in-app questions" icon={Sparkles}>
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800">
-                  <Upload size={14} /> {uploading ? 'Uploading...' : 'Upload Assignment PDF'}
-                  <input type="file" accept="application/pdf" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleAssignmentFileUpload(file); e.currentTarget.value = ''; }} />
-                </label>
-                <Button variant="outline" onClick={() => setWorkspaceMode('LIVE')}>Back to live</Button>
-              </div>
-              <div className="grid gap-4 xl:grid-cols-2">
-                <div className="rounded-xl border border-zinc-200 p-4 space-y-3">
-                  <p className="text-sm font-semibold">Holiday assignment upload</p>
-                  <p className="text-xs text-zinc-500">Upload PDF homework or revision packs for students to print or complete later.</p>
-                  <div className="space-y-2">
-                    {assignmentFiles.length === 0 && <p className="text-xs text-zinc-400">No attached assignment files yet.</p>}
-                    {assignmentFiles.map((f) => (
-                      <div key={f.id} className="rounded-lg border border-zinc-200 p-3">
-                        <p className="text-sm font-medium">{f.title}</p>
-                        <p className="mt-1 text-xs text-zinc-500">Uploaded {new Date(f.uploaded_at || f.created_at).toLocaleString('en-GB')}</p>
-                        {f.file_url && <a href={f.file_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-emerald-700">Open file</a>}
-                      </div>
-                    ))}
-                  </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+              <Button variant={libraryTab === 'RECORDINGS' ? 'primary' : 'outline'} onClick={() => setLibraryTab('RECORDINGS')}><Video size={13} /> Recordings</Button>
+              <Button variant={libraryTab === 'NOTES' ? 'primary' : 'outline'} onClick={() => setLibraryTab('NOTES')}><FileText size={13} /> Notes</Button>
+              <Button variant={libraryTab === 'ASSIGNMENTS' ? 'primary' : 'outline'} onClick={() => setLibraryTab('ASSIGNMENTS')}><Sparkles size={13} /> Assignments</Button>
+              <Button variant={libraryTab === 'SHARED' ? 'primary' : 'outline'} onClick={() => setLibraryTab('SHARED')}><Upload size={13} /> Files</Button>
+              <Button variant={libraryTab === 'ARCHIVE' ? 'primary' : 'outline'} onClick={() => setLibraryTab('ARCHIVE')}><CalendarDays size={13} /> Archive</Button>
+            </div>
+
+            <input ref={recordingInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleRecordingUpload(file); e.currentTarget.value = ''; }} />
+            <input ref={notesInputRef} type="file" accept="application/pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleNotePdfUpload(file); e.currentTarget.value = ''; }} />
+            <input ref={assignmentInputRef} type="file" accept="application/pdf,.doc,.docx" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleAssignmentFileUpload(file); e.currentTarget.value = ''; }} />
+            <input ref={sharedInputRef} type="file" accept="application/pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.zip" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleSharedFileUpload(file); e.currentTarget.value = ''; }} />
+          </section>
+
+          <section className="rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+            {feedForTab.length === 0 && (
+              <div className="p-8 text-center text-sm text-zinc-500">No content yet. Click New to publish for students.</div>
+            )}
+
+            {feedForTab.map((item, index) => (
+              <div key={item.id} className={`flex flex-col gap-2 p-4 ${index !== feedForTab.length - 1 ? 'border-b border-zinc-100 dark:border-zinc-800' : ''}`}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{item.title}</p>
+                  <Badge variant={badgeVariantForType(item.type)}>{contentTypeLabel(item.type)}</Badge>
                 </div>
-
-                <div className="rounded-xl border border-zinc-200 p-4 space-y-3">
-                  <p className="text-sm font-semibold">In-app assignment builder</p>
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <select value={questionType} onChange={(e) => setQuestionType(e.target.value as 'MCQ' | 'SHORT' | 'STRUCTURED')} className="rounded-lg border border-zinc-200 px-3 py-2 text-xs">
-                      <option value="MCQ">Multiple Choice</option>
-                      <option value="SHORT">Short Answer</option>
-                      <option value="STRUCTURED">Structured Question</option>
-                    </select>
-                    <input value={questionConcept} onChange={(e) => setQuestionConcept(e.target.value)} className="rounded-lg border border-zinc-200 px-3 py-2 text-xs" placeholder="Concept e.g. Algebra" />
-                  </div>
-                  <input value={questionPrompt} onChange={(e) => setQuestionPrompt(e.target.value)} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs" placeholder="Question prompt" />
-                  {questionType === 'MCQ' && (
-                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                      <input value={mcqOptions} onChange={(e) => setMcqOptions(e.target.value)} className="rounded-lg border border-zinc-200 px-3 py-2 text-xs" placeholder="Options separated by |" />
-                      <input value={mcqAnswerKey} onChange={(e) => setMcqAnswerKey(e.target.value)} className="rounded-lg border border-zinc-200 px-3 py-2 text-xs" placeholder="Correct option" />
-                    </div>
+                <p className="text-xs text-zinc-500">{new Date(item.postedAt).toLocaleString('en-GB')} {item.dueAt ? `• Due ${new Date(item.dueAt).toLocaleString('en-GB')}` : ''}</p>
+                <p className="text-xs text-zinc-500">Seen by {Math.min(attendance.length, presentCount + lateCount)} students</p>
+                <div>
+                  {item.fileUrl ? (
+                    <a href={item.fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                      View
+                    </a>
+                  ) : (
+                    <Button variant="outline" onClick={() => setLibraryTab(item.type === 'ASSIGNMENT' || item.type === 'HOLIDAY_WORK' ? 'ASSIGNMENTS' : 'NOTES')}>Open</Button>
                   )}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button onClick={addQuestion}>Publish Question</Button>
-                    <Button variant="outline" onClick={() => questions[0] && simulateStudentSubmission(questions[0])}>Simulate Submission</Button>
-                  </div>
                 </div>
               </div>
+            ))}
+          </section>
 
-              <div className="mt-4 rounded-xl border border-zinc-200 p-4 space-y-2">
-                <p className="text-sm font-semibold">Questions in app</p>
-                {questions.length === 0 && <p className="text-xs text-zinc-400">No in-app questions yet.</p>}
-                {questions.map((q) => (
-                  <div key={q.id} className="rounded-lg border border-zinc-200 p-3">
-                    <p className="text-xs text-zinc-500">{q.type} • {q.concept}</p>
-                    <p className="mt-0.5 text-sm font-medium">{q.prompt}</p>
+          <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Due Soon</p>
+              <div className="mt-2 space-y-2">
+                {upcomingDeadlines.length === 0 && <p className="text-xs text-zinc-400">No deadlines.</p>}
+                {upcomingDeadlines.map((assignment: any) => (
+                  <div key={assignment.id} className="text-xs text-zinc-600 dark:text-zinc-300">
+                    {assignment.title || 'Assignment'} • {assignment.due_at ? new Date(assignment.due_at).toLocaleString('en-GB') : 'No due date'}
                   </div>
                 ))}
               </div>
-            </Card>
-          )}
+            </div>
+
+            <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Recently Added</p>
+              <div className="mt-2 space-y-2">
+                {recentlyAdded.length === 0 && <p className="text-xs text-zinc-400">No uploads yet.</p>}
+                {recentlyAdded.map((item) => (
+                  <div key={item.id} className="text-xs text-zinc-600 dark:text-zinc-300">
+                    {item.title} • {new Date(item.postedAt).toLocaleString('en-GB')}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
         </div>
       )}
     </div>

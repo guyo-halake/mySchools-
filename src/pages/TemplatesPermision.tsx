@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ShieldCheck, Clock3, Wrench, Sparkles, Plus, Trash2 } from 'lucide-react';
+import { ShieldCheck, Clock3, Wrench, Sparkles, CalendarDays, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { Button, Card, Badge } from '../components/UI';
@@ -70,7 +70,8 @@ const TEMPLATE_ICONS: Record<string, any> = {
   TIMETABLE_CLASSES: Clock3,
   SYSTEM_ACCESS_AUTH: ShieldCheck,
   SYSTEM_UPDATES_MAINTENANCE: Wrench,
-  CLASSROOM_START: Sparkles
+  CLASSROOM_START: Sparkles,
+  ACADEMIC_CALENDAR_SETUP: CalendarDays
 };
 
 const defaultForm: TimetableForm = {

@@ -13,6 +13,23 @@ export const ClassesManagement: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStream, setEditingStream] = useState<any | null>(null);
   const [selectedTeacherId, setSelectedTeacherId] = useState('');
+  const [mainMeanScore, setMainMeanScore] = useState('');
+  const [targetMeanScore, setTargetMeanScore] = useState('');
+
+  const gradeFromScore = (value?: number | null) => {
+    if (value == null || Number.isNaN(value)) return '-';
+    if (value >= 80) return 'A';
+    if (value >= 70) return 'B';
+    if (value >= 60) return 'C';
+    if (value >= 50) return 'D';
+    return 'E';
+  };
+
+  const formatScoreWithGrade = (value?: number | null) => {
+    if (value == null || Number.isNaN(value)) return '-';
+    const safe = Number(value);
+    return `${safe.toFixed(1)}% (${gradeFromScore(safe)})`;
+  };
 
   const fetchClassesData = async () => {
     if (!user?.school_id) return;
@@ -41,6 +58,8 @@ export const ClassesManagement: React.FC = () => {
   const handleEdit = (s: any) => {
     setEditingStream(s);
     setSelectedTeacherId(s.class_teacher_id || '');
+    setMainMeanScore(s.main_mean_score == null ? '' : String(s.main_mean_score));
+    setTargetMeanScore(s.target_mean_score == null ? '' : String(s.target_mean_score));
     setIsModalOpen(true);
   };
 
@@ -48,11 +67,24 @@ export const ClassesManagement: React.FC = () => {
     e.preventDefault();
     if (!editingStream) return;
     try {
-      await api.updateStreamTeacher(editingStream.id, selectedTeacherId);
+      const parseScore = (value: string) => {
+        if (!value.trim()) return null;
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+          throw new Error('Scores must be between 0 and 100.');
+        }
+        return parsed;
+      };
+
+      await api.updateStreamProfile(editingStream.id, {
+        class_teacher_id: selectedTeacherId || null,
+        main_mean_score: parseScore(mainMeanScore),
+        target_mean_score: parseScore(targetMeanScore)
+      });
       await fetchClassesData();
       setIsModalOpen(false);
-    } catch (error) {
-      alert('Failed to update class teacher');
+    } catch (error: any) {
+      alert(error?.message || 'Failed to update class profile');
     }
   };
 
@@ -91,7 +123,7 @@ export const ClassesManagement: React.FC = () => {
           </div>
 
           <div className="overflow-x-auto">
-            <Table headers={['Level', 'Stream', 'Class Teacher', 'Students', 'Actions']}>
+            <Table headers={['Level', 'Stream', 'Class Teacher', 'Students', 'Mean Score', 'Target Score', 'Actions']}>
               {filteredStreams.map(s => (
                 <tr key={s.id} className="group hover:bg-zinc-50/50 transition-colors">
                   <td className="px-8 py-6">
@@ -121,6 +153,12 @@ export const ClassesManagement: React.FC = () => {
                       <span className="text-zinc-900 font-bold text-lg">{s.students?.[0]?.count || 0}</span>
                       <span className="text-zinc-400 font-medium text-sm">Students</span>
                     </div>
+                  </td>
+                  <td className="px-8 py-6">
+                    <span className="text-zinc-700 font-semibold">{formatScoreWithGrade(s.main_mean_score)}</span>
+                  </td>
+                  <td className="px-8 py-6">
+                    <span className="text-zinc-700 font-semibold">{formatScoreWithGrade(s.target_mean_score)}</span>
                   </td>
                   <td className="px-8 py-6 text-right">
                     <Button variant="ghost" className="h-10 px-4 rounded-xl hover:bg-white hover:shadow-md transition-all border border-transparent hover:border-zinc-100" onClick={() => handleEdit(s)}>
@@ -154,6 +192,35 @@ export const ClassesManagement: React.FC = () => {
                 <option value="">Select a teacher...</option>
                 {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
               </select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-zinc-700 mb-2 ml-1">Main Mean Score (%)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.1"
+                  value={mainMeanScore}
+                  onChange={(e) => setMainMeanScore(e.target.value)}
+                  placeholder="e.g. 62.5"
+                  className="w-full px-5 py-4 rounded-2xl border border-zinc-200 bg-white text-zinc-800 shadow-sm outline-none focus:ring-2 focus:ring-zinc-100 transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-zinc-700 mb-2 ml-1">Target Mean Score (%)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.1"
+                  value={targetMeanScore}
+                  onChange={(e) => setTargetMeanScore(e.target.value)}
+                  placeholder="e.g. 70.0"
+                  className="w-full px-5 py-4 rounded-2xl border border-zinc-200 bg-white text-zinc-800 shadow-sm outline-none focus:ring-2 focus:ring-zinc-100 transition-all"
+                />
+              </div>
             </div>
             
             <div className="pt-4 flex gap-3">

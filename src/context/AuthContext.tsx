@@ -14,11 +14,26 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isUuid = (value?: string | null) => Boolean(value && UUID_RE.test(value));
+const LAST_SCHOOL_KEY = 'school_portal_last_school_id';
+
+const getLastValidSchoolId = () => {
+  const fromStorage = localStorage.getItem(LAST_SCHOOL_KEY);
+  return isUuid(fromStorage) ? fromStorage : '';
+};
+
+const rememberSchoolId = (schoolId?: string | null) => {
+  if (isUuid(schoolId)) {
+    localStorage.setItem(LAST_SCHOOL_KEY, String(schoolId));
+  }
+};
+
 const USERS: Profile[] = [
-  { id: 'u1', full_name: 'Otieno Omolo', email: 'parent@example.com', role: 'PARENT', school_id: 's1' },
-  { id: 'u2', full_name: 'Mr. Kibet', email: 'teacher@example.com', role: 'TEACHER', school_id: 's1' },
-  { id: 'u4', full_name: 'Principal Wanjiku', email: 'principal@example.com', role: 'PRINCIPAL', school_id: 's1' },
-  { id: 'u3', full_name: 'School Admin', email: 'admin@example.com', role: 'ADMIN', school_id: 's1' },
+  { id: 'u1', full_name: 'Otieno Omolo', email: 'parent@example.com', role: 'PARENT', school_id: '' },
+  { id: 'u2', full_name: 'Mr. Kibet', email: 'teacher@example.com', role: 'TEACHER', school_id: '' },
+  { id: 'u4', full_name: 'Principal Wanjiku', email: 'principal@example.com', role: 'PRINCIPAL', school_id: '' },
+  { id: 'u3', full_name: 'School Admin', email: 'admin@example.com', role: 'ADMIN', school_id: '' },
 ];
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -38,11 +53,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .eq('id', session.user.id)
           .single();
           
-        if (profile) setUser(profile);
+        if (profile) {
+          rememberSchoolId(profile.school_id);
+          setUser(profile);
+        }
       } else {
         // Fallback to local storage for MOCK data if no Supabase session
         const saved = localStorage.getItem('school_portal_user');
-        if (saved) setUser(JSON.parse(saved));
+        if (saved) {
+          const parsed = JSON.parse(saved) as Profile;
+          // Prevent stale mock identifiers from being used in live UUID queries.
+          if (isUuid(parsed?.id) && isUuid(parsed?.school_id)) {
+            rememberSchoolId(parsed.school_id);
+            setUser(parsed);
+          } else {
+            setUser({ ...parsed, school_id: getLastValidSchoolId() });
+          }
+        }
       }
       setLoading(false);
     };
@@ -129,6 +156,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (profile && !profileError) {
        console.log('Login Success! Profile:', profile.full_name, 'Role:', profile.role);
+       rememberSchoolId(profile.school_id);
        setUser(profile);
     } else {
        throw new Error('Failed to load user profile.');
@@ -142,7 +170,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const switchRole = (role: Role) => {
     const found = USERS.find(u => u.role === (role as any));
-    if (found) setUser(found);
+    if (!found) return;
+
+    // If user is from a real Supabase profile, preserve valid identifiers and only change role persona.
+    if (user && isUuid(user.id) && isUuid(user.school_id)) {
+      rememberSchoolId(user.school_id);
+      setUser({
+        ...user,
+        role,
+        full_name: found.full_name,
+        email: found.email
+      });
+      return;
+    }
+
+    // Mock role profile keeps blank school_id to avoid invalid UUID filters hitting PostgREST.
+    setUser({ ...found, school_id: getLastValidSchoolId() });
   };
 
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);

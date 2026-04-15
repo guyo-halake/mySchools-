@@ -4,9 +4,13 @@ import {
   ExamResult, Fee, Announcement, SchoolEvent 
 } from '../types';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isUuid = (value?: string | null) => Boolean(value && UUID_RE.test(value));
+
 export const api = {
   // 1. STUDENTS
   async getStudents(schoolId: string): Promise<Student[]> {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('students')
       .select('*, profile:profiles!students_id_fkey(*)')
@@ -31,17 +35,19 @@ export const api = {
 
   // 2. TEACHERS
   async getTeachers(schoolId: string) {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('school_id', schoolId)
       .eq('role', 'TEACHER');
     if (error) throw error;
-    return data;
+    return data || [];
   },
 
   // 3. ACADEMICS
   async getResults(schoolId: string): Promise<ExamResult[]> {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('exam_results')
       .select('*, subject:subjects(*), exam:exams!exam_results_exam_id_fkey(*)')
@@ -51,6 +57,7 @@ export const api = {
   },
 
   async getSubjects(schoolId: string): Promise<Subject[]> {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('subjects')
       .select('*')
@@ -61,6 +68,7 @@ export const api = {
   },
 
   async getExams(schoolId: string): Promise<Exam[]> {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('exams')
       .select('*, term:terms!exams_term_id_fkey(*)')
@@ -71,6 +79,7 @@ export const api = {
   },
 
   async getTerms(schoolId: string) {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('terms')
       .select('*')
@@ -93,6 +102,7 @@ export const api = {
 
   // 4. LOGISTICS
   async getFees(schoolId: string): Promise<Fee[]> {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('fees')
       .select('*')
@@ -102,6 +112,7 @@ export const api = {
   },
 
   async getStreams(schoolId: string): Promise<Stream[]> {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('streams')
       .select('*, class:classes!streams_class_id_fkey(*)')
@@ -112,6 +123,7 @@ export const api = {
 
   // 5. COMMUNICATIONS
   async getAnnouncements(schoolId: string): Promise<Announcement[]> {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('announcements')
       .select('*')
@@ -122,6 +134,7 @@ export const api = {
   },
 
   async getEvents(schoolId: string): Promise<SchoolEvent[]> {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('events')
       .select('*')
@@ -131,6 +144,7 @@ export const api = {
   },
 
   async getSchool(schoolId: string) {
+    if (!isUuid(schoolId)) return null;
     console.log("API: Fetching School Info:", schoolId);
     const { data, error } = await supabase
       .from('schools')
@@ -196,6 +210,7 @@ export const api = {
   },
 
   async getActivities(schoolId: string) {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('activities')
       .select('*')
@@ -232,6 +247,7 @@ export const api = {
   },
 
   async getStudentSubjectTermAverages(schoolId: string, studentId: string, termId?: string) {
+    if (!isUuid(schoolId) || !isUuid(studentId) || (termId && !isUuid(termId))) return [];
     let query = supabase
       .from('student_subject_term_averages')
       .select('*, subject:subjects!student_subject_term_averages_subject_id_fkey(id, name), term:terms!student_subject_term_averages_term_id_fkey(id, name, year)')
@@ -247,6 +263,7 @@ export const api = {
   },
 
   async getStudentTermAverage(schoolId: string, studentId: string, termId?: string) {
+    if (!isUuid(schoolId) || !isUuid(studentId) || (termId && !isUuid(termId))) return [];
     let query = supabase
       .from('student_term_averages')
       .select('*, term:terms!student_term_averages_term_id_fkey(id, name, year)')
@@ -262,14 +279,17 @@ export const api = {
   },
 
   async getStudentTermAveragesByStudents(schoolId: string, termId: string, studentIds: string[]) {
+    if (!isUuid(schoolId) || !isUuid(termId)) return [];
     if (!studentIds.length) return [];
+    const validIds = studentIds.filter((id) => isUuid(id));
+    if (!validIds.length) return [];
 
     const { data, error } = await supabase
       .from('student_term_averages')
       .select('student_id, term_id, average_mark, average_grade, subjects_count, calculated_at')
       .eq('school_id', schoolId)
       .eq('term_id', termId)
-      .in('student_id', studentIds);
+      .in('student_id', validIds);
 
     if (error) throw error;
     return data || [];
@@ -277,6 +297,7 @@ export const api = {
 
   // 7. PRINCIPAL MANAGEMENT
   async getStreamsWithDetails(schoolId: string) {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('streams')
       .select('*, class:classes!streams_class_id_fkey(*), teacher:profiles!streams_class_teacher_id_fkey(*), students(count)')
@@ -286,15 +307,30 @@ export const api = {
   },
 
   async updateStreamTeacher(streamId: string, teacherId: string) {
+    if (!isUuid(streamId) || !isUuid(teacherId)) return null;
+    return this.updateStreamProfile(streamId, { class_teacher_id: teacherId });
+  },
+
+  async updateStreamProfile(streamId: string, patch: {
+    class_teacher_id?: string | null;
+    main_mean_score?: number | null;
+    target_mean_score?: number | null;
+    target_term_id?: string | null;
+    target_exam_id?: string | null;
+  }) {
+    if (!isUuid(streamId)) return null;
     const { data, error } = await supabase
       .from('streams')
-      .update({ class_teacher_id: teacherId })
-      .eq('id', streamId);
+      .update(patch)
+      .eq('id', streamId)
+      .select('*')
+      .maybeSingle();
     if (error) throw error;
     return data;
   },
 
   async getFeesFull(schoolId: string) {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('fees')
       .select('*, student:students!fees_student_id_fkey(*, profile:profiles!students_id_fkey(*)), term:terms!fees_term_id_fkey(*)')
@@ -305,7 +341,9 @@ export const api = {
   },
 
   async setGlobalFees(schoolId: string, amount: number) {
+    if (!isUuid(schoolId)) return [];
     const currentTerm = await this.getLatestTerm(schoolId);
+    if (!currentTerm?.id) return [];
     const { data, error } = await supabase
       .from('fees')
       .update({ amount_due: amount })
@@ -316,6 +354,7 @@ export const api = {
   },
 
   async getLatestTerm(schoolId: string) {
+    if (!isUuid(schoolId)) return null;
     const { data, error } = await supabase
        .from('terms')
        .select('*')
@@ -329,6 +368,7 @@ export const api = {
   },
 
   async getDisciplinarySchoolWide(schoolId: string) {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('disciplinary_records')
       .select('*, student:students!disciplinary_records_student_id_fkey(*, profile:profiles!students_id_fkey(*))')
@@ -340,6 +380,7 @@ export const api = {
   },
 
   async getHealthSchoolWide(schoolId: string) {
+    if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('student_health')
       .select('*, student:students!student_health_student_id_fkey(school_id, profile:profiles!students_id_fkey(*))')
@@ -351,6 +392,7 @@ export const api = {
 
   // 8. ATTENDANCE & TEACHER DASHBOARD
   async getTeacherStream(teacherId: string) {
+    if (!isUuid(teacherId)) return null;
     const { data, error } = await supabase
       .from('streams')
       .select('*, class:classes!streams_class_id_fkey(*)')
@@ -362,15 +404,17 @@ export const api = {
   },
 
   async getStudentsByStream(streamId: string) {
+    if (!isUuid(streamId)) return [];
     const { data, error } = await supabase
       .from('students')
       .select('*, profile:profiles!students_id_fkey(*)')
       .eq('stream_id', streamId);
     if (error) throw error;
-    return data;
+    return data || [];
   },
 
   async getAttendanceByStream(streamId: string, date: string) {
+    if (!isUuid(streamId)) return [];
     const { data, error } = await supabase
       .from('attendance')
       .select('*')

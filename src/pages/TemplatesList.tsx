@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Clock, Settings, Eye, Edit3, MoreVertical, Search } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -35,11 +35,71 @@ export const TemplatesList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [schoolFilter, setSchoolFilter] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const ensureCatalogAttemptedRef = useRef(false);
 
   const currentRole = String(user?.role || '').toUpperCase();
 
+  const buildDefaultAcademicCalendarConfig = () => {
+    const year = new Date().getFullYear();
+    return {
+      timezone: 'Africa/Nairobi',
+      year,
+      yearStartDate: `${year}-01-01`,
+      yearEndDate: `${year}-12-31`,
+      termDurationWeeksMin: 8,
+      termDurationWeeksMax: 28,
+      terms: [
+        { termNumber: 1, name: 'Term 1', startDate: null, endDate: null, midBreakStart: null, midBreakEnd: null, reportDeadline: null, resultsDeadline: null },
+        { termNumber: 2, name: 'Term 2', startDate: null, endDate: null, midBreakStart: null, midBreakEnd: null, reportDeadline: null, resultsDeadline: null },
+        { termNumber: 3, name: 'Term 3', startDate: null, endDate: null, midBreakStart: null, midBreakEnd: null, reportDeadline: null, resultsDeadline: null }
+      ],
+      holidays: [],
+      events: [],
+      releaseState: 'DRAFT'
+    };
+  };
+
+  const ensureAcademicCalendarTemplate = async (schoolId: string) => {
+    const { error: templateErr } = await supabase
+      .from('templates')
+      .upsert({
+        school_id: schoolId,
+        key: 'ACADEMIC_CALENDAR_SETUP',
+        name: 'Academic Calendar Setup',
+        category: 'ACADEMICS',
+        config: buildDefaultAcademicCalendarConfig(),
+        active: true,
+        archived: false,
+        deleted_at: null,
+        updated_by: user?.id || null
+      }, { onConflict: 'school_id,key' });
+
+    if (templateErr) throw templateErr;
+
+    const roleRows = [
+      { role: 'ADMIN', can_view: true, can_use: true, can_edit: true },
+      { role: 'PRINCIPAL', can_view: true, can_use: true, can_edit: true },
+      { role: 'TEACHER', can_view: true, can_use: false, can_edit: false }
+    ].map((row) => ({
+      school_id: schoolId,
+      template_key: 'ACADEMIC_CALENDAR_SETUP',
+      ...row
+    }));
+
+    const { error: permErr } = await supabase
+      .from('template_permissions')
+      .upsert(roleRows, { onConflict: 'school_id,template_key,role' });
+
+    if (permErr) throw permErr;
+  };
+
   const loadData = async () => {
-    if (!user?.school_id) return;
+    if (!user?.school_id) {
+      setTemplates([]);
+      setPermissions([]);
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -56,7 +116,17 @@ export const TemplatesList: React.FC = () => {
           .eq('school_id', user.school_id)
       ]);
 
-      setTemplates((templateRes.data || []) as TemplateRow[]);
+      const templateRows = (templateRes.data || []) as TemplateRow[];
+      const hasCalendarTemplate = templateRows.some((row) => row.key === 'ACADEMIC_CALENDAR_SETUP');
+      const canProvisionCatalog = currentRole === 'ADMIN' || currentRole === 'PRINCIPAL';
+
+      if (!hasCalendarTemplate && canProvisionCatalog && !ensureCatalogAttemptedRef.current) {
+        ensureCatalogAttemptedRef.current = true;
+        await ensureAcademicCalendarTemplate(user.school_id);
+        return await loadData();
+      }
+
+      setTemplates(templateRows);
       setPermissions((permissionRes.data || []) as PermissionRow[]);
     } catch (err) {
       console.error('Failed to load templates', err);
@@ -66,6 +136,7 @@ export const TemplatesList: React.FC = () => {
   };
 
   useEffect(() => {
+    ensureCatalogAttemptedRef.current = false;
     loadData();
   }, [user?.id, user?.school_id]);
 
@@ -151,8 +222,8 @@ export const TemplatesList: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="border-b border-zinc-200 dark:border-zinc-800 pb-6">
-        <h1 className="text-3xl font-bold text-zinc-900 dark:text-white tracking-tight">Timetable Templates</h1>
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Manage your institutional schedules, rules, and configurations</p>
+        <h1 className="text-3xl font-bold text-zinc-900 dark:text-white tracking-tight">Institution Templates</h1>
+        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Manage academic calendars, schedules, governance rules, and system configurations</p>
       </div>
 
       {/* Search & Filter */}
@@ -173,7 +244,9 @@ export const TemplatesList: React.FC = () => {
       {filtered.length === 0 ? (
         <div className="text-center py-12">
           <Clock className="w-12 h-12 text-zinc-300 dark:text-zinc-700 mx-auto mb-3" />
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">No templates found matching your search</p>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            {user?.school_id ? 'No templates found matching your search' : 'No school is selected for this profile yet. Please log in again or switch back to a live profile role.'}
+          </p>
         </div>
       ) : (
         /* Grid of Templates */

@@ -58,6 +58,27 @@ CROSS JOIN (
         'modes', jsonb_build_array('CUSTOM','TEMPLATE'),
         'defaults', jsonb_build_object('durationMinutes', 45)
       )
+    ),
+    (
+      'ACADEMIC_CALENDAR_SETUP',
+      'Academic Calendar Setup',
+      'ACADEMICS',
+      jsonb_build_object(
+        'timezone', 'Africa/Nairobi',
+        'year', EXTRACT(YEAR FROM CURRENT_DATE)::int,
+        'yearStartDate', to_char(date_trunc('year', CURRENT_DATE)::date, 'YYYY-MM-DD'),
+        'yearEndDate', to_char((date_trunc('year', CURRENT_DATE) + interval '1 year - 1 day')::date, 'YYYY-MM-DD'),
+        'termDurationWeeksMin', 8,
+        'termDurationWeeksMax', 28,
+        'terms', jsonb_build_array(
+          jsonb_build_object('termNumber', 1, 'name', 'Term 1', 'startDate', null, 'endDate', null, 'midBreakStart', null, 'midBreakEnd', null, 'reportDeadline', null, 'resultsDeadline', null),
+          jsonb_build_object('termNumber', 2, 'name', 'Term 2', 'startDate', null, 'endDate', null, 'midBreakStart', null, 'midBreakEnd', null, 'reportDeadline', null, 'resultsDeadline', null),
+          jsonb_build_object('termNumber', 3, 'name', 'Term 3', 'startDate', null, 'endDate', null, 'midBreakStart', null, 'midBreakEnd', null, 'reportDeadline', null, 'resultsDeadline', null)
+        ),
+        'holidays', jsonb_build_array(),
+        'events', jsonb_build_array(),
+        'releaseState', 'DRAFT'
+      )
     )
 ) AS t(key, name, category, config)
 ON CONFLICT (school_id, key)
@@ -92,7 +113,10 @@ CROSS JOIN (
     ('SYSTEM_UPDATES_MAINTENANCE', 'TEACHER', true, false, false),
     ('CLASSROOM_START', 'TEACHER', true, true, false),
     ('CLASSROOM_START', 'ADMIN', true, true, true),
-    ('CLASSROOM_START', 'PRINCIPAL', true, true, true)
+    ('CLASSROOM_START', 'PRINCIPAL', true, true, true),
+    ('ACADEMIC_CALENDAR_SETUP', 'ADMIN', true, true, true),
+    ('ACADEMIC_CALENDAR_SETUP', 'PRINCIPAL', true, true, true),
+    ('ACADEMIC_CALENDAR_SETUP', 'TEACHER', true, false, false)
 ) AS p(template_key, role, can_view, can_use, can_edit)
 ON CONFLICT (school_id, template_key, role)
 DO UPDATE SET
