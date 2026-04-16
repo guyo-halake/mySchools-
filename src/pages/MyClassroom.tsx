@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as tus from 'tus-js-client';
 import { useNavigate } from 'react-router-dom';
 import {
   CalendarDays,
   Video,
   FileText,
+  BookOpen,
   Upload,
   CircleDot,
   Hand,
+  Link2,
   Star,
   Sparkles,
   Activity,
@@ -25,22 +28,28 @@ import {
   Send,
   Check,
   Bookmark,
-  Users
+  Users,
+  Plus,
+  Trash2,
+  Clock,
+  Download,
+  Monitor,
+  PhoneOff
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase';
 import { Button, Card, Badge, Modal } from '../components/UI';
 
 type TabKey = 'LIVE' | 'RECORDINGS' | 'NOTES' | 'ASSIGNMENTS';
-type LibraryTab = 'RECORDINGS' | 'NOTES' | 'ASSIGNMENTS' | 'SHARED' | 'ARCHIVE';
+type LibraryTab = 'ALL' | 'RECORDINGS_VIDEOS' | 'NOTES_PDFS' | 'ARCHIVE';
 type SessionStatus = 'LIVE' | 'UPCOMING' | 'COMPLETED';
 type AttendanceStatus = 'PRESENT' | 'LATE' | 'DISCONNECTED';
 
 type ContentFeedItem = {
   id: string;
   title: string;
-  type: 'RECORDING' | 'NOTE' | 'ASSIGNMENT' | 'HOLIDAY_WORK' | 'SHARED_FILE';
+  type: 'RECORDING' | 'NOTE' | 'ASSIGNMENT' | 'HOLIDAY_WORK' | 'SHARED_FILE' | 'LINK';
   postedAt: string;
   dueAt?: string;
   fileUrl?: string;
@@ -77,6 +86,7 @@ type ActivityItem = {
   id: string;
   sessionId: string;
   type: string;
+  actorId?: string | null;
   message: string;
   createdAt: string;
   actorName?: string | null;
@@ -133,6 +143,17 @@ type BreakoutRoom = {
   isActive: boolean;
 };
 
+type UploadChoice = 'VIDEO' | 'YOUTUBE' | 'PDF' | 'PACK' | 'LINK';
+
+type DraftResource = {
+  id: string;
+  mode: UploadChoice;
+  title: string;
+  file?: File;
+  url?: string;
+  addedAt: string;
+};
+
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const SLOT_PAIRS = [
   ['08:00', '08:40'],
@@ -187,6 +208,22 @@ const startOfWeekMonday = (now: Date) => {
 
 const randomFrom = <T,>(items: T[]): T => items[Math.floor(Math.random() * items.length)];
 const CLASSROOM_STORAGE_BUCKET = 'classroom-files';
+const DIRECT_UPLOAD_MAX_BYTES = 45 * 1024 * 1024;
+const ABSOLUTE_UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+const SUPABASE_STORAGE_RESUMABLE_ENDPOINT = `${supabaseUrl.replace('.supabase.co', '.storage.supabase.co')}/storage/v1/upload/resumable`;
+const SUPABASE_ANON_KEY = supabaseAnonKey;
+
+const formatBytes = (bytes: number) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let index = 0;
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024;
+    index += 1;
+  }
+  return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+};
 
 const sanitizeFileName = (name: string) => {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -201,12 +238,15 @@ export const MyClassroom: React.FC = () => {
   const [schemaReady, setSchemaReady] = useState(true);
 
   const [streams, setStreams] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
   const [assignmentRows, setAssignmentRows] = useState<any[]>([]);
+  const [sessionClassLabelByStream, setSessionClassLabelByStream] = useState<Record<string, string>>({});
 
   const [activeTab, setActiveTab] = useState<TabKey>('LIVE');
   const [workspaceMode, setWorkspaceMode] = useState<'LIVE' | 'LIBRARY'>('LIVE');
-  const [libraryTab, setLibraryTab] = useState<LibraryTab>('RECORDINGS');
+  const [libraryTab, setLibraryTab] = useState<LibraryTab>('ALL');
   const [livePaused, setLivePaused] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState('');
@@ -217,6 +257,21 @@ export const MyClassroom: React.FC = () => {
   const [assignmentFiles, setAssignmentFiles] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('Ready');
+  const [uploadChoice, setUploadChoice] = useState<UploadChoice | ''>('');
+  const [uploadName, setUploadName] = useState('');
+  const [uploadAudience, setUploadAudience] = useState<'WHOLE_CLASS' | 'SUBJECT_STUDENTS'>('WHOLE_CLASS');
+  const [useMyClassesOnly, setUseMyClassesOnly] = useState(true);
+  const [isSelectClassOpen, setIsSelectClassOpen] = useState(false);
+  const [draftResources, setDraftResources] = useState<DraftResource[]>([]);
+  const [packTitle, setPackTitle] = useState('');
+  const [targetClassId, setTargetClassId] = useState('');
+  const [targetStreamId, setTargetStreamId] = useState('');
+  const [targetSubjectId, setTargetSubjectId] = useState('');
+  const [targetStudentIds, setTargetStudentIds] = useState<string[]>([]);
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [linkResourceTitle, setLinkResourceTitle] = useState('');
+  const [linkResourceUrl, setLinkResourceUrl] = useState('');
+  const [linkResourceKind, setLinkResourceKind] = useState<'YOUTUBE' | 'EXTERNAL'>('EXTERNAL');
 
   const [questionType, setQuestionType] = useState<'MCQ' | 'SHORT' | 'STRUCTURED'>('MCQ');
   const [questionConcept, setQuestionConcept] = useState('General');
@@ -248,10 +303,13 @@ export const MyClassroom: React.FC = () => {
   const [breakoutRooms, setBreakoutRooms] = useState<BreakoutRoom[]>([]);
   const [breakoutMinutes, setBreakoutMinutes] = useState(8);
   const [breakoutCount, setBreakoutCount] = useState(3);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeInteractionTab, setActiveInteractionTab] = useState<'CHAT' | 'USERS' | 'FEED' | 'TASKS'>('CHAT');
 
   const classroomChannelRef = useRef<any>(null);
   const jitsiContainerRef = useRef<HTMLDivElement>(null);
   const recordingInputRef = useRef<HTMLInputElement>(null);
+  const studioUploadInputRef = useRef<HTMLInputElement>(null);
   const notesInputRef = useRef<HTMLInputElement>(null);
   const assignmentInputRef = useRef<HTMLInputElement>(null);
   const sharedInputRef = useRef<HTMLInputElement>(null);
@@ -285,13 +343,63 @@ export const MyClassroom: React.FC = () => {
       setLoading(true);
 
       try {
-        const [schoolStreams, schoolSubjects] = await Promise.all([
+        const [
+          schoolStreams,
+          schoolSubjects,
+          schoolStudents,
+          schoolClassesResult,
+          sessionClassLabelsResult,
+          physicalClassLabelsResult,
+          liveClassLabelsResult
+        ] = await Promise.all([
           api.getStreams(user.school_id),
-          api.getSubjects(user.school_id)
+          api.getSubjects(user.school_id),
+          api.getStudents(user.school_id),
+          supabase
+            .from('classes')
+            .select('id, name, level')
+            .eq('school_id', user.school_id),
+          supabase
+            .from('classroom_sessions')
+            .select('stream_id, class_label')
+            .eq('school_id', user.school_id)
+            .not('stream_id', 'is', null)
+            .not('class_label', 'is', null),
+          supabase
+            .from('physical_timetable_entries')
+            .select('stream_id, class_label')
+            .eq('school_id', user.school_id)
+            .not('stream_id', 'is', null)
+            .not('class_label', 'is', null),
+          supabase
+            .from('live_timetable_entries')
+            .select('stream_id, class_label')
+            .eq('school_id', user.school_id)
+            .not('stream_id', 'is', null)
+            .not('class_label', 'is', null)
         ]);
 
+        if (schoolClassesResult.error) throw schoolClassesResult.error;
+
         setStreams(schoolStreams || []);
+        setClasses(schoolClassesResult.data || []);
         setSubjects(schoolSubjects || []);
+        setStudents(schoolStudents || []);
+
+        const byStream: Record<string, string> = {};
+        const allLabelRows = [
+          ...(sessionClassLabelsResult.error ? [] : (sessionClassLabelsResult.data || [])),
+          ...(physicalClassLabelsResult.error ? [] : (physicalClassLabelsResult.data || [])),
+          ...(liveClassLabelsResult.error ? [] : (liveClassLabelsResult.data || []))
+        ];
+
+        for (const row of allLabelRows) {
+          if (!row?.stream_id || !row?.class_label) continue;
+          if (!byStream[row.stream_id]) {
+            byStream[row.stream_id] = String(row.class_label);
+          }
+        }
+        setSessionClassLabelByStream(byStream);
 
         if (user.role === 'TEACHER') {
           const { data } = await supabase
@@ -357,6 +465,213 @@ export const MyClassroom: React.FC = () => {
     return subjects.filter((sub: any) => subjectIds.has(sub.id));
   }, [assignmentRows, subjects]);
 
+  const uploadAudienceSubjects = useMemo(() => {
+    return subjects
+      .filter((sub: any) => sub?.active !== false)
+      .filter((sub: any) => sub?.is_compulsory !== true)
+      .sort((a: any, b: any) => String(a?.name || '').localeCompare(String(b?.name || '')));
+  }, [subjects]);
+
+  const classById = useMemo(() => {
+    const classMap = new Map<string, any>();
+
+    (Array.isArray(classes) ? classes : []).forEach((classRow: any) => {
+      if (!classRow?.id) return;
+      classMap.set(classRow.id, classRow);
+    });
+
+    streams.forEach((stream: any) => {
+      const classId = stream.class_id || stream.class?.id;
+      if (!classId) return;
+
+      const existing = classMap.get(classId);
+      const existingName = String(existing?.name || '').trim().toLowerCase();
+      const candidate = stream.class || null;
+      const candidateName = String(candidate?.name || '').trim().toLowerCase();
+
+      if (!existing) {
+        classMap.set(classId, candidate || { id: classId, level: stream.class?.level });
+        return;
+      }
+
+      if ((!existingName || existingName === 'class') && candidate && candidateName && candidateName !== 'class') {
+        classMap.set(classId, candidate);
+      }
+    });
+
+    return classMap;
+  }, [classes, streams]);
+
+  const resolveClassForStream = (stream: any) => {
+    const classId = stream?.class_id || stream?.class?.id;
+    if (!classId) return null;
+    const resolved = classById.get(classId) || stream?.class || null;
+    if (!resolved) return null;
+
+    const normalizedName = String(resolved.name || '').trim();
+    const hasLevel = typeof resolved.level === 'number' && Number.isFinite(resolved.level);
+    if (!normalizedName && !hasLevel) return null;
+
+    return {
+      ...resolved,
+      id: resolved.id || classId
+    };
+  };
+
+  const formatClassName = (c: any) => {
+    if (!c) return '';
+    const normalizedName = String(c.name || '').trim();
+    if (normalizedName && normalizedName.toLowerCase() !== 'class') return normalizedName;
+    const levelNumber = Number(c.level);
+    if (Number.isFinite(levelNumber) && levelNumber > 0) return `Form ${levelNumber}`;
+    return '';
+  };
+
+  const formatStreamName = (s: any) => {
+    if (!s) return '';
+    const name = String(s.name || '').trim();
+    return name || '';
+  };
+
+  const fallbackClassNameFromSessionLabel = (stream: any) => {
+    const streamId = String(stream?.id || '');
+    const raw = String(sessionClassLabelByStream[streamId] || '').trim();
+    const streamName = String(stream?.name || '').trim();
+    if (!raw) return '';
+    if (!streamName) return raw;
+
+    const escaped = streamName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const tailPattern = new RegExp(`\\s*[-]?\\s*${escaped}$`, 'i');
+    const cleaned = raw.replace(tailPattern, '').trim();
+    return cleaned || raw;
+  };
+
+  const selectableStreams = useMemo(() => {
+    const teacherScoped = Array.isArray(teacherStreams) ? teacherStreams : [];
+    const schoolWide = Array.isArray(streams) ? streams : [];
+    const source = useMyClassesOnly
+      ? (teacherScoped.length > 0 ? teacherScoped : schoolWide)
+      : schoolWide;
+    return source;
+  }, [useMyClassesOnly, teacherStreams, streams]);
+
+  const classOptions = useMemo(() => {
+    const unique = new Map<string, any>();
+    selectableStreams.forEach((stream: any) => {
+      const resolvedClass = resolveClassForStream(stream);
+      const classId = resolvedClass?.id || stream?.class_id || stream?.class?.id;
+      if (classId && !unique.has(classId)) {
+        unique.set(classId, resolvedClass || { id: classId, level: stream?.class?.level });
+      }
+    });
+    return Array.from(unique.values());
+  }, [classById, selectableStreams]);
+
+  const scopedStreams = useMemo(() => {
+    if (!targetClassId) return selectableStreams;
+    return selectableStreams.filter((stream: any) => (stream.class_id || stream.class?.id) === targetClassId);
+  }, [targetClassId, selectableStreams]);
+
+  useEffect(() => {
+    if (loading) return;
+
+    const unresolved = selectableStreams
+      .map((stream: any) => {
+        const classId = stream?.class_id || stream?.class?.id || null;
+        const resolved = resolveClassForStream(stream);
+        const fromSession = fallbackClassNameFromSessionLabel(stream);
+        if (resolved || fromSession) return null;
+
+        let reason = 'unknown';
+        if (!classId) reason = 'stream has no class_id';
+        else if (!classById.get(classId) && !stream?.class) reason = 'class join missing and classes map has no class_id';
+        else reason = 'class exists but has empty name/level';
+
+        return {
+          stream_id: stream?.id || null,
+          stream_name: stream?.name || null,
+          class_id: classId,
+          reason
+        };
+      })
+      .filter(Boolean);
+
+    console.group('[MyClassroom Debug] Class/Stream Dropdown Diagnostics');
+    console.info('Summary', {
+      schoolId: user?.school_id || null,
+      streamsLoaded: streams.length,
+      teacherStreams: teacherStreams.length,
+      selectableStreams: selectableStreams.length,
+      classesLoaded: classes.length,
+      classOptions: classOptions.length,
+      sessionClassLabels: Object.keys(sessionClassLabelByStream).length,
+      unresolvedStreams: unresolved.length,
+      useMyClassesOnly,
+      targetClassId,
+      targetStreamId
+    });
+
+    if (classes.length === 0 && streams.length > 0) {
+      console.error('[MyClassroom Debug] Classes list is empty while streams exist. Possible RLS/policy issue or classes query returned no rows.');
+    }
+
+    if (classOptions.length === 0 && selectableStreams.length > 0) {
+      console.error('[MyClassroom Debug] Class options are empty even though streams exist. Dropdown will look broken.');
+    }
+
+    if (unresolved.length > 0) {
+      console.error('[MyClassroom Debug] Streams missing form/class resolution:', unresolved);
+    } else {
+      console.info('[MyClassroom Debug] All selectable streams resolved to class/form labels.');
+    }
+
+    console.groupEnd();
+  }, [
+    loading,
+    user?.school_id,
+    streams,
+    classes,
+    teacherStreams,
+    selectableStreams,
+    classOptions,
+    sessionClassLabelByStream,
+    targetClassId,
+    targetStreamId,
+    useMyClassesOnly,
+    classById
+  ]);
+
+  useEffect(() => {
+    if (targetStreamId && !scopedStreams.some((stream: any) => stream.id === targetStreamId)) {
+      setTargetStreamId('');
+      setTargetStudentIds([]);
+    }
+  }, [scopedStreams, targetStreamId]);
+
+  useEffect(() => {
+    if (targetStreamId && !selectableStreams.some((stream: any) => stream.id === targetStreamId)) {
+      setTargetClassId('');
+      setTargetStreamId('');
+      setTargetStudentIds([]);
+    }
+  }, [selectableStreams, targetStreamId]);
+
+  useEffect(() => {
+    if (!targetSubjectId && teacherSubjects[0]?.id) {
+      setTargetSubjectId(teacherSubjects[0].id);
+    }
+  }, [targetSubjectId, teacherSubjects]);
+
+  useEffect(() => {
+    if (!uploadAudienceSubjects.length) {
+      if (targetSubjectId) setTargetSubjectId('');
+      return;
+    }
+    if (!targetSubjectId || !uploadAudienceSubjects.some((subject: any) => subject.id === targetSubjectId)) {
+      setTargetSubjectId(uploadAudienceSubjects[0].id);
+    }
+  }, [targetSubjectId, uploadAudienceSubjects]);
+
   useEffect(() => {
     if (!isStartClassModalOpen || startClassMode !== 'CUSTOM') return;
 
@@ -383,7 +698,7 @@ export const MyClassroom: React.FC = () => {
           end,
           subject: subject.name,
           teacher: user?.full_name || 'Teacher',
-          classLabel: `${stream.class?.name || 'Form'} ${stream.name || ''}`.trim(),
+          classLabel: `${formatClassName(resolveClassForStream(stream))} ${formatStreamName(stream)}`.trim() || 'Unassigned stream',
           streamId: stream.id,
           subjectId: subject.id,
           source: 'TIMETABLE'
@@ -408,7 +723,7 @@ export const MyClassroom: React.FC = () => {
     }
 
     return [...list, ...customSessions];
-  }, [customSessions, now, teacherStreams, teacherSubjects, user]);
+  }, [classById, customSessions, now, teacherStreams, teacherSubjects, user]);
 
   const syncSessionsToDb = async (source: SessionItem[]) => {
     if (!user?.school_id || !source.length) {
@@ -524,7 +839,7 @@ export const MyClassroom: React.FC = () => {
       const fallbackAttendance = seedStudents.map((student, idx) => ({
         id: student.id,
         name: student.name,
-        status: idx === 0 ? 'PRESENT' : idx % 3 === 0 ? 'LATE' : 'DISCONNECTED',
+        status: (idx === 0 ? 'PRESENT' : idx % 3 === 0 ? 'LATE' : 'DISCONNECTED') as AttendanceStatus,
         handRaised: false,
         joinedAt: new Date().toISOString()
       }));
@@ -742,6 +1057,7 @@ export const MyClassroom: React.FC = () => {
     const entry = {
       id: data.id,
       sessionId: data.session_id,
+      actorId: data.actor_id,
       type: data.event_type,
       message: data.message,
       createdAt: data.created_at,
@@ -1059,19 +1375,499 @@ export const MyClassroom: React.FC = () => {
 
   const uploadFileToStorage = async (file: File, folder: 'recordings' | 'notes' | 'assignment-files') => {
     if (!user?.school_id) throw new Error('Missing school context');
+    if (file.size > ABSOLUTE_UPLOAD_MAX_BYTES) {
+      throw new Error(`File too large (${formatBytes(file.size)}). Max upload is ${formatBytes(ABSOLUTE_UPLOAD_MAX_BYTES)}.`);
+    }
 
     const safe = sanitizeFileName(file.name);
     const path = `${user.school_id}/${folder}/${Date.now()}-${safe}`;
 
-    const { error: uploadError } = await supabase
-      .storage
-      .from(CLASSROOM_STORAGE_BUCKET)
-      .upload(path, file, { upsert: false });
+    logPublishDiagnostics('storage:upload:start', {
+      bucket: CLASSROOM_STORAGE_BUCKET,
+      folder,
+      path,
+      fileName: file.name,
+      fileType: file.type,
+      fileSizeBytes: file.size,
+      fileSizeLabel: formatBytes(file.size)
+    });
+
+    let uploadError: any = null;
+
+    if (file.size <= DIRECT_UPLOAD_MAX_BYTES) {
+      const result = await supabase
+        .storage
+        .from(CLASSROOM_STORAGE_BUCKET)
+        .upload(path, file, { upsert: false });
+      uploadError = result.error;
+    } else {
+      logPublishDiagnostics('storage:upload:resumable:start', {
+        endpoint: SUPABASE_STORAGE_RESUMABLE_ENDPOINT,
+        path,
+        fileSizeBytes: file.size,
+        fileSizeLabel: formatBytes(file.size)
+      });
+
+      if (!SUPABASE_ANON_KEY || !supabaseUrl) {
+        throw new Error('Missing Supabase environment variables for resumable upload.');
+      }
+
+      uploadError = await new Promise<any>((resolve) => {
+        const upload = new tus.Upload(file, {
+          endpoint: SUPABASE_STORAGE_RESUMABLE_ENDPOINT,
+          chunkSize: 6 * 1024 * 1024,
+          retryDelays: [0, 2000, 5000, 10000],
+          uploadDataDuringCreation: true,
+          removeFingerprintOnSuccess: true,
+          headers: {
+            authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            apikey: SUPABASE_ANON_KEY,
+            'x-upsert': 'false'
+          },
+          metadata: {
+            bucketName: CLASSROOM_STORAGE_BUCKET,
+            objectName: path,
+            contentType: file.type || 'application/octet-stream',
+            cacheControl: '3600'
+          },
+          onError: (error) => {
+            resolve(error);
+          },
+          onSuccess: () => {
+            resolve(null);
+          }
+        });
+
+        upload.findPreviousUploads().then((previousUploads) => {
+          if (previousUploads.length > 0) {
+            upload.resumeFromPreviousUpload(previousUploads[0]);
+          }
+          upload.start();
+        }).catch((error) => {
+          resolve(error);
+        });
+      });
+    }
 
     if (uploadError) throw uploadError;
 
     const { data } = supabase.storage.from(CLASSROOM_STORAGE_BUCKET).getPublicUrl(path);
+    logPublishDiagnostics('storage:upload:done', {
+      path,
+      publicUrl: data.publicUrl
+    });
     return { filePath: path, fileUrl: data.publicUrl };
+  };
+
+  const acceptForUploadChoice = (choice: UploadChoice | '') => {
+    if (!choice) return '*';
+    if (choice === 'VIDEO') return 'video/*';
+    if (choice === 'PDF') return 'application/pdf,.pdf';
+    if (choice === 'PACK') return 'video/*,application/pdf,.pdf';
+    if (choice === 'LINK' || choice === 'YOUTUBE') return '*';
+    return '*';
+  };
+
+  const isFileAllowedForChoice = (file: File, choice: UploadChoice | '') => {
+    const mime = String(file.type || '').toLowerCase();
+    const ext = String(file.name || '').toLowerCase().split('.').pop() || '';
+
+    if (choice === 'VIDEO') {
+      return mime.startsWith('video/');
+    }
+    if (choice === 'PDF') {
+      return mime === 'application/pdf' || ext === 'pdf';
+    }
+    if (choice === 'PACK') {
+      return mime.startsWith('video/') || mime === 'application/pdf' || ext === 'pdf';
+    }
+    if (choice === 'LINK' || choice === 'YOUTUBE') {
+      return false;
+    }
+    return false;
+  };
+
+  const queueFileResource = (file: File) => {
+    if (!uploadChoice) {
+      setUploadStatus('Choose what to upload');
+      return;
+    }
+
+    if (file.size > ABSOLUTE_UPLOAD_MAX_BYTES) {
+      setUploadStatus(`File too large (${formatBytes(file.size)}). Max upload is ${formatBytes(ABSOLUTE_UPLOAD_MAX_BYTES)}.`);
+      logPublishDiagnostics('blocked', {
+        reason: 'file_too_large',
+        fileName: file.name,
+        fileType: file.type,
+        fileSizeBytes: file.size,
+        fileSizeLabel: formatBytes(file.size),
+        maxAllowedBytes: ABSOLUTE_UPLOAD_MAX_BYTES,
+        maxAllowedLabel: formatBytes(ABSOLUTE_UPLOAD_MAX_BYTES)
+      });
+      return;
+    }
+
+    if (file.size > DIRECT_UPLOAD_MAX_BYTES) {
+      setUploadStatus(`Large file queued (${formatBytes(file.size)}). Resumable upload will be used on publish.`);
+      logPublishDiagnostics('info', {
+        reason: 'large_file_resumable_path',
+        fileName: file.name,
+        fileSizeBytes: file.size,
+        fileSizeLabel: formatBytes(file.size),
+        directLimitBytes: DIRECT_UPLOAD_MAX_BYTES,
+        directLimitLabel: formatBytes(DIRECT_UPLOAD_MAX_BYTES)
+      });
+    }
+
+    if (!isFileAllowedForChoice(file, uploadChoice)) {
+      if (uploadChoice === 'VIDEO') {
+        setUploadStatus('Only video files are allowed for Video upload');
+      } else if (uploadChoice === 'PDF') {
+        setUploadStatus('Only PDF files are allowed for PDF upload');
+      } else if (uploadChoice === 'PACK') {
+        setUploadStatus('Pack accepts only video or PDF files');
+      } else {
+        setUploadStatus('Invalid file for selected upload type');
+      }
+      return;
+    }
+
+    const mode: UploadChoice = uploadChoice;
+    setDraftResources((prev) => [
+      {
+        id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        mode,
+        title: uploadName.trim() || file.name,
+        file,
+        addedAt: new Date().toISOString()
+      },
+      ...prev
+    ]);
+    setUploadName('');
+    setUploadStatus('Draft updated');
+  };
+
+  const removeDraftResource = (id: string) => {
+    setDraftResources((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const classIdForStream = (streamId?: string | null) => {
+    if (!streamId) return null;
+    const stream = streams.find((s: any) => s.id === streamId)
+      || teacherStreams.find((s: any) => s.id === streamId)
+      || selectableStreams.find((s: any) => s.id === streamId)
+      || scopedStreams.find((s: any) => s.id === streamId);
+    return stream?.class_id || stream?.class?.id || null;
+  };
+
+  const buildUploadContext = (session: SessionItem) => {
+    const streamId = targetStreamId || session.streamId || null;
+    const classId = targetClassId || classIdForStream(streamId) || null;
+    const subjectId = targetSubjectId || session.subjectId || null;
+
+    return {
+      stream_id: streamId,
+      class_id: classId,
+      subject_id: subjectId,
+      audience_scope: uploadAudience,
+      target_student_ids: targetStudentIds,
+      uploaded_by_name: user?.full_name || null
+    };
+  };
+
+  const resolvePublishSession = () => {
+    const byScope = orderedSessions.find((s) => s.streamId === targetStreamId && s.subjectId === targetSubjectId);
+    return byScope || selectedSession || orderedSessions[0] || null;
+  };
+
+  const withTimeout = async <T,>(promise: PromiseLike<T>, ms: number, label: string): Promise<T> => {
+    let timer: number | null = null;
+    try {
+      const timeoutPromise = new Promise<T>((_, reject) => {
+        timer = window.setTimeout(() => {
+          reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`));
+        }, ms);
+      });
+
+      return await Promise.race([Promise.resolve(promise), timeoutPromise]);
+    } finally {
+      if (timer !== null) window.clearTimeout(timer);
+    }
+  };
+
+  const getPublishValidationIssues = (session: SessionItem | null, uploadContext: ReturnType<typeof buildUploadContext> | null) => {
+    const issues: string[] = [];
+    if (!user?.id) issues.push('missing_user_id');
+    if (!user?.school_id) issues.push('missing_school_id');
+    if (!session) issues.push('missing_target_session');
+    if (!draftResources.length) issues.push('no_draft_resources');
+    if (uploading) issues.push('already_uploading');
+    if (!uploadContext?.stream_id) issues.push('missing_stream_id');
+    if (uploadAudience === 'SUBJECT_STUDENTS' && !uploadContext?.subject_id) issues.push('missing_subject_id_for_subject_students');
+    if (draftResources.some((r) => (r.file?.size || 0) > ABSOLUTE_UPLOAD_MAX_BYTES)) issues.push('file_too_large_for_upload');
+    return issues;
+  };
+
+  const logPublishDiagnostics = (stage: string, payload: Record<string, unknown>) => {
+    console.log(`[MyClassroom Publish][${stage}]`, payload);
+  };
+
+  const publishDraftResources = async () => {
+    const session = resolvePublishSession();
+    const uploadContext = session ? buildUploadContext(session) : null;
+    const validationIssues = getPublishValidationIssues(session, uploadContext);
+
+    logPublishDiagnostics('preflight', {
+      userId: user?.id || null,
+      schoolId: user?.school_id || null,
+      selectedSessionId,
+      resolvedSessionId: session?.id || null,
+      targetClassId,
+      targetStreamId,
+      targetSubjectId,
+      uploadAudience,
+      targetStudentIdsCount: targetStudentIds.length,
+      draftResourcesCount: draftResources.length,
+      draftResources: draftResources.map((item) => ({
+        id: item.id,
+        mode: item.mode,
+        title: item.title,
+        hasFile: Boolean(item.file),
+        fileName: item.file?.name || null,
+        fileType: item.file?.type || null,
+        fileSize: item.file?.size || null,
+        hasUrl: Boolean(item.url)
+      })),
+      uploadContext,
+      validationIssues
+    });
+
+    if (!user?.school_id || draftResources.length === 0) {
+      const reason = !user?.school_id ? 'Missing school context' : 'No resources in draft';
+      setUploadStatus(reason);
+      logPublishDiagnostics('blocked', { reason, validationIssues });
+      return;
+    }
+
+    if (!session) {
+      setUploadStatus('No target class session found');
+      logPublishDiagnostics('blocked', { reason: 'No target class session found', validationIssues });
+      return;
+    }
+
+    if (!uploadContext?.stream_id) {
+      setUploadStatus('Select class/stream before publishing');
+      logPublishDiagnostics('blocked', { reason: 'Select class/stream before publishing', validationIssues });
+      return;
+    }
+
+    if (uploadAudience === 'SUBJECT_STUDENTS' && !uploadContext?.subject_id) {
+      setUploadStatus('Choose subject before publishing to subject students');
+      logPublishDiagnostics('blocked', { reason: 'Choose subject before publishing to subject students', validationIssues });
+      return;
+    }
+
+    if (!uploadContext) {
+      setUploadStatus('Missing upload context');
+      logPublishDiagnostics('blocked', { reason: 'Missing upload context', validationIssues });
+      return;
+    }
+
+    const publishContext = uploadContext;
+
+    const oversized = draftResources.find((r) => (r.file?.size || 0) > ABSOLUTE_UPLOAD_MAX_BYTES);
+    if (oversized?.file) {
+      const reason = `File too large (${formatBytes(oversized.file.size)}): ${oversized.file.name}. Max upload is ${formatBytes(ABSOLUTE_UPLOAD_MAX_BYTES)}.`;
+      setUploadStatus(reason);
+      logPublishDiagnostics('blocked', {
+        reason: 'file_too_large_for_upload',
+        fileName: oversized.file.name,
+        fileSizeBytes: oversized.file.size,
+        fileSizeLabel: formatBytes(oversized.file.size),
+        maxAllowedBytes: ABSOLUTE_UPLOAD_MAX_BYTES,
+        maxAllowedLabel: formatBytes(ABSOLUTE_UPLOAD_MAX_BYTES)
+      });
+      return;
+    }
+
+    setUploading(true);
+    setUploadStatus('Publishing...');
+    logPublishDiagnostics('started', { sessionId: session.id, uploadContext: publishContext });
+
+    try {
+      let createdCount = 0;
+      for (const item of draftResources) {
+        logPublishDiagnostics('item:start', {
+          itemId: item.id,
+          mode: item.mode,
+          title: item.title,
+          hasFile: Boolean(item.file),
+          fileName: item.file?.name || null,
+          fileType: item.file?.type || null,
+          fileSize: item.file?.size || null,
+          hasUrl: Boolean(item.url)
+        });
+
+        if (item.mode === 'VIDEO' && item.file) {
+          const uploaded = await withTimeout(uploadFileToStorage(item.file, 'recordings'), 90000, 'Video file upload');
+          logPublishDiagnostics('item:uploaded', { itemId: item.id, filePath: uploaded.filePath, fileUrl: uploaded.fileUrl });
+
+          const { data, error } = await withTimeout(supabase
+            .from('classroom_recordings')
+            .insert({
+              school_id: user.school_id,
+              session_id: session.id,
+              teacher_id: user.id,
+              title: item.title,
+              file_url: uploaded.fileUrl,
+              recording_url: uploaded.fileUrl,
+              recorded_at: new Date().toISOString(),
+              ...publishContext
+            })
+            .select('*')
+            .single(), 45000, 'Video database insert');
+          if (error) throw error;
+          if (data) setRecordings((prev) => [data, ...prev]);
+          if (data) createdCount += 1;
+          logPublishDiagnostics('item:done', { itemId: item.id, createdCount, table: 'classroom_recordings' });
+          continue;
+        }
+
+        if (item.mode === 'PDF' && item.file) {
+          const uploaded = await withTimeout(uploadFileToStorage(item.file, 'notes'), 90000, 'PDF file upload');
+          logPublishDiagnostics('item:uploaded', { itemId: item.id, filePath: uploaded.filePath, fileUrl: uploaded.fileUrl });
+
+          const { data, error } = await withTimeout(supabase
+            .from('classroom_notes')
+            .insert({
+              school_id: user.school_id,
+              session_id: session.id,
+              teacher_id: user.id,
+              title: item.title,
+              note_type: 'PDF',
+              file_url: uploaded.fileUrl,
+              content: item.title,
+              ...publishContext
+            })
+            .select('*')
+            .single(), 45000, 'PDF database insert');
+          if (error) throw error;
+          if (data) setNotes((prev) => [data, ...prev]);
+          if (data) createdCount += 1;
+          logPublishDiagnostics('item:done', { itemId: item.id, createdCount, table: 'classroom_notes', noteType: 'PDF' });
+          continue;
+        }
+
+        if ((item.mode === 'YOUTUBE' || item.mode === 'LINK') && item.url) {
+          const { data, error } = await withTimeout(supabase
+            .from('classroom_notes')
+            .insert({
+              school_id: user.school_id,
+              session_id: session.id,
+              teacher_id: user.id,
+              title: item.title,
+              note_type: item.mode === 'YOUTUBE' ? 'YOUTUBE_LINK' : 'LINK',
+              content: item.url,
+              file_url: item.url,
+              ...publishContext
+            })
+            .select('*')
+            .single(), 45000, 'Link database insert');
+          if (error) throw error;
+          if (data) setNotes((prev) => [data, ...prev]);
+          if (data) createdCount += 1;
+          logPublishDiagnostics('item:done', { itemId: item.id, createdCount, table: 'classroom_notes', noteType: item.mode });
+          continue;
+        }
+
+        if (item.mode === 'PACK' && item.file) {
+          const folder = item.file.type.startsWith('video/') ? 'recordings' : 'notes';
+          const uploaded = await withTimeout(uploadFileToStorage(item.file, folder as 'recordings' | 'notes'), 90000, 'Pack file upload');
+          logPublishDiagnostics('item:uploaded', { itemId: item.id, folder, filePath: uploaded.filePath, fileUrl: uploaded.fileUrl });
+
+          if (folder === 'recordings') {
+            const { data, error } = await withTimeout(supabase
+              .from('classroom_recordings')
+              .insert({
+                school_id: user.school_id,
+                session_id: session.id,
+                teacher_id: user.id,
+                title: item.title,
+                file_url: uploaded.fileUrl,
+                recording_url: uploaded.fileUrl,
+                recorded_at: new Date().toISOString(),
+                ...publishContext
+              })
+              .select('*')
+              .single(), 45000, 'Pack recording database insert');
+            if (error) throw error;
+            if (data) setRecordings((prev) => [data, ...prev]);
+            if (data) createdCount += 1;
+            logPublishDiagnostics('item:done', { itemId: item.id, createdCount, table: 'classroom_recordings', mode: 'PACK' });
+          } else {
+            const { data, error } = await withTimeout(supabase
+              .from('classroom_notes')
+              .insert({
+                school_id: user.school_id,
+                session_id: session.id,
+                teacher_id: user.id,
+                title: item.title,
+                note_type: 'PACK_ITEM',
+                file_url: uploaded.fileUrl,
+                content: packTitle.trim() || 'Pack item',
+                ...publishContext
+              })
+              .select('*')
+              .single(), 45000, 'Pack note database insert');
+            if (error) throw error;
+            if (data) setNotes((prev) => [data, ...prev]);
+            if (data) createdCount += 1;
+            logPublishDiagnostics('item:done', { itemId: item.id, createdCount, table: 'classroom_notes', mode: 'PACK' });
+          }
+        }
+
+        if ((item.mode === 'VIDEO' || item.mode === 'PDF' || item.mode === 'PACK') && !item.file) {
+          logPublishDiagnostics('item:skipped', { itemId: item.id, reason: 'Missing file for file-based mode', mode: item.mode });
+        }
+
+        if ((item.mode === 'YOUTUBE' || item.mode === 'LINK') && !item.url) {
+          logPublishDiagnostics('item:skipped', { itemId: item.id, reason: 'Missing URL for link-based mode', mode: item.mode });
+        }
+      }
+
+      if (createdCount === 0) {
+        throw new Error('No resources were written to the database.');
+      }
+
+      await withTimeout(addActivity(session.id, 'RESOURCE_SHARED', 'Published classroom resources.', {
+        streamId: targetStreamId,
+        subjectId: targetSubjectId,
+        audience: uploadAudience,
+        studentIds: targetStudentIds,
+        count: createdCount
+      }), 30000, 'Publish activity log');
+
+      if (selectedSessionId !== session.id) {
+        setSelectedSessionId(session.id);
+      }
+      await withTimeout(loadSessionData(session.id), 45000, 'Reload session data after publish');
+
+      setDraftResources([]);
+      setUploadStatus(`Published ${createdCount} item(s)`);
+      logPublishDiagnostics('completed', { createdCount, sessionId: session.id });
+    } catch (error) {
+      console.error('Publish draft resources failed', error);
+      setUploadStatus(`Publish failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      logPublishDiagnostics('failed', {
+        sessionId: session.id,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        errorName: error instanceof Error ? error.name : null,
+        uploadContext: publishContext
+      });
+    } finally {
+      setUploading(false);
+      logPublishDiagnostics('finalized', { uploading: false, uploadStatus: 'finalized' });
+    }
   };
 
   const handleRecordingUpload = async (file: File) => {
@@ -1079,6 +1875,7 @@ export const MyClassroom: React.FC = () => {
     setUploading(true);
     setUploadStatus('Uploading recording...');
     try {
+      const uploadContext = buildUploadContext(selectedSession);
       const uploaded = await uploadFileToStorage(file, 'recordings');
       setUploadStatus('Processing recording...');
       const { data, error } = await supabase
@@ -1090,7 +1887,8 @@ export const MyClassroom: React.FC = () => {
           title: file.name,
           file_url: uploaded.fileUrl,
           recording_url: uploaded.fileUrl,
-          recorded_at: new Date().toISOString()
+          recorded_at: new Date().toISOString(),
+          ...uploadContext
         })
         .select('*')
         .single();
@@ -1113,6 +1911,7 @@ export const MyClassroom: React.FC = () => {
     setUploading(true);
     setUploadStatus('Uploading revision note...');
     try {
+      const uploadContext = buildUploadContext(selectedSession);
       const uploaded = await uploadFileToStorage(file, 'notes');
       setUploadStatus('Processing revision note...');
       const { data, error } = await supabase
@@ -1123,7 +1922,8 @@ export const MyClassroom: React.FC = () => {
           teacher_id: user.id,
           title: file.name,
           note_type: 'PDF',
-          file_url: uploaded.fileUrl
+          file_url: uploaded.fileUrl,
+          ...uploadContext
         })
         .select('*')
         .single();
@@ -1184,6 +1984,7 @@ export const MyClassroom: React.FC = () => {
     setUploading(true);
     setUploadStatus('Uploading shared file...');
     try {
+      const uploadContext = buildUploadContext(selectedSession);
       const uploaded = await uploadFileToStorage(file, 'notes');
       setUploadStatus('Processing shared file...');
       const { data, error } = await supabase
@@ -1195,7 +1996,8 @@ export const MyClassroom: React.FC = () => {
           title: file.name,
           note_type: 'SHARED_FILE',
           file_url: uploaded.fileUrl,
-          content: 'Shared class resource'
+          content: 'Shared class resource',
+          ...uploadContext
         })
         .select('*')
         .single();
@@ -1211,6 +2013,29 @@ export const MyClassroom: React.FC = () => {
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleLinkPublish = async () => {
+    if (!linkResourceUrl.trim()) return;
+
+    const title = linkResourceTitle.trim() || (linkResourceKind === 'YOUTUBE' ? 'YouTube lesson' : 'Linked resource');
+
+    setDraftResources((prev) => [
+      {
+        id: `draft-link-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        mode: linkResourceKind === 'YOUTUBE' ? 'YOUTUBE' : 'LINK',
+        title,
+        url: linkResourceUrl.trim(),
+        addedAt: new Date().toISOString()
+      },
+      ...prev
+    ]);
+
+    setLinkResourceTitle('');
+    setLinkResourceUrl('');
+    setLinkResourceKind('EXTERNAL');
+    setIsLinkModalOpen(false);
+    setUploadStatus('Draft updated');
   };
 
   const handleSaveClassRecording = async () => {
@@ -1386,7 +2211,7 @@ export const MyClassroom: React.FC = () => {
     const day = startDate.toLocaleDateString('en-GB', { weekday: 'long' });
     const fmt = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     const id = `custom-${Date.now()}`;
-    const classLabel = `${stream.class?.name || 'Form'} ${stream.name || ''}`.trim();
+    const classLabel = `${formatClassName(resolveClassForStream(stream))} ${formatStreamName(stream)}`.trim() || 'Unassigned stream';
     const topic = customClassForm.topic.trim();
 
     const sessionItem: SessionItem = {
@@ -1440,7 +2265,7 @@ export const MyClassroom: React.FC = () => {
     const day = startDate.toLocaleDateString('en-GB', { weekday: 'long' });
     const fmt = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     const id = `custom-${Date.now()}`;
-    const classLabel = `${stream.class?.name || 'Form'} ${stream.name || ''}`.trim();
+    const classLabel = `${formatClassName(resolveClassForStream(stream))} ${formatStreamName(stream)}`.trim() || 'Unassigned stream';
     const topic = customClassForm.topic.trim();
 
     const sessionItem: SessionItem = {
@@ -1778,7 +2603,7 @@ export const MyClassroom: React.FC = () => {
     const noteItems: ContentFeedItem[] = notes.map((item: any) => ({
       id: `note-${item.id}`,
       title: item.title || 'Revision note',
-      type: item.note_type === 'SHARED_FILE' ? 'SHARED_FILE' : 'NOTE',
+      type: item.note_type === 'SHARED_FILE' ? 'SHARED_FILE' : item.note_type === 'LINK' || item.note_type === 'YOUTUBE_LINK' ? 'LINK' : 'NOTE',
       postedAt: item.updated_at || item.created_at || new Date().toISOString(),
       fileUrl: item.file_url || undefined,
       preview: item.content || 'Revision material shared by teacher.',
@@ -1808,10 +2633,9 @@ export const MyClassroom: React.FC = () => {
   }, [assignmentFiles, notes, openAssignments, recordings]);
 
   const feedForTab = useMemo(() => {
-    if (libraryTab === 'RECORDINGS') return contentFeed.filter((item) => item.type === 'RECORDING');
-    if (libraryTab === 'NOTES') return contentFeed.filter((item) => item.type === 'NOTE');
-    if (libraryTab === 'ASSIGNMENTS') return contentFeed.filter((item) => item.type === 'ASSIGNMENT' || item.type === 'HOLIDAY_WORK');
-    if (libraryTab === 'SHARED') return contentFeed.filter((item) => item.type === 'SHARED_FILE');
+    if (libraryTab === 'ALL') return contentFeed;
+    if (libraryTab === 'RECORDINGS_VIDEOS') return contentFeed.filter((item) => item.type === 'RECORDING');
+    if (libraryTab === 'NOTES_PDFS') return contentFeed.filter((item) => item.type === 'NOTE' || item.type === 'LINK' || item.type === 'SHARED_FILE');
     return contentFeed.filter((item) => item.archived || item.type === 'HOLIDAY_WORK');
   }, [contentFeed, libraryTab]);
 
@@ -1827,6 +2651,7 @@ export const MyClassroom: React.FC = () => {
   const badgeVariantForType = (type: ContentFeedItem['type']) => {
     if (type === 'RECORDING') return 'info';
     if (type === 'NOTE') return 'success';
+    if (type === 'LINK') return 'info';
     if (type === 'SHARED_FILE') return 'neutral';
     if (type === 'ASSIGNMENT' || type === 'HOLIDAY_WORK') return 'warning';
     return 'neutral';
@@ -1835,6 +2660,7 @@ export const MyClassroom: React.FC = () => {
   const contentTypeLabel = (type: ContentFeedItem['type']) => {
     if (type === 'RECORDING') return 'Recording';
     if (type === 'NOTE') return 'Note';
+    if (type === 'LINK') return 'Link';
     if (type === 'ASSIGNMENT') return 'Assignment';
     if (type === 'HOLIDAY_WORK') return 'Holiday Work';
     return 'Shared File';
@@ -2011,463 +2837,687 @@ export const MyClassroom: React.FC = () => {
   const customClassFormValid = Boolean(
     customClassForm.streamId &&
     customClassForm.subjectId &&
-    customClassForm.startAt &&
-    customClassForm.endAt &&
-    new Date(customClassForm.endAt).getTime() > new Date(customClassForm.startAt).getTime()
+    customClassForm.topic
   );
 
-  if (loading) {
-    return <div className="py-14 text-sm font-semibold text-zinc-500">Loading My Classroom...</div>;
-  }
+  const selectedClassFromId = classOptions.find((c: any) => c.id === targetClassId);
+  const selectedStream = scopedStreams.find((s: any) => s.id === targetStreamId);
+  const selectedClass = resolveClassForStream(selectedStream) || selectedClassFromId || null;
+  const selectedSubject = uploadAudienceSubjects.find((s: any) => s.id === targetSubjectId);
+
+  const classDisplayName = (c: any) => {
+    return formatClassName(c);
+  };
+
+  const streamDisplayName = (s: any) => {
+    return formatStreamName(s);
+  };
+
+  const classStreamDisplayLabel = (stream: any) => {
+    const className = classDisplayName(resolveClassForStream(stream)) || fallbackClassNameFromSessionLabel(stream);
+    const streamName = streamDisplayName(stream);
+    if (className && streamName) return `${className} - ${streamName}`;
+    if (streamName) return `Stream ${streamName}`;
+    if (className) return className;
+    return 'Unlinked stream';
+  };
+
+  const selectedClassName = classDisplayName(selectedClass) || fallbackClassNameFromSessionLabel(selectedStream);
+
+  const audienceScopeLabel = `${selectedClassName} ${streamDisplayName(selectedStream)}`.trim() || 'selected class stream';
+
+  const audienceAlert = uploadAudience === 'WHOLE_CLASS'
+    ? `This upload will be sent to the whole ${audienceScopeLabel}.`
+    : `This upload will be sent to all ${(selectedSubject?.name || 'subject')} students in ${audienceScopeLabel}.`;
+
+  const draftTypeLabel = (mode: UploadChoice) => {
+    if (mode === 'VIDEO') return 'Video';
+    if (mode === 'YOUTUBE') return 'YouTube';
+    if (mode === 'LINK') return 'Link';
+    if (mode === 'PDF') return 'PDF';
+    return 'Pack Item';
+  };
+
+  if (loading) return <div className="py-24 text-center text-sm font-bold text-zinc-400 animate-pulse">Synchronizing Classroom Data...</div>;
 
   return (
-    <div className="space-y-6">
-      <style>{`
-        @keyframes liveFeedPopIn {
-          from { opacity: 0; transform: translateY(10px) scale(0.98); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        .live-feed-pop {
-          animation: liveFeedPopIn 220ms ease-out;
-        }
-      `}</style>
-      <Card className="border-none bg-white dark:bg-zinc-900">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-zinc-400">My Classroom</p>
-          </div>
+    <div className="space-y-6 max-w-[1700px] mx-auto pb-12 transition-all duration-300">
+      {/* Header Bar */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 p-6 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm">
+        <div className="flex items-center gap-4">
+           <div className="h-12 w-12 rounded-xl bg-zinc-900 dark:bg-white flex items-center justify-center text-white dark:text-zinc-900 shadow-sm">
+             <Video size={24} />
+           </div>
+           <div>
+             <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-white leading-tight">My Classroom</h1>
+             <div className="flex items-center gap-2 mt-0.5">
+               <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{termLabel}</span>
+               {orchestrationForSelected && (
+                 <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase tracking-widest">
+                   <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                   Active
+                 </div>
+               )}
+             </div>
+           </div>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              title="Start Live Class"
-              variant="primary"
-              onClick={() => {
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant={orchestrationForSelected ? 'danger' : 'primary'}
+            className={`rounded-xl h-10 px-6 font-bold text-xs ${orchestrationForSelected ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white border-0'}`}
+            onClick={() => {
+              if (orchestrationForSelected) {
+                closeSessionAndArchive('MANUAL');
+              } else {
                 setIsStartClassModalOpen(true);
                 setStartClassMode('CHOICE');
-              }}
-              disabled={!!orchestrationForSelected}
-            >
-              <Sparkles size={14} /> Start Live Class
-            </Button>
-            <Button
-              title="Upload"
-              variant="outline"
-              onClick={() => {
-                setWorkspaceMode('LIBRARY');
-                setActiveTab('RECORDINGS');
-                setLibraryTab('RECORDINGS');
-              }}
-            >
-              <Upload size={14} /> Upload
-            </Button>
-            <Button title="My Timetable" variant="outline" onClick={() => navigate('/timetable')}>
-              <CalendarDays size={14} /> My Timetable
-            </Button>
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
-          <Button title="Live Class" variant={workspaceMode === 'LIVE' ? 'primary' : 'outline'} onClick={() => setWorkspaceMode('LIVE')}>
-            Live Class
+              }
+            }}
+          >
+            {orchestrationForSelected ? (
+              <><PhoneOff size={16} className="mr-1.5" /> End Class</>
+            ) : (
+              <><Plus size={16} className="mr-1.5" /> Start Class</>
+            )}
           </Button>
-          <Button title="Recordings & Uploads" variant={workspaceMode === 'LIBRARY' ? 'primary' : 'outline'} onClick={() => setWorkspaceMode('LIBRARY')}>
-            Recordings & Uploads
+          <Button
+            variant="outline"
+            className="rounded-xl h-10 px-5 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 font-bold text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800"
+            onClick={() => { setWorkspaceMode('LIBRARY'); setLibraryTab('ALL'); }}
+          >
+            <Upload size={16} className="mr-1.5" /> Upload Resources
+          </Button>
+          <Button 
+            variant="outline" 
+            className="rounded-xl h-10 px-5 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 font-bold text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800"
+            onClick={() => navigate('/timetable')}
+          >
+            <CalendarDays size={16} className="mr-1.5" /> My Timetable
+          </Button>
+          <Button
+            variant={sidebarOpen ? 'secondary' : 'outline'}
+            className="rounded-xl h-10 px-5 font-bold text-xs"
+            onClick={() => setSidebarOpen((open) => !open)}
+          >
+            <Activity size={16} className="mr-1.5" />
+            {sidebarOpen ? 'Hide Activity' : 'Show Activity'}
           </Button>
         </div>
-      </Card>
+      </div>
 
-      {closedSummary && (
-        <Card className="border-zinc-200 bg-zinc-50 dark:bg-zinc-900/60">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Session summary</p>
-              <p className="text-sm font-semibold mt-1">{closedSummary.sessionTitle} • {closedSummary.sessionLabel}</p>
-              <p className="text-xs text-zinc-500 mt-1">Closed {new Date(closedSummary.closedAt).toLocaleString('en-GB')}</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={downloadPresentList}>Download present list</Button>
-              <Button variant="outline" onClick={printPresentList}>Print attendance</Button>
-              <Button variant="outline" onClick={() => setClosedSummary(null)}>Hide summary</Button>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      <Modal
-        isOpen={isStartClassModalOpen}
-        onClose={() => {
-          setIsStartClassModalOpen(false);
-          setStartClassMode('CHOICE');
-        }}
-        title="Start Class"
-      >
-        {startClassMode === 'CHOICE' ? (
-          <div className="space-y-3">
-            <Button
-              variant="primary"
-              className="w-full justify-center py-2"
-              onClick={() => setStartClassMode('CUSTOM')}
-            >
-              Start a custom class
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full justify-center py-2"
-              disabled={!selectedSession}
-              onClick={() => startSessionTemplate().catch((err) => console.error('Failed to start from template', err))}
-            >
-              Start from template
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">Class (stream)</label>
-                      <select
-                        value={customClassForm.streamId}
-                        onChange={(e) => setCustomClassForm((prev: typeof customClassForm) => ({ ...prev, streamId: e.target.value }))}
-                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-              >
-                <option value="">Select class and stream</option>
-                {teacherStreams.map((stream: any) => (
-                  <option key={stream.id} value={stream.id}>{`${stream.class?.name || 'Form'} ${stream.name || ''}`.trim()}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">Subject</label>
-              <select
-                value={customClassForm.subjectId}
-                onChange={(e) => setCustomClassForm((prev: typeof customClassForm) => ({ ...prev, subjectId: e.target.value }))}
-                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-              >
-                <option value="">Select subject</option>
-                {subjects.map((subject: any) => (
-                  <option key={subject.id} value={subject.id}>{subject.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">Today's topic (optional)</label>
-              <input
-                value={customClassForm.topic}
-                onChange={(e) => setCustomClassForm((prev: typeof customClassForm) => ({ ...prev, topic: e.target.value }))}
-                placeholder="Enter topic"
-                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">Start date & time</label>
-                <input
-                  type="datetime-local"
-                  value={customClassForm.startAt}
-                  onChange={(e) => setCustomClassForm((prev: typeof customClassForm) => ({ ...prev, startAt: e.target.value }))}
-                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">End date & time</label>
-                <input
-                  type="datetime-local"
-                  value={customClassForm.endAt}
-                  onChange={(e) => setCustomClassForm((prev: typeof customClassForm) => ({ ...prev, endAt: e.target.value }))}
-                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-wrap justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setStartClassMode('CHOICE')}>Back</Button>
-              <Button
-                variant="outline"
-                disabled={!customClassFormValid}
-                onClick={() => handleSaveCustomForLater().catch((err) => console.error('Failed to save class for later', err))}
-              >
-                Save for later
-              </Button>
-              <Button
-                variant="primary"
-                disabled={!customClassFormValid}
-                onClick={() => handleStartNowCustom().catch((err) => console.error('Failed to start custom class', err))}
-              >
-                Start now
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
+      {/* Mode Tabs */}
+      <div className="flex items-center gap-1 p-1 bg-zinc-100 dark:bg-zinc-800/50 rounded-xl w-fit border border-transparent">
+        <button 
+          onClick={() => setWorkspaceMode('LIVE')}
+          className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${workspaceMode === 'LIVE' ? 'bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-400'}`}
+        >
+          Live Class
+        </button>
+        <button 
+          onClick={() => setWorkspaceMode('LIBRARY')}
+          className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${workspaceMode === 'LIBRARY' ? 'bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-400'}`}
+        >
+          Recordings & Uploads
+        </button>
+      </div>
 
       {workspaceMode === 'LIVE' ? (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-          <div className="xl:col-span-9">
-            <Card
-              title={selectedSession ? `${selectedSession.subject} live room` : 'No live class available.'}
-              subtitle={selectedSession ? `${selectedSession.classLabel} • ${selectedSession.day} ${selectedSession.start}-${selectedSession.end}` : 'Choose a class or start one from the top bar.'}
-              className="border-zinc-200 bg-white dark:bg-zinc-900"
-            >
-              <div className="rounded-[28px] border border-zinc-200 bg-zinc-50 p-5 text-zinc-900 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
-                {orchestrationForSelected ? (
-                  <div
-                    ref={jitsiContainerRef}
-                    className="flex aspect-video rounded-[28px] overflow-hidden border border-zinc-200 bg-black shadow-sm dark:border-zinc-800"
-                    style={{ minHeight: '500px' }}
-                  />
-                ) : (
-                  <div className="flex aspect-video items-center justify-center rounded-[28px] border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-slate-100 text-center shadow-sm dark:border-zinc-800 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
-                    <div>
-                      <Video size={46} className="mx-auto text-zinc-400 dark:text-zinc-500" />
-                      <p className="mt-3 text-lg font-semibold text-zinc-900 dark:text-zinc-100">No live class available</p>
-                      <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Start a live class from the top bar when you are ready.</p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-4 flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-                  <MeetingControl label={micEnabled ? 'Mute microphone' : 'Unmute microphone'} icon={micEnabled ? <Mic size={16} /> : <MicOff size={16} />} onClick={() => setMicEnabled((prev) => !prev)} />
-                  <MeetingControl label={cameraEnabled ? 'Turn camera off' : 'Turn camera on'} icon={cameraEnabled ? <Video size={16} /> : <VideoOff size={16} />} onClick={() => setCameraEnabled((prev) => !prev)} />
-                  <MeetingControl label={livePaused ? 'Play' : 'Pause'} icon={livePaused ? <Play size={16} /> : <Pause size={16} />} onClick={() => setLivePaused((prev) => !prev)} />
-                  <MeetingControl label="Save recording" icon={<Save size={16} />} onClick={handleSaveClassRecording} disabled={!orchestrationForSelected} />
-                  <MeetingControl label="Share screen" icon={<Share2 size={16} />} onClick={() => addActivity(selectedSession?.id || 'none', 'SESSION_STARTED', 'Screen share started.')} disabled={!selectedSession} />
-                  <MeetingControl label="Bookmark: important" icon={<Bookmark size={16} />} onClick={() => addMomentBookmark('IMPORTANT')} disabled={!orchestrationForSelected} />
-                  <MeetingControl label="Bookmark: repeat this" icon={<Bookmark size={16} />} onClick={() => addMomentBookmark('REPEAT_THIS')} disabled={!orchestrationForSelected} />
-                  <MeetingControl label="Bookmark: exam tip" icon={<Bookmark size={16} />} onClick={() => addMomentBookmark('EXAM_TIP')} disabled={!orchestrationForSelected} />
-                  <MeetingControl label="Mark students" icon={<NotebookPen size={16} />} onClick={simulateStudentJoin} disabled={!selectedSession} />
-                  <MeetingControl label="Clear spotlight" icon={<Eraser size={16} />} onClick={() => setSpotlight(null)} disabled={!selectedSession} />
-                  <MeetingControl label="End class" icon={<X size={16} />} onClick={() => closeSessionAndArchive('MANUAL')} disabled={!orchestrationForSelected} variant="danger" />
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+          {/* Main Stage */}
+          <div className={sidebarOpen ? 'xl:col-span-9 flex flex-col gap-6' : 'xl:col-span-12 flex flex-col gap-6'}>
+             <div className="p-6 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                   <div>
+                      <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
+                         {selectedSession ? `${selectedSession.subject} Room` : 'Classroom Not Started'}
+                      </h3>
+                      <p className="text-[11px] text-zinc-500 font-medium">
+                         {selectedSession ? `${selectedSession.classLabel} • Stream ${selectedSession.id}` : 'Ready to begin your session.'}
+                      </p>
+                   </div>
+                   {orchestrationForSelected && (
+                     <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] animate-pulse" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-red-500">Live Engine Active</span>
+                     </div>
+                   )}
                 </div>
-              </div>
-            </Card>
+
+                {/* Video Area */}
+                <div className="relative rounded-xl overflow-hidden bg-black aspect-video border border-zinc-200 dark:border-zinc-800 bg-zinc-950">
+                   {orchestrationForSelected ? (
+                     <div ref={jitsiContainerRef} className="w-full h-full" />
+                   ) : (
+                     <div className="w-full h-full flex flex-col items-center justify-center text-center p-12 bg-zinc-50 dark:bg-zinc-950/20">
+                        <div className="h-16 w-16 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-zinc-400 mb-4 border border-zinc-200 dark:border-zinc-800">
+                          <Video size={32} strokeWidth={1.5} />
+                        </div>
+                        <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 italic transition-all">Session Closed</h2>
+                        <p className="text-zinc-500 text-xs max-w-xs mx-auto font-medium mt-1 mb-6">
+                           Your virtual classroom is idle. Use Launchpad to start a session.
+                        </p>
+                        <Button 
+                          variant="outline" 
+                          className="rounded-xl h-10 px-8 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 font-bold"
+                          onClick={() => setIsStartClassModalOpen(true)}
+                        >
+                          Launch Now
+                        </Button>
+                     </div>
+                   )}
+                </div>
+
+                {/* Reverted Controls Bar - Professional & Simple */}
+                <div className="flex flex-wrap items-center justify-center gap-2 p-3 bg-zinc-50/50 dark:bg-zinc-950/50 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                   <MeetingControl label={micEnabled ? 'Mute' : 'Unmute'} icon={micEnabled ? <Mic size={18} /> : <MicOff size={18} />} onClick={() => setMicEnabled(!micEnabled)} />
+                   <MeetingControl label={cameraEnabled ? 'Cam Off' : 'Cam On'} icon={cameraEnabled ? <Video size={18} /> : <VideoOff size={18} />} onClick={() => setCameraEnabled(!cameraEnabled)} />
+                   <MeetingControl label={livePaused ? 'Play' : 'Pause'} icon={livePaused ? <Play size={18} /> : <Pause size={18} />} onClick={() => setLivePaused(!livePaused)} />
+                   <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
+                   <MeetingControl label="Presenter Mode" icon={<Share2 size={18} />} onClick={() => addActivity(selectedSession?.id || 'none', 'SESSION_STARTED', 'Started presenting.')} disabled={!selectedSession} />
+                   <MeetingControl label="Save Recording" icon={<Save size={18} />} onClick={handleSaveClassRecording} disabled={!orchestrationForSelected} />
+                   <MeetingControl label="Mark Moment" icon={<Bookmark size={18} />} onClick={() => addMomentBookmark('IMPORTANT')} disabled={!orchestrationForSelected} />
+                   <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
+                   <button 
+                    onClick={() => {
+                      if (orchestrationForSelected) {
+                        closeSessionAndArchive('MANUAL');
+                      } else {
+                        setIsStartClassModalOpen(true);
+                        setStartClassMode('CHOICE');
+                      }
+                    }}
+                    className={`h-10 px-6 rounded-xl text-xs font-bold transition-all flex items-center gap-2 text-white shadow-sm
+                      ${orchestrationForSelected ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}
+                    `}
+                   >
+                      {orchestrationForSelected ? (
+                        <><PhoneOff size={16} /> End Class</>
+                      ) : (
+                        <><Plus size={16} /> Start Class</>
+                      )}
+                   </button>
+                </div>
+             </div>
           </div>
 
-          <div className="xl:col-span-3">
-            <Card title="Live room" subtitle="Chat and activity">
-              <div className="space-y-4">
-                <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-                  <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Catch-up and breakouts</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Button variant="outline" className="h-8 px-2" onClick={() => generateCatchUpPack().catch((err) => console.error('Failed generating catch-up pack', err))}>
-                      Generate catch-up pack
-                    </Button>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <input
-                      type="number"
-                      min={1}
-                      max={8}
-                      value={breakoutCount}
-                      onChange={(e) => setBreakoutCount(Math.max(1, Math.min(8, Number(e.target.value) || 1)))}
-                      className="h-9 rounded-lg border border-zinc-200 bg-white px-2 text-xs dark:border-zinc-800 dark:bg-zinc-950"
-                      placeholder="Rooms"
-                    />
-                    <input
-                      type="number"
-                      min={1}
-                      max={60}
-                      value={breakoutMinutes}
-                      onChange={(e) => setBreakoutMinutes(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
-                      className="h-9 rounded-lg border border-zinc-200 bg-white px-2 text-xs dark:border-zinc-800 dark:bg-zinc-950"
-                      placeholder="Minutes"
-                    />
-                  </div>
-
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Button variant="outline" className="h-8 px-2" onClick={() => startBreakoutRooms().catch((err) => console.error('Failed starting breakouts', err))}>
-                      <Users size={12} /> Start breakouts
-                    </Button>
-                    <Button variant="outline" className="h-8 px-2" onClick={() => returnFromBreakouts().catch((err) => console.error('Failed ending breakouts', err))}>
-                      Return all
-                    </Button>
-                  </div>
-
-                  {breakoutRooms.filter((room) => room.isActive).length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      {breakoutRooms.filter((room) => room.isActive).map((room) => (
-                        <p key={room.id} className="text-[11px] text-zinc-500">
-                          {room.roomLabel}: ends {new Date(room.endsAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-                  <div className="flex items-center justify-between gap-2">
-                    <Button
-                      title="Raise hand"
-                      aria-label="Raise hand"
-                      variant="outline"
-                      className="group relative h-11 w-11 justify-center px-0"
-                      onClick={() => raiseHandFromComposer().catch((err) => console.error('Failed to raise hand', err))}
+          {/* Activity Column */}
+          <div className={sidebarOpen ? 'xl:col-span-3 h-full min-h-[600px]' : 'hidden xl:hidden'}>
+            <div className="flex flex-col h-full h-[760px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-sm">
+               <div className="p-5 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400">Class Activity</h3>
+                  {handQueue.length > 0 && <span className="h-5 px-2 rounded-full bg-amber-500 text-white text-[10px] font-black">{handQueue.length} Hands</span>}
+               </div>
+               
+               {/* Feed Area */}
+               <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar flex flex-col">
+                  <div className="flex-1" />
+                  {activityFeed.filter(f => f.sessionId === selectedSession?.id).slice(-40).map(item => (
+                    <div 
+                      key={item.id} 
+                      className={`p-3 rounded-2xl animate-message-in flex flex-col gap-1 border border-zinc-100 dark:border-zinc-800
+                        ${item.actorId === user?.id ? 'bg-zinc-50 dark:bg-zinc-800/40 self-end max-w-[95%]' : 'bg-white dark:bg-zinc-900 self-start max-w-[95%]'}
+                      `}
                     >
-                      <Hand size={18} />
-                      <span className="pointer-events-none absolute -top-9 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-zinc-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100 dark:bg-white dark:text-zinc-900">
-                        Raise hand
-                      </span>
-                    </Button>
-                  </div>
+                       <div className="flex items-center justify-between gap-4">
+                          <p className={`text-[10px] font-black uppercase text-zinc-400`}>
+                             {item.actorId === user?.id ? 'Me' : item.actorName}
+                          </p>
+                          <span className="text-[9px] font-bold text-zinc-300">{relativeTime(item.createdAt)}</span>
+                       </div>
+                       
+                       <div className="flex items-center gap-2">
+                          {item.type === 'HAND_RAISED' && <Hand size={12} className="text-amber-500" />}
+                          <p className="text-xs font-medium text-zinc-700 dark:text-zinc-200 leading-snug">
+                             {item.type === 'HAND_RAISED' ? 'Raised their hand' : item.message}
+                          </p>
+                       </div>
 
-                  <div className="mt-2 flex gap-2">
-                    <input
-                      value={chatMessage}
-                      onChange={(e) => setChatMessage(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          sendChatMessage().catch((err) => console.error('Failed to send chat', err));
-                        }
-                      }}
-                      className="h-10 flex-1 rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
-                      placeholder="Send a message to the class..."
-                    />
-                    <Button title="Send chat" aria-label="Send chat" variant="primary" className="h-10 w-10 justify-center px-0" onClick={() => sendChatMessage().catch((err) => console.error('Failed to send chat', err))} disabled={!chatMessage.trim()}>
-                      <Send size={14} />
-                    </Button>
-                  </div>
-                </div>
+                       {item.type === 'HAND_RAISED' && item.payload?.studentId && item.actorId !== user?.id && (
+                          <button onClick={() => acceptRaisedHand(item.payload.studentId, item.payload.studentName)} className="mt-2 text-[10px] font-black text-blue-500 uppercase tracking-tight text-left">Accept Request</button>
+                       )}
+                    </div>
+                  ))}
+               </div>
 
-                <div>
-                  <div className="mt-2 space-y-2">
-                    {(() => {
-                      const filtered = activityFeed.filter((item) => item.sessionId === selectedSession?.id);
-                      console.log('🎨 Rendering activity feed:', { totalItems: activityFeed.length, filteredItems: filtered.length, selectedSessionId: selectedSession?.id });
-                      if (filtered.length === 0) {
-                        return <p className="text-xs text-zinc-400">No activity yet.</p>;
-                      }
-                      return filtered
-                        .slice(0, 30)
-                        .reverse()
-                        .map((item) => (
-                      <div key={item.id} className={`live-feed-pop rounded-2xl border p-3 shadow-sm ${item.type === 'CHAT_MESSAGE' || item.type === 'HAND_RAISED' ? 'border-sky-200 bg-sky-50 dark:border-sky-900 dark:bg-sky-950/50' : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900'}`}>
-                        <div className="flex items-start gap-3">
-                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-[11px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                            {(item.actorName || 'T').slice(0, 1).toUpperCase()}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm leading-5 text-zinc-700 dark:text-zinc-200">
-                              <span className="font-semibold text-zinc-800 dark:text-zinc-100">{item.actorName || 'Teacher'}:</span> {item.message}
-                            </p>
-                            <p className="mt-1 text-[11px] text-zinc-500">{relativeTime(item.createdAt)}</p>
-                            {item.type === 'HAND_RAISED' && item.payload?.studentId && (
-                              <div className="mt-2">
-                                <Button
-                                  title="Accept hand"
-                                  aria-label="Accept hand"
-                                  variant="outline"
-                                  className="h-7 px-2"
-                                  onClick={() => acceptRaisedHand(item.payload.studentId, item.payload.studentName || 'Student').catch((err) => console.error('Failed to accept hand', err))}
-                                >
-                                  <Check size={12} /> Accept
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                        ));
-                    })()}
-                  </div>
-                </div>
-              </div>
-            </Card>
+               {/* Composer */}
+               <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 space-y-3 bg-zinc-50/30 dark:bg-zinc-950/20">
+                   <div className="flex gap-2">
+                      <input 
+                        value={chatMessage} 
+                        onChange={e => setChatMessage(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && sendChatMessage()}
+                        className="flex-1 h-10 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 text-xs font-medium outline-none focus:ring-1 focus:ring-blue-500/20 text-zinc-900 dark:text-white"
+                        placeholder="Say something to students..."
+                      />
+                      <button 
+                        onClick={() => addActivity(selectedSession?.id || 'none', 'HAND_RAISED', 'Hand raised.')}
+                        title="Raise Your Hand"
+                        className="h-10 w-10 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-amber-500 rounded-xl flex items-center justify-center flex-shrink-0 active:scale-95 transition-all"
+                      >
+                         <Hand size={16} />
+                      </button>
+                      <button onClick={sendChatMessage} className="h-10 w-10 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-xl flex items-center justify-center flex-shrink-0 active:scale-95 transition-all">
+                         <Send size={16} />
+                      </button>
+                   </div>
+               </div>
+            </div>
           </div>
         </div>
       ) : (
-        <div className="space-y-5">
-          <section className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <p className="mt-0.5 text-xs text-zinc-500">Last upload: {lastUploadAt ? new Date(lastUploadAt).toLocaleString('en-GB') : 'No uploads yet'}</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="primary" onClick={() => {
-                  if (libraryTab === 'RECORDINGS') recordingInputRef.current?.click();
-                  if (libraryTab === 'NOTES') notesInputRef.current?.click();
-                  if (libraryTab === 'ASSIGNMENTS') assignmentInputRef.current?.click();
-                  if (libraryTab === 'SHARED') sharedInputRef.current?.click();
-                  if (libraryTab === 'ARCHIVE') setLibraryTab('RECORDINGS');
-                }}>
-                  <Upload size={14} /> Upload
-                </Button>
-                <Button variant="outline" onClick={() => setWorkspaceMode('LIVE')}>Live</Button>
-              </div>
-            </div>
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+           {/* Library View */}
+           <div className="p-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm">
+              <div className="mb-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
+                  <div className="xl:col-span-7 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={uploadChoice}
+                        onChange={(e) => setUploadChoice(e.target.value as UploadChoice | '')}
+                        className="h-10 min-w-[180px] rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 text-xs font-bold"
+                      >
+                        <option value="">Choose what to upload</option>
+                        <option value="VIDEO">Video</option>
+                        <option value="YOUTUBE">YouTube Video</option>
+                        <option value="PDF">PDF / Notes</option>
+                        <option value="PACK">Create Pack</option>
+                      </select>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="ml-auto text-[11px] text-zinc-500">{uploading ? 'Uploading...' : uploadStatus}</span>
-            </div>
+                      <div className="relative min-w-[220px]">
+                        <button
+                          type="button"
+                          onClick={() => setIsSelectClassOpen((open) => !open)}
+                          className="h-10 w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 text-xs font-bold text-left"
+                        >
+                          {targetStreamId
+                            ? classStreamDisplayLabel(selectedStream)
+                            : 'Select Class'}
+                        </button>
+                        {isSelectClassOpen && (
+                          <div className="absolute z-50 mt-2 w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xl p-2 space-y-2">
+                            <label className="inline-flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-200 select-none px-1">
+                              <input
+                                type="checkbox"
+                                checked={useMyClassesOnly}
+                                onChange={(e) => setUseMyClassesOnly(e.target.checked)}
+                                className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
+                              />
+                              Use my class
+                            </label>
+                            <p className="px-1 -mt-1 text-[10px] font-semibold text-zinc-400">Uncheck the box to select other classes.</p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTargetClassId('');
+                                setTargetStreamId('');
+                                setIsSelectClassOpen(false);
+                              }}
+                              className="w-full text-left px-2 py-2 rounded-lg text-xs font-bold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                            >
+                              Select Class
+                            </button>
+                            <div className="max-h-56 overflow-y-auto space-y-1">
+                              {selectableStreams.map((s: any) => (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const resolvedClass = resolveClassForStream(s);
+                                    setTargetClassId(resolvedClass?.id || '');
+                                    setTargetStreamId(s.id);
+                                    setIsSelectClassOpen(false);
+                                  }}
+                                  className="w-full text-left px-2 py-2 rounded-lg text-xs font-bold text-zinc-800 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                                >
+                                  {classStreamDisplayLabel(s)}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-              <Button variant={libraryTab === 'RECORDINGS' ? 'primary' : 'outline'} onClick={() => setLibraryTab('RECORDINGS')}><Video size={13} /> Recordings</Button>
-              <Button variant={libraryTab === 'NOTES' ? 'primary' : 'outline'} onClick={() => setLibraryTab('NOTES')}><FileText size={13} /> Notes</Button>
-              <Button variant={libraryTab === 'ASSIGNMENTS' ? 'primary' : 'outline'} onClick={() => setLibraryTab('ASSIGNMENTS')}><Sparkles size={13} /> Assignments</Button>
-              <Button variant={libraryTab === 'SHARED' ? 'primary' : 'outline'} onClick={() => setLibraryTab('SHARED')}><Upload size={13} /> Files</Button>
-              <Button variant={libraryTab === 'ARCHIVE' ? 'primary' : 'outline'} onClick={() => setLibraryTab('ARCHIVE')}><CalendarDays size={13} /> Archive</Button>
-            </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!uploadChoice) {
+                            setUploadStatus('Choose what to upload');
+                            return;
+                          }
+                          if (uploadChoice === 'YOUTUBE') {
+                            setLinkResourceKind('YOUTUBE');
+                            setIsLinkModalOpen(true);
+                            return;
+                          }
+                          studioUploadInputRef.current?.click();
+                        }}
+                        className="h-10 w-10 rounded-xl bg-black hover:bg-zinc-800 text-white flex items-center justify-center"
+                        aria-label="Upload"
+                        title="Upload"
+                      >
+                        <Upload size={15} />
+                      </button>
+                    </div>
 
-            <input ref={recordingInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleRecordingUpload(file); e.currentTarget.value = ''; }} />
-            <input ref={notesInputRef} type="file" accept="application/pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleNotePdfUpload(file); e.currentTarget.value = ''; }} />
-            <input ref={assignmentInputRef} type="file" accept="application/pdf,.doc,.docx" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleAssignmentFileUpload(file); e.currentTarget.value = ''; }} />
-            <input ref={sharedInputRef} type="file" accept="application/pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.zip" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleSharedFileUpload(file); e.currentTarget.value = ''; }} />
-          </section>
+                    {/* Secondary Class/Stream dropdowns intentionally removed per UX request.
+                        The single "Select Class" dropdown above is now the only scope selector. */}
 
-          <section className="rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-            {feedForTab.length === 0 && (
-              <div className="p-8 text-center text-sm text-zinc-500">No content yet. Click New to publish for students.</div>
-            )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant={uploadAudience === 'WHOLE_CLASS' ? 'primary' : 'outline'}
+                        className={`h-9 rounded-xl text-xs font-bold ${uploadAudience === 'WHOLE_CLASS' ? 'bg-black hover:bg-zinc-800 border-black text-white dark:bg-black dark:hover:bg-zinc-800 dark:text-white' : 'border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800'}`}
+                        onClick={() => setUploadAudience('WHOLE_CLASS')}
+                      >
+                        <Users size={14} />
+                        Whole Class
+                      </Button>
+                      <Button
+                        variant={uploadAudience === 'SUBJECT_STUDENTS' ? 'primary' : 'outline'}
+                        className={`h-9 rounded-xl text-xs font-bold ${uploadAudience === 'SUBJECT_STUDENTS' ? 'bg-black hover:bg-zinc-800 border-black text-white dark:bg-black dark:hover:bg-zinc-800 dark:text-white' : 'border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800'}`}
+                        onClick={() => setUploadAudience('SUBJECT_STUDENTS')}
+                      >
+                        <BookOpen size={14} />
+                        Subject Students
+                      </Button>
+                      {uploadAudience === 'SUBJECT_STUDENTS' && (
+                        <select value={targetSubjectId} onChange={(e) => setTargetSubjectId(e.target.value)} className="h-9 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 text-xs font-semibold min-w-[180px]">
+                          <option value="">Choose Subject</option>
+                          {uploadAudienceSubjects.map((s: any) => (
+                            <option key={s.id} value={s.id}>{`${s.name} students`}</option>
+                          ))}
+                        </select>
+                      )}
+                      <Button
+                        variant="outline"
+                        className="h-9 rounded-xl text-xs font-bold bg-black hover:bg-zinc-800 border-black text-white dark:bg-black dark:hover:bg-zinc-800 dark:text-white"
+                        onClick={() => setPackTitle((prev) => prev || `${selectedClassName} ${streamDisplayName(selectedStream)}`.trim())}
+                      >
+                        <Plus size={14} /> Add Pack
+                      </Button>
+                    </div>
 
-            {feedForTab.map((item, index) => (
-              <div key={item.id} className={`flex flex-col gap-2 p-4 ${index !== feedForTab.length - 1 ? 'border-b border-zinc-100 dark:border-zinc-800' : ''}`}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{item.title}</p>
-                  <Badge variant={badgeVariantForType(item.type)}>{contentTypeLabel(item.type)}</Badge>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        value={uploadName}
+                        onChange={(e) => setUploadName(e.target.value)}
+                        placeholder="Upload name"
+                        className="h-10 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 text-xs font-semibold"
+                      />
+                      <input
+                        value={packTitle}
+                        onChange={(e) => setPackTitle(e.target.value)}
+                        placeholder="Pack title (optional)"
+                        className="h-10 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 text-xs font-semibold"
+                      />
+                    </div>
+
+                    <div className={`mt-1 rounded-xl border px-3 py-2 text-[12px] font-semibold flex items-center gap-2 ${uploadAudience === 'WHOLE_CLASS' ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/20 dark:text-amber-300' : 'border-cyan-200 bg-cyan-50 text-cyan-800 dark:border-cyan-800/50 dark:bg-cyan-950/20 dark:text-cyan-300'}`}>
+                      <AlertTriangle size={14} />
+                      <span>{audienceAlert}</span>
+                    </div>
+                  </div>
+
+                  <div className="xl:col-span-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-gradient-to-br from-zinc-50 to-zinc-100 dark:from-zinc-900 dark:to-zinc-950 p-4 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Pack Preview</p>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">{draftResources.length} item(s)</span>
+                    </div>
+                    <div className="rounded-xl border border-zinc-200/90 bg-white/90 dark:bg-zinc-950/80 p-3 shadow-sm backdrop-blur-sm">
+                      <div className="mb-3 rounded-lg border border-zinc-200 bg-white dark:bg-zinc-900 px-3 py-2.5">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">
+                          <span className="inline-flex items-center gap-1.5"><BookOpen size={12} className="text-zinc-500" /> <span className="text-zinc-400">Class:</span> {selectedClassName || '-'}</span>
+                          <span className="inline-flex items-center gap-1.5"><Users size={12} className="text-zinc-500" /> <span className="text-zinc-400">Stream:</span> {streamDisplayName(selectedStream) || '-'}</span>
+                          <span className="inline-flex items-center gap-1.5 min-w-0"><Upload size={12} className="text-zinc-500" /> <span className="text-zinc-400">Upload:</span> <span className="truncate max-w-[180px]">{uploadName || '-'}</span></span>
+                        </div>
+                      </div>
+                      <div className="space-y-0 max-h-56 overflow-y-auto">
+                      {draftResources.length === 0 ? (
+                        <div className="h-24 rounded-xl border border-dashed border-zinc-300 bg-zinc-50 flex items-center justify-center text-[11px] font-bold text-zinc-400">Nothing added yet</div>
+                      ) : draftResources.map((item) => (
+                        <div key={item.id} className="px-1 py-2 flex items-center justify-between gap-3 border-b border-zinc-100 last:border-b-0">
+                          <div className="h-10 w-14 rounded-lg bg-zinc-100 border border-zinc-200 overflow-hidden flex items-center justify-center shrink-0">
+                            {item.file?.type?.startsWith('video/') ? (
+                              <video className="h-full w-full object-cover" src={URL.createObjectURL(item.file)} muted />
+                            ) : item.file?.type?.startsWith('image/') ? (
+                              <img className="h-full w-full object-cover" src={URL.createObjectURL(item.file)} alt={item.title} />
+                            ) : item.mode === 'YOUTUBE' || item.mode === 'LINK' ? (
+                              <Link2 size={16} className="text-cyan-600" />
+                            ) : item.file?.name?.toLowerCase().endsWith('.pdf') ? (
+                              <FileText size={16} className="text-red-500" />
+                            ) : (
+                              <NotebookPen size={16} className="text-zinc-500" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-zinc-800 truncate">{item.title}</p>
+                            <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-black">{draftTypeLabel(item.mode)}</p>
+                          </div>
+                          <button type="button" onClick={() => removeDraftResource(item.id)} className="h-7 w-7 rounded-lg border border-zinc-200 text-zinc-400 hover:text-red-500 hover:border-red-200 flex items-center justify-center">
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ))}
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2">
+                      <Button
+                        variant="primary"
+                        className="h-10 rounded-xl text-xs font-bold flex-1 bg-black hover:bg-zinc-800 text-white dark:bg-black dark:hover:bg-zinc-800"
+                        onClick={() => {
+                          if (!uploadChoice) {
+                            setUploadStatus('Choose what to upload');
+                            return;
+                          }
+                          if (uploadChoice === 'YOUTUBE') {
+                            setLinkResourceKind('YOUTUBE');
+                            setIsLinkModalOpen(true);
+                            return;
+                          }
+                          studioUploadInputRef.current?.click();
+                        }}
+                      >
+                        <Upload size={14} /> Upload
+                      </Button>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Button variant="primary" className="h-8 rounded-lg text-[11px] font-semibold flex-1 bg-emerald-800 hover:bg-emerald-700 text-white border border-emerald-800 shadow-sm disabled:opacity-100 disabled:bg-emerald-400 disabled:border-emerald-400 disabled:text-white" onClick={publishDraftResources} disabled={draftResources.length === 0 || uploading}>Save & Publish</Button>
+                      <Button variant="secondary" className="h-8 rounded-lg text-[11px] font-semibold flex-1 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-800 shadow-sm disabled:opacity-100 disabled:bg-zinc-400 disabled:border-zinc-400 disabled:text-white" onClick={() => setUploadStatus('Draft saved')} disabled={draftResources.length === 0}>Draft</Button>
+                      <Button variant="outline" className="h-8 rounded-lg text-[11px] font-semibold flex-1 bg-red-800 hover:bg-red-700 border border-red-800 text-white shadow-sm disabled:opacity-100 disabled:bg-red-400 disabled:border-red-400 disabled:text-white" onClick={() => { setDraftResources([]); setUploadName(''); setUploadStatus('Cancelled'); }} disabled={draftResources.length === 0}>Cancel</Button>
+                    </div>
+                    <div className={`mt-2 rounded-lg border px-3 py-2 text-[11px] font-semibold ${uploadStatus.toLowerCase().includes('failed') ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300' : uploadStatus.toLowerCase().includes('published') ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300'}`}>
+                      {uploadStatus}
+                    </div>
+                  </div>
                 </div>
-                <p className="text-xs text-zinc-500">{new Date(item.postedAt).toLocaleString('en-GB')} {item.dueAt ? `• Due ${new Date(item.dueAt).toLocaleString('en-GB')}` : ''}</p>
-                <p className="text-xs text-zinc-500">Seen by {Math.min(attendance.length, presentCount + lateCount)} students</p>
-                <div>
-                  {item.fileUrl ? (
-                    <a href={item.fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                      View
-                    </a>
-                  ) : (
-                    <Button variant="outline" onClick={() => setLibraryTab(item.type === 'ASSIGNMENT' || item.type === 'HOLIDAY_WORK' ? 'ASSIGNMENTS' : 'NOTES')}>Open</Button>
-                  )}
-                </div>
               </div>
-            ))}
-          </section>
 
-          <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Due Soon</p>
-              <div className="mt-2 space-y-2">
-                {upcomingDeadlines.length === 0 && <p className="text-xs text-zinc-400">No deadlines.</p>}
-                {upcomingDeadlines.map((assignment: any) => (
-                  <div key={assignment.id} className="text-xs text-zinc-600 dark:text-zinc-300">
-                    {assignment.title || 'Assignment'} • {assignment.due_at ? new Date(assignment.due_at).toLocaleString('en-GB') : 'No due date'}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+                 <div className="flex items-center gap-1.5 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl overflow-x-auto">
+                    {[
+                      { key: 'ALL', label: 'All' },
+                      { key: 'RECORDINGS_VIDEOS', label: 'Recordings & Videos' },
+                      { key: 'NOTES_PDFS', label: 'Notes & PDFs' },
+                      { key: 'ARCHIVE', label: 'Archive' }
+                    ].map((tab) => (
+                      <button 
+                        key={tab.key}
+                        onClick={() => setLibraryTab(tab.key as LibraryTab)}
+                        className={`px-5 py-2 rounded-lg text-xs font-bold transition-all ${libraryTab === tab.key ? 'bg-white dark:bg-zinc-900 shadow-sm text-zinc-950 dark:text-white' : 'text-zinc-500 hover:text-zinc-700'}`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+                {feedForTab.length === 0 ? (
+                  <div className="col-span-full py-24 text-center opacity-40">
+                    <div className="h-12 w-12 bg-zinc-100 dark:bg-zinc-800 rounded-xl mx-auto mb-4 flex items-center justify-center">
+                       <FileText size={24} strokeWidth={1.5} />
+                    </div>
+                    <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Repository Empty</p>
+                  </div>
+                ) : feedForTab.map(item => (
+                  <div key={item.id} className="p-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl hover:border-blue-500/50 transition-all shadow-sm">
+                    <div className="flex items-start justify-between mb-4">
+                       <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${
+                         item.type === 'RECORDING' ? 'bg-red-50 text-red-500' : 
+                         item.type === 'NOTE' ? 'bg-emerald-50 text-emerald-500' : item.type === 'LINK' ? 'bg-cyan-50 text-cyan-600' : 'bg-blue-50 text-blue-500'
+                       }`}>
+                         {item.type === 'RECORDING' ? <Video size={18} /> : item.type === 'NOTE' ? <FileText size={18} /> : item.type === 'LINK' ? <Link2 size={18} /> : <NotebookPen size={18} />}
+                       </div>
+                       <Badge variant={badgeVariantForType(item.type)} className="text-[9px] font-bold uppercase rounded-full">
+                          {contentTypeLabel(item.type)}
+                       </Badge>
+                    </div>
+                    <div>
+                        <h4 className="text-sm font-bold text-zinc-900 dark:text-white mb-2 line-clamp-1 uppercase tracking-tight">{item.title}</h4>
+                        <div className="flex items-center gap-4 text-[10px] text-zinc-400 font-bold uppercase tracking-tighter">
+                           <span className="flex items-center gap-1"><Clock size={12} /> {relativeTime(item.postedAt)}</span>
+                           {item.dueAt && <span className="flex items-center gap-1 text-red-500"><AlertTriangle size={12} /> Due Soon</span>}
+                        </div>
+                    </div>
+                    <div className="mt-5 flex gap-2">
+                       {item.fileUrl && (
+                         <a href={item.fileUrl} target="_blank" className="flex-1 h-9 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center transition-all">
+                            View
+                         </a>
+                       )}
+                       <button className="w-9 h-9 flex items-center justify-center text-red-500 hover:bg-red-50 rounded-xl">
+                          <Trash2 size={16} />
+                       </button>
+                    </div>
                   </div>
                 ))}
               </div>
-            </div>
+           </div>
 
-            <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Recently Added</p>
-              <div className="mt-2 space-y-2">
-                {recentlyAdded.length === 0 && <p className="text-xs text-zinc-400">No uploads yet.</p>}
-                {recentlyAdded.map((item) => (
-                  <div key={item.id} className="text-xs text-zinc-600 dark:text-zinc-300">
-                    {item.title} • {new Date(item.postedAt).toLocaleString('en-GB')}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
+
         </div>
       )}
+
+      {/* Starting Class Modal */}
+      <Modal
+        isOpen={isStartClassModalOpen}
+        onClose={() => { setIsStartClassModalOpen(false); setStartClassMode('CHOICE'); }}
+        title="Session Launchpad"
+      >
+        <div className="space-y-4">
+          {startClassMode === 'CHOICE' ? (
+            <div className="grid grid-cols-1 gap-3">
+              <button 
+                className="w-full p-6 text-left rounded-2xl bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700/50 transition-all border border-transparent hover:border-zinc-200 group"
+                onClick={() => setStartClassMode('CUSTOM')}
+              >
+                <div className="h-10 w-10 rounded-xl bg-blue-500 text-white flex items-center justify-center mb-4 transition-transform group-hover:rotate-12">
+                   <Plus size={20} />
+                </div>
+                <p className="text-sm font-bold text-zinc-900 dark:text-white">Custom Session</p>
+                <p className="text-[11px] text-zinc-500 font-medium tracking-tight mt-1 uppercase">For unscheduled or private sessions</p>
+              </button>
+
+              <button 
+                className="w-full p-6 text-left rounded-2xl bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700/50 transition-all border border-transparent hover:border-zinc-200 group disabled:opacity-50"
+                disabled={!selectedSession}
+                onClick={startSessionTemplate}
+              >
+                <div className="h-10 w-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center mb-4 transition-transform group-hover:rotate-12">
+                   <CalendarDays size={20} />
+                </div>
+                <p className="text-sm font-bold text-zinc-900 dark:text-white">Scheduled Lesson</p>
+                <p className="text-[11px] text-zinc-500 font-medium tracking-tight mt-1 uppercase">{selectedSession ? `Sync: ${selectedSession.subject}` : 'No Class Selected'}</p>
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4 pt-2">
+               <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Target Stream</label>
+                  <select value={customClassForm.streamId} onChange={e => setCustomClassForm({...customClassForm, streamId: e.target.value})} className="w-full h-12 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 text-xs font-bold outline-none">
+                     <option value="">Choose Stream</option>
+                     {teacherStreams.map(s => <option key={s.id} value={s.id}>{s.class?.name} {s.name}</option>)}
+                  </select>
+               </div>
+               <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Select Subject</label>
+                  <select value={customClassForm.subjectId} onChange={e => setCustomClassForm({...customClassForm, subjectId: e.target.value})} className="w-full h-12 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 text-xs font-bold outline-none">
+                     <option value="">Choose Subject</option>
+                     {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+               </div>
+               <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Topic</label>
+                  <input value={customClassForm.topic} onChange={e => setCustomClassForm({...customClassForm, topic: e.target.value})} placeholder="What are you teaching?" className="w-full h-12 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 text-xs font-bold outline-none" />
+               </div>
+               <div className="flex gap-2 pt-4">
+                  <Button variant="outline" className="flex-1 rounded-xl h-11 text-xs font-bold" onClick={() => setStartClassMode('CHOICE')}>Back</Button>
+                  <Button variant="primary" className="flex-1 rounded-xl h-11 text-xs font-bold" disabled={!customClassFormValid} onClick={handleStartNowCustom}>Go Live</Button>
+               </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isLinkModalOpen}
+        onClose={() => setIsLinkModalOpen(false)}
+        title="Add External Resource"
+      >
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Type</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setLinkResourceKind('EXTERNAL')}
+                className={`h-11 rounded-xl border text-xs font-bold transition-all ${linkResourceKind === 'EXTERNAL' ? 'bg-zinc-900 text-white border-zinc-900 dark:bg-white dark:text-zinc-900 dark:border-white' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500'}`}
+              >
+                External Link
+              </button>
+              <button
+                type="button"
+                onClick={() => setLinkResourceKind('YOUTUBE')}
+                className={`h-11 rounded-xl border text-xs font-bold transition-all ${linkResourceKind === 'YOUTUBE' ? 'bg-zinc-900 text-white border-zinc-900 dark:bg-white dark:text-zinc-900 dark:border-white' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500'}`}
+              >
+                YouTube
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Title</label>
+            <input value={linkResourceTitle} onChange={(e) => setLinkResourceTitle(e.target.value)} placeholder="Lesson title or description" className="w-full h-12 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 text-xs font-bold outline-none" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">URL</label>
+            <input value={linkResourceUrl} onChange={(e) => setLinkResourceUrl(e.target.value)} placeholder={linkResourceKind === 'YOUTUBE' ? 'https://youtube.com/...' : 'https://...'} className="w-full h-12 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 text-xs font-bold outline-none" />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1 rounded-xl h-11 text-xs font-bold" onClick={() => setIsLinkModalOpen(false)}>Cancel</Button>
+            <Button variant="primary" className="flex-1 rounded-xl h-11 text-xs font-bold" disabled={!linkResourceUrl.trim()} onClick={handleLinkPublish}>Add to Preview</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Hidden Upload Inputs */}
+      <input
+        ref={studioUploadInputRef}
+        type="file"
+        accept={acceptForUploadChoice(uploadChoice)}
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) queueFileResource(file);
+          e.currentTarget.value = '';
+        }}
+      />
+      <input ref={recordingInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleRecordingUpload(file); e.currentTarget.value = ''; }} />
+      <input ref={notesInputRef} type="file" accept="application/pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleNotePdfUpload(file); e.currentTarget.value = ''; }} />
+      <input ref={assignmentInputRef} type="file" accept="application/pdf,.doc,.docx" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleAssignmentFileUpload(file); e.currentTarget.value = ''; }} />
+      <input ref={sharedInputRef} type="file" accept="application/pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.zip" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleSharedFileUpload(file); e.currentTarget.value = ''; }} />
     </div>
   );
 };
+
+export default MyClassroom;

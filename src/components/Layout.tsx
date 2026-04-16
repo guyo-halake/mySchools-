@@ -17,7 +17,6 @@ import {
   X,
   Sun,
   Moon,
-  ChevronRight,
   Settings,
   ShieldCheck
 } from 'lucide-react';
@@ -103,6 +102,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
       {/* Sidebar */}
       <aside 
+        id="mobile-sidebar"
         className={cn(
           "fixed inset-y-0 left-0 z-50 w-56 bg-white dark:bg-zinc-900 border-r border-gray-100 dark:border-zinc-800 transition-transform duration-300 lg:relative lg:translate-x-0",
           !isSidebarOpen && "-translate-x-full"
@@ -114,6 +114,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               P3L
             </div>
             <h1 className="font-bold text-sm tracking-tight leading-none">P3L Boys' School</h1>
+            <button
+              onClick={() => setIsSidebarOpen(false)}
+              className="ml-auto p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-white rounded-lg transition-colors lg:hidden"
+              aria-label="Close sidebar"
+            >
+              <X size={18} />
+            </button>
           </div>
 
           <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
@@ -221,11 +228,15 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           {/* Row 2: Navigation Control */}
           <div className="h-10 border-t border-zinc-50 dark:border-zinc-800/50 flex items-center px-6">
             <button 
-              onClick={() => setIsSidebarOpen(true)}
+              onClick={() => setIsSidebarOpen((open) => !open)}
               className="flex items-center gap-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors lg:hidden"
+              aria-expanded={isSidebarOpen}
+              aria-controls="mobile-sidebar"
             >
-              <Menu size={16} />
-              <span className="text-[10px] font-bold uppercase tracking-widest">Menu</span>
+              {isSidebarOpen ? <X size={16} /> : <Menu size={16} />}
+              <span className="text-[10px] font-bold uppercase tracking-widest">
+                {isSidebarOpen ? 'Close' : 'Menu'}
+              </span>
             </button>
             <div className="hidden lg:flex items-center gap-2 text-zinc-400">
                <Menu size={14} className="opacity-50" />

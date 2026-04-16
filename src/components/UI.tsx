@@ -31,7 +31,8 @@ export const Button: React.FC<{
   className?: string;
   type?: 'button' | 'submit';
   disabled?: boolean;
-}> = ({ children, variant = 'primary', onClick, className, type = 'button', disabled }) => {
+  title?: string;
+}> = ({ children, variant = 'primary', onClick, className, type = 'button', disabled, title }) => {
   const variants = {
     primary: "bg-zinc-900 text-white hover:bg-black dark:bg-zinc-100 dark:text-black dark:hover:bg-white",
     secondary: "bg-gray-100 text-gray-900 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700",
@@ -45,6 +46,7 @@ export const Button: React.FC<{
       type={type}
       onClick={onClick}
       disabled={disabled}
+      title={title}
       className={cn(
         "px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-1.5",
         variants[variant],
@@ -59,7 +61,8 @@ export const Button: React.FC<{
 export const Badge: React.FC<{
   children: React.ReactNode;
   variant?: 'success' | 'warning' | 'danger' | 'info' | 'neutral';
-}> = ({ children, variant = 'neutral' }) => {
+  className?: string;
+}> = ({ children, variant = 'neutral', className }) => {
   const variants = {
     success: "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400",
     warning: "bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400",
@@ -69,7 +72,7 @@ export const Badge: React.FC<{
   };
 
   return (
-    <span className={cn("px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-tight", variants[variant])}>
+    <span className={cn("px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-tight", variants[variant], className)}>
       {children}
     </span>
   );
