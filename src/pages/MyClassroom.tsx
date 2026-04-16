@@ -269,6 +269,7 @@ export const MyClassroom: React.FC = () => {
   const [targetSubjectId, setTargetSubjectId] = useState('');
   const [targetStudentIds, setTargetStudentIds] = useState<string[]>([]);
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [isMySubjectsModalOpen, setIsMySubjectsModalOpen] = useState(false);
   const [linkResourceTitle, setLinkResourceTitle] = useState('');
   const [linkResourceUrl, setLinkResourceUrl] = useState('');
   const [linkResourceKind, setLinkResourceKind] = useState<'YOUTUBE' | 'EXTERNAL'>('EXTERNAL');
@@ -313,6 +314,12 @@ export const MyClassroom: React.FC = () => {
   const notesInputRef = useRef<HTMLInputElement>(null);
   const assignmentInputRef = useRef<HTMLInputElement>(null);
   const sharedInputRef = useRef<HTMLInputElement>(null);
+  const uploadScopeHydratedRef = useRef(false);
+
+  const uploadScopeStorageKey = useMemo(() => {
+    if (!user?.school_id || !user?.id) return '';
+    return `myclassroom.uploadScope.v1:${user.school_id}:${user.id}`;
+  }, [user?.school_id, user?.id]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 15000);
@@ -573,6 +580,77 @@ export const MyClassroom: React.FC = () => {
   }, [targetClassId, selectableStreams]);
 
   useEffect(() => {
+    uploadScopeHydratedRef.current = false;
+  }, [uploadScopeStorageKey]);
+
+  useEffect(() => {
+    if (loading || !uploadScopeStorageKey || uploadScopeHydratedRef.current) return;
+
+    try {
+      const raw = localStorage.getItem(uploadScopeStorageKey);
+      if (!raw) {
+        uploadScopeHydratedRef.current = true;
+        return;
+      }
+
+      const saved = JSON.parse(raw) as {
+        useMyClassesOnly?: boolean;
+        uploadAudience?: 'WHOLE_CLASS' | 'SUBJECT_STUDENTS';
+        targetClassId?: string;
+        targetStreamId?: string;
+        targetSubjectId?: string;
+      };
+
+      if (typeof saved.useMyClassesOnly === 'boolean') {
+        setUseMyClassesOnly(saved.useMyClassesOnly);
+      }
+
+      if (saved.uploadAudience === 'WHOLE_CLASS' || saved.uploadAudience === 'SUBJECT_STUDENTS') {
+        setUploadAudience(saved.uploadAudience);
+      }
+
+      if (saved.targetClassId && classOptions.some((c: any) => c.id === saved.targetClassId)) {
+        setTargetClassId(saved.targetClassId);
+      }
+
+      if (saved.targetStreamId && selectableStreams.some((s: any) => s.id === saved.targetStreamId)) {
+        setTargetStreamId(saved.targetStreamId);
+      }
+
+      if (saved.targetSubjectId && uploadAudienceSubjects.some((s: any) => s.id === saved.targetSubjectId)) {
+        setTargetSubjectId(saved.targetSubjectId);
+      }
+    } catch (error) {
+      console.warn('Failed to restore MyClassroom upload scope', error);
+    } finally {
+      uploadScopeHydratedRef.current = true;
+    }
+  }, [loading, uploadScopeStorageKey, classOptions, selectableStreams, uploadAudienceSubjects]);
+
+  useEffect(() => {
+    if (!uploadScopeStorageKey || !uploadScopeHydratedRef.current) return;
+
+    try {
+      localStorage.setItem(uploadScopeStorageKey, JSON.stringify({
+        useMyClassesOnly,
+        uploadAudience,
+        targetClassId,
+        targetStreamId,
+        targetSubjectId
+      }));
+    } catch (error) {
+      console.warn('Failed to persist MyClassroom upload scope', error);
+    }
+  }, [
+    uploadScopeStorageKey,
+    useMyClassesOnly,
+    uploadAudience,
+    targetClassId,
+    targetStreamId,
+    targetSubjectId
+  ]);
+
+  useEffect(() => {
     if (loading) return;
 
     const unresolved = selectableStreams
@@ -684,10 +762,12 @@ export const MyClassroom: React.FC = () => {
 
   const sessions = useMemo(() => {
     const list: SessionItem[] = [];
+    const stableTeacherStreams = [...teacherStreams].sort((a: any, b: any) => String(a?.id || '').localeCompare(String(b?.id || '')));
+    const stableTeacherSubjects = [...teacherSubjects].sort((a: any, b: any) => String(a?.id || '').localeCompare(String(b?.id || '')));
 
     let index = 0;
-    for (const stream of teacherStreams) {
-      for (const subject of teacherSubjects) {
+    for (const stream of stableTeacherStreams) {
+      for (const subject of stableTeacherSubjects) {
         const day = DAYS[index % DAYS.length];
         const [start, end] = SLOT_PAIRS[Math.floor(index / DAYS.length) % SLOT_PAIRS.length];
 
@@ -801,21 +881,61 @@ export const MyClassroom: React.FC = () => {
   const nextClass = orderedSessions.find((session) => sessionStatus(session) === 'UPCOMING') || null;
 
   useEffect(() => {
-    if (!selectedSessionId && orderedSessions.length) {
-      setSelectedSessionId((currentClass || nextClass || orderedSessions[0]).id);
-    }
-  }, [selectedSessionId, orderedSessions, currentClass, nextClass]);
+    if (!orderedSessions.length) return;
+
+    const currentSelectedExists = Boolean(selectedSessionId && orderedSessions.some((item) => item.id === selectedSessionId));
+    if (currentSelectedExists) return;
+
+    const scopedMatch = orderedSessions.find((session) => {
+      if (!targetStreamId) return false;
+      if (session.streamId !== targetStreamId) return false;
+      if (targetSubjectId) return session.subjectId === targetSubjectId;
+      return true;
+    });
+
+    setSelectedSessionId((scopedMatch || currentClass || nextClass || orderedSessions[0]).id);
+  }, [selectedSessionId, orderedSessions, currentClass, nextClass, targetStreamId, targetSubjectId]);
 
   const selectedSession = orderedSessions.find((item) => item.id === selectedSessionId) || null;
 
-  const loadSessionData = async (sessionId: string) => {
+  const loadSessionData = async (session: SessionItem) => {
     if (!user?.school_id) return;
+    const sessionId = session.id;
+    const effectiveStreamId = targetStreamId || session.streamId || null;
+    const effectiveSubjectId = targetSubjectId || session.subjectId || null;
+
+    let notesScopedPromise: any = Promise.resolve({ data: [], error: null });
+    let recordingsScopedPromise: any = Promise.resolve({ data: [], error: null });
+
+    if (effectiveStreamId) {
+      let notesScopeQuery = supabase
+        .from('classroom_notes')
+        .select('*')
+        .eq('school_id', user.school_id)
+        .eq('stream_id', effectiveStreamId);
+
+      let recordingsScopeQuery = supabase
+        .from('classroom_recordings')
+        .select('*')
+        .eq('school_id', user.school_id)
+        .eq('stream_id', effectiveStreamId);
+
+      if (effectiveSubjectId) {
+        notesScopeQuery = notesScopeQuery.eq('subject_id', effectiveSubjectId);
+        recordingsScopeQuery = recordingsScopeQuery.eq('subject_id', effectiveSubjectId);
+      }
+
+      notesScopedPromise = notesScopeQuery.order('updated_at', { ascending: false });
+      recordingsScopedPromise = recordingsScopeQuery.order('recorded_at', { ascending: false });
+    }
 
     const [
       attendanceRes,
       spotlightRes,
-      notesRes,
-      recordingsRes,
+      notesSessionRes,
+      recordingsSessionRes,
+      notesScopedRes,
+      recordingsScopedRes,
       assignmentsRes,
       assignmentFilesRes,
       activityRes,
@@ -826,6 +946,8 @@ export const MyClassroom: React.FC = () => {
       supabase.from('classroom_spotlight').select('*').eq('session_id', sessionId).maybeSingle(),
       supabase.from('classroom_notes').select('*').eq('session_id', sessionId).order('updated_at', { ascending: false }),
       supabase.from('classroom_recordings').select('*').eq('session_id', sessionId).order('recorded_at', { ascending: false }),
+      notesScopedPromise,
+      recordingsScopedPromise,
       supabase.from('classroom_assignments').select('*').eq('session_id', sessionId).order('created_at', { ascending: false }),
       supabase.from('classroom_assignment_files').select('*').eq('session_id', sessionId).order('uploaded_at', { ascending: false }),
       supabase.from('classroom_activity_feed').select('*').eq('session_id', sessionId).order('created_at', { ascending: false }).limit(50),
@@ -833,7 +955,7 @@ export const MyClassroom: React.FC = () => {
       supabase.from('classroom_breakout_rooms').select('*').eq('session_id', sessionId).order('created_at', { ascending: false }).limit(10)
     ]);
 
-    if (attendanceRes.error || notesRes.error || recordingsRes.error || assignmentsRes.error || assignmentFilesRes.error || activityRes.error) {
+    if (attendanceRes.error || notesSessionRes.error || recordingsSessionRes.error || assignmentsRes.error || assignmentFilesRes.error || activityRes.error) {
       console.warn('Classroom persistence tables are unavailable; using local classroom fallback state.');
 
       const fallbackAttendance = seedStudents.map((student, idx) => ({
@@ -886,9 +1008,29 @@ export const MyClassroom: React.FC = () => {
       })));
     }
 
+    const mergedNotes = new Map<string, any>();
+    (notesSessionRes.data || []).forEach((row: any) => mergedNotes.set(row.id, row));
+    (notesScopedRes.data || []).forEach((row: any) => mergedNotes.set(row.id, row));
+
+    const mergedRecordings = new Map<string, any>();
+    (recordingsSessionRes.data || []).forEach((row: any) => mergedRecordings.set(row.id, row));
+    (recordingsScopedRes.data || []).forEach((row: any) => mergedRecordings.set(row.id, row));
+
+    const sortedNotes = Array.from(mergedNotes.values()).sort((a: any, b: any) => {
+      const aTime = new Date(a?.updated_at || a?.created_at || 0).getTime();
+      const bTime = new Date(b?.updated_at || b?.created_at || 0).getTime();
+      return bTime - aTime;
+    });
+
+    const sortedRecordings = Array.from(mergedRecordings.values()).sort((a: any, b: any) => {
+      const aTime = new Date(a?.recorded_at || a?.created_at || 0).getTime();
+      const bTime = new Date(b?.recorded_at || b?.created_at || 0).getTime();
+      return bTime - aTime;
+    });
+
     setSpotlightStudentId(spotlightRes.data?.student_id || null);
-    setNotes(notesRes.data || []);
-    setRecordings(recordingsRes.data || []);
+    setNotes(sortedNotes);
+    setRecordings(sortedRecordings);
 
     const assignmentRows = assignmentsRes.data || [];
     setAssignments(assignmentRows);
@@ -976,8 +1118,8 @@ export const MyClassroom: React.FC = () => {
 
   useEffect(() => {
     if (!selectedSession?.id) return;
-    loadSessionData(selectedSession.id).catch((err) => console.error('Failed loading session data', err));
-  }, [selectedSession?.id]);
+    loadSessionData(selectedSession).catch((err) => console.error('Failed loading session data', err));
+  }, [selectedSession?.id, targetStreamId, targetSubjectId]);
 
   const addActivity = async (sessionId: string, type: string, message: string, payload?: any) => {
     console.log('addActivity called:', { sessionId, type, message, userSchoolId: user?.school_id, userId: user?.id });
@@ -1850,7 +1992,16 @@ export const MyClassroom: React.FC = () => {
       if (selectedSessionId !== session.id) {
         setSelectedSessionId(session.id);
       }
-      await withTimeout(loadSessionData(session.id), 45000, 'Reload session data after publish');
+      if (publishContext.stream_id) {
+        setTargetStreamId(publishContext.stream_id);
+      }
+      if (publishContext.class_id) {
+        setTargetClassId(publishContext.class_id);
+      }
+      if (publishContext.subject_id) {
+        setTargetSubjectId(publishContext.subject_id);
+      }
+      await withTimeout(loadSessionData(session), 45000, 'Reload session data after publish');
 
       setDraftResources([]);
       setUploadStatus(`Published ${createdCount} item(s)`);
@@ -2878,6 +3029,37 @@ export const MyClassroom: React.FC = () => {
     return 'Pack Item';
   };
 
+  const teacherSubjectClassRows = useMemo(() => {
+    const rows = (assignmentRows || [])
+      .filter((row: any) => row?.subject_id && row?.stream_id)
+      .map((row: any) => {
+        const subject = subjects.find((s: any) => s.id === row.subject_id);
+        const stream = streams.find((s: any) => s.id === row.stream_id);
+        const resolvedClass = resolveClassForStream(stream);
+        const className = formatClassName(resolvedClass) || fallbackClassNameFromSessionLabel(stream);
+        const streamName = formatStreamName(stream);
+
+        return {
+          key: `${row.subject_id}-${row.stream_id}`,
+          subjectId: row.subject_id,
+          streamId: row.stream_id,
+          subjectName: subject?.name || 'Subject',
+          classLabel: `${className} ${streamName}`.trim() || 'Unassigned class'
+        };
+      });
+
+    const unique = new Map<string, { key: string; subjectId: string; streamId: string; subjectName: string; classLabel: string }>();
+    rows.forEach((row: any) => {
+      if (!unique.has(row.key)) unique.set(row.key, row);
+    });
+
+    return Array.from(unique.values()).sort((a, b) => {
+      const bySubject = String(a.subjectName).localeCompare(String(b.subjectName));
+      if (bySubject !== 0) return bySubject;
+      return String(a.classLabel).localeCompare(String(b.classLabel));
+    });
+  }, [assignmentRows, subjects, streams, classById, sessionClassLabelByStream]);
+
   if (loading) return <div className="py-24 text-center text-sm font-bold text-zinc-400 animate-pulse">Synchronizing Classroom Data...</div>;
 
   return (
@@ -2934,6 +3116,13 @@ export const MyClassroom: React.FC = () => {
             onClick={() => navigate('/timetable')}
           >
             <CalendarDays size={16} className="mr-1.5" /> My Timetable
+          </Button>
+          <Button
+            variant="outline"
+            className="rounded-xl h-10 px-5 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 font-bold text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800"
+            onClick={() => setIsMySubjectsModalOpen(true)}
+          >
+            <BookOpen size={16} className="mr-1.5" /> My Subjects
           </Button>
           <Button
             variant={sidebarOpen ? 'secondary' : 'outline'}
@@ -3497,6 +3686,48 @@ export const MyClassroom: React.FC = () => {
             <Button variant="outline" className="flex-1 rounded-xl h-11 text-xs font-bold" onClick={() => setIsLinkModalOpen(false)}>Cancel</Button>
             <Button variant="primary" className="flex-1 rounded-xl h-11 text-xs font-bold" disabled={!linkResourceUrl.trim()} onClick={handleLinkPublish}>Add to Preview</Button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isMySubjectsModalOpen}
+        onClose={() => setIsMySubjectsModalOpen(false)}
+        title="My Subjects"
+      >
+        <div className="space-y-3">
+          <p className="text-xs font-semibold text-zinc-500">Subjects and classes assigned to you.</p>
+          {teacherSubjectClassRows.length === 0 ? (
+            <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 py-5 text-xs font-semibold text-zinc-500">
+              No subject assignments found yet.
+            </div>
+          ) : (
+            <div className="max-h-80 overflow-y-auto rounded-xl border border-zinc-200 dark:border-zinc-800 divide-y divide-zinc-100 dark:divide-zinc-800">
+              {teacherSubjectClassRows.map((row) => (
+                <div key={row.key} className="px-4 py-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-zinc-900 dark:text-white">{row.subjectName}</p>
+                    <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">{row.classLabel}</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="h-8 px-3 rounded-lg text-[11px] font-bold"
+                    onClick={() => {
+                      setWorkspaceMode('LIBRARY');
+                      const stream = streams.find((s: any) => s.id === row.streamId);
+                      const resolvedClass = resolveClassForStream(stream);
+                      setTargetClassId(resolvedClass?.id || stream?.class_id || '');
+                      setTargetStreamId(row.streamId);
+                      setTargetSubjectId(row.subjectId);
+                      setUploadAudience('SUBJECT_STUDENTS');
+                      setIsMySubjectsModalOpen(false);
+                    }}
+                  >
+                    Open
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </Modal>
 
