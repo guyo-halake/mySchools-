@@ -21,6 +21,7 @@ import { MyClassroom } from './pages/MyClassroom';
 import { TemplatesPermision } from './pages/TemplatesPermision';
 import { TemplatesList } from './pages/TemplatesList';
 import { TemplateDetail } from './pages/TemplateDetail';
+import { ProfileSettings } from './pages/ProfileSettings';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -71,6 +72,7 @@ export default function App() {
             <Route path="/events" element={<ProtectedRoute><Events /></ProtectedRoute>} />
             <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
             <Route path="/assignments" element={<ProtectedRoute><Assignments /></ProtectedRoute>} />
+            <Route path="/profile-settings" element={<ProtectedRoute><ProfileSettings /></ProtectedRoute>} />
             
             {/* Functional Routes */}
             <Route path="/fees-management" element={<ProtectedRoute><FeesManagement /></ProtectedRoute>} />
