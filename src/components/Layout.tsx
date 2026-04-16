@@ -18,7 +18,8 @@ import {
   Sun,
   Moon,
   Settings,
-  ShieldCheck
+  ShieldCheck,
+  UserCircle2
 } from 'lucide-react';
 import { cn } from '../utils/utils';
 import { Role } from '../types';
@@ -28,24 +29,27 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'Results', icon: FileText, path: '/results' },
     { label: 'School Fees', icon: CreditCard, path: '/fees' },
-    { label: 'Suspensions', icon: AlertTriangle, path: '/suspensions' },
+    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
     { label: 'Events', icon: Calendar, path: '/events' },
     { label: 'Announcements', icon: Bell, path: '/announcements' },
+    { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
   ],
   STUDENT: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'Results', icon: FileText, path: '/results' },
     { label: 'Assignments', icon: BookOpen, path: '/assignments' },
-    { label: 'Complaints', icon: AlertTriangle, path: '/suspensions' },
+    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
     { label: 'Events', icon: Calendar, path: '/events' },
+    { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
   ],
   TEACHER: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'Results and Student mngt', icon: FileText, path: '/results-management' },
-    { label: 'Suspensions', icon: AlertTriangle, path: '/suspensions' },
+    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
     { label: 'Announcements', icon: Bell, path: '/announcements' },
     { label: 'Chat Parents', icon: MessageSquare, path: '/chat' },
     { label: 'My Classroom', icon: Calendar, path: '/my-classroom' },
+    { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
   ],
   PRINCIPAL: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
@@ -53,8 +57,10 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
     { label: 'Students', icon: Users, path: '/students' },
     { label: 'Teachers', icon: ShieldCheck, path: '/teachers' },
     { label: 'Classes', icon: BookOpen, path: '/classes' },
+    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
     { label: 'Announcements', icon: Bell, path: '/announcements' },
     { label: 'My Classroom', icon: Calendar, path: '/my-classroom' },
+    { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
   ],
   ADMIN: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
@@ -62,8 +68,10 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
     { label: 'Students', icon: Users, path: '/students' },
     { label: 'Teachers', icon: ShieldCheck, path: '/teachers' },
     { label: 'Classes', icon: BookOpen, path: '/classes' },
+    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
     { label: 'Fees', icon: CreditCard, path: '/fees' },
     { label: 'Announcements', icon: Bell, path: '/announcements' },
+    { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
   ],
 };
 
