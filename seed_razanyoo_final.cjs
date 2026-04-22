@@ -24,7 +24,7 @@ async function seed() {
       await pgClient.query(`INSERT INTO students (id, school_id, adm_no, stream_id) VALUES ($1, $2, 'GHS-8800', (SELECT id FROM streams WHERE school_id = $2 LIMIT 1))`, [razanId, schoolId]);
     }
 
-    // 2. Clear old records for a clean seed
+    // 2. Clear old records for a clean seed (for this student only)
     await pgClient.query('DELETE FROM student_subjects WHERE student_id = $1', [razanId]);
     await pgClient.query('DELETE FROM student_health WHERE student_id = $1', [razanId]);
     await pgClient.query('DELETE FROM disciplinary_records WHERE student_id = $1', [razanId]);
@@ -55,8 +55,6 @@ async function seed() {
     await pgClient.query(`INSERT INTO student_activities (student_id, activity_id) VALUES ($1, (SELECT id FROM activities WHERE name = 'Basketball' LIMIT 1)) ON CONFLICT DO NOTHING`, [razanId]);
 
     // 7. Fees (Simplified balance tracking for now)
-    // In our system we track fees via a table or just a balance field in students
-    // We'll ensure the UI can display arrears
     await pgClient.query(`UPDATE students SET stream_id = stream_id WHERE id = $1`, [razanId]); // Just a touch to trigger updates if needed
 
     console.log('Razanyoo dossier seeded successfully with 9 subjects and full history.');
