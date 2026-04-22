@@ -41,21 +41,18 @@ async function seed() {
     const streamId = crypto.randomUUID();
     await pgClient.query(`INSERT INTO streams (id, school_id, class_id, name) VALUES ($1, $2, $3, 'G') ON CONFLICT DO NOTHING`, [streamId, schoolId, clsId]);
 
-    // 4. ADD RAZANYOO
-    const razanId = crypto.randomUUID();
-    console.log(`Enrolling Razanyoo with ID: ${razanId}`);
-    
-    await pgClient.query(`
-      INSERT INTO profiles (id, school_id, full_name, email, role, password)
-      VALUES ($1, $2, 'Razanyoo', 'razan@giakanja.co.ke', 'STUDENT', 'password123')
-      ON CONFLICT DO NOTHING
-    `, [razanId, schoolId]);
-
-    await pgClient.query(`
-      INSERT INTO students (id, school_id, adm_no, stream_id)
-      VALUES ($1, $2, 'GHS-8800', $3)
-      ON CONFLICT DO NOTHING
-    `, [razanId, schoolId, streamId]);
+    // 4. USE EXISTING RAZANYOO FROM seed_vips (linked to parent)
+    // Find the correct Razanyoo student (linked to parent)
+    const { rows: razanRows } = await pgClient.query(`
+      SELECT s.id FROM students s
+      JOIN profiles p ON s.id = p.id
+      WHERE p.full_name = 'Razanyoo' AND s.school_id = $1 AND s.parent_id IS NOT NULL
+    `, [schoolId]);
+    if (razanRows.length === 0) {
+      throw new Error('No parent-linked Razanyoo found. Run seed_vips.cjs first.');
+    }
+    const razanId = razanRows[0].id;
+    console.log(`Using parent-linked Razanyoo with ID: ${razanId}`);
 
     // 5. ENROLL RAZANYOO IN SUBJECTS
     for (const s of subjects) {
