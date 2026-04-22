@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { Button, Modal } from '../components/UI';
 import { Plus, Save } from 'lucide-react';
+import { ParentStudentDiscipline } from './ParentStudentDiscipline';
 
 type DisciplinaryRow = {
   id: string;
@@ -22,6 +23,10 @@ const isUuid = (value?: string | null) => Boolean(value && UUID_RE.test(value));
 
 export const Suspensions: React.FC = () => {
   const { user } = useAuth();
+  if (user?.role === 'PARENT' || user?.role === 'STUDENT') {
+    return <ParentStudentDiscipline />;
+  }
+
   const canCreate = user?.role === 'TEACHER' || user?.role === 'ADMIN' || user?.role === 'PRINCIPAL';
 
   const [loading, setLoading] = useState(true);
