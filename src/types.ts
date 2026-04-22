@@ -47,7 +47,7 @@ export interface Stream {
 }
 
 export interface Student {
-  id: string; -- Primary key (Profile ID)
+  id: string; // Primary key (Profile ID)
   school_id: string;
   adm_no: string;
   stream_id?: string;
