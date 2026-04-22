@@ -3,17 +3,9 @@ const client = new Client({ connectionString: 'postgresql://postgres.vomsaqkhttu
 async function run(){
   try {
     await client.connect();
-    const streamId = 'e469e795-1d0f-47ac-a489-63c9bce6c454'; // Form 4H
-    const res = await client.query('SELECT count(id) FROM students WHERE stream_id = $1', [streamId]);
-    console.log(`Live Students in Form 4H: ${res.rows[0].count}`);
-    
-    const allSt = await client.query('SELECT count(id) FROM students');
-    console.log(`Total Students in DB: ${allSt.rows[0].count}`);
-    
-    // Check one student's stream_id
-    const one = await client.query('SELECT stream_id FROM students LIMIT 1');
-    console.log(`A Sample Student Stream ID: ${one.rows[0]?.stream_id}`);
-    
+    const res = await client.query('SELECT * FROM students LIMIT 1');
+    console.log(Object.keys(res.rows[0]));
+    console.log(JSON.stringify(res.rows[0], null, 2));
   } catch (err) {
     console.error(err);
   } finally {
