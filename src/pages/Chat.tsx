@@ -1,283 +1,273 @@
-import React, { useState } from 'react';
-import { useApp } from '../context/AppContext';
-import { Card, Button, Modal, Badge } from '../components/UI';
+import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 import { 
-  MessageSquare, 
-  Phone, 
-  ExternalLink, 
+  Search, 
+  MoreVertical, 
+  Smile, 
+  Paperclip, 
+  Mic, 
+  Send, 
+  CheckCheck, 
   Users, 
-  Mail, 
-  MapPin, 
-  Calendar, 
-  User as UserIcon,
-  Search,
-  TrendingUp,
-  CreditCard,
-  AlertTriangle,
-  GraduationCap
+  Phone, 
+  Video,
+  ChevronLeft,
+  X,
+  MessageSquare,
+  User as UserIcon
 } from 'lucide-react';
-import { Student } from '../types';
-import { cn } from '../utils/utils';
+import { cn, formatDate } from '../utils/utils';
+
+interface Message {
+  id: string;
+  sender_id: string;
+  receiver_id?: string;
+  group_id?: string;
+  content: string;
+  created_at: string;
+  status: 'sent' | 'delivered' | 'read';
+}
+
+interface ChatSession {
+  id: string;
+  name: string;
+  avatar?: string;
+  lastMessage?: string;
+  lastMessageTime?: string;
+  unreadCount?: number;
+  type: 'private' | 'group';
+  role?: string;
+}
 
 export const Chat: React.FC = () => {
-  const { students, classes, results, fees, suspensions, teachers, getStudentRank } = useApp();
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const { user } = useAuth();
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isMobileListOpen, setIsMobileListOpen] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const handleWhatsApp = (phone: string, message: string) => {
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-    window.open(url, '_blank');
+  // MOCK DATA for initial rendering
+  useEffect(() => {
+    const mockSessions: ChatSession[] = [
+      { id: '1', name: 'Form 3 North - Parent Group', lastMessage: 'Please remember to sign the report cards.', lastMessageTime: '10:45 AM', type: 'group', unreadCount: 3 },
+      { id: '2', name: 'Mr. David (Math Teacher)', lastMessage: 'The assignment is ready.', lastMessageTime: '09:12 AM', type: 'private', role: 'Teacher' },
+      { id: '3', name: 'Mrs. Sarah (Class Teacher)', lastMessage: 'Thank you for the update.', lastMessageTime: 'Yesterday', type: 'private', role: 'Teacher' },
+      { id: '4', name: 'Sports Committee', lastMessage: 'Meeting tomorrow at 4 PM.', lastMessageTime: 'Yesterday', type: 'group' },
+    ];
+    setSessions(mockSessions);
+  }, []);
+
+  // MOCK MESSAGES for active session
+  useEffect(() => {
+    if (activeSession) {
+      const mockMsgs: Message[] = [
+        { id: 'm1', sender_id: 'other', content: `Hello! Regarding the ${activeSession.name} update...`, created_at: '2026-04-19T08:00:00Z', status: 'read' },
+        { id: 'm2', sender_id: user?.id || 'me', content: 'I am well, thank you. I received the message.', created_at: '2026-04-19T08:05:00Z', status: 'read' },
+        { id: 'm3', sender_id: 'other', content: 'Great. Let me know if you need anything else.', created_at: '2026-04-19T08:10:00Z', status: 'read' },
+      ];
+      setMessages(mockMsgs);
+      setIsMobileListOpen(false);
+    }
+  }, [activeSession, user?.id]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !activeSession) return;
+
+    const msg: Message = {
+      id: Date.now().toString(),
+      sender_id: user?.id || 'me',
+      content: newMessage,
+      created_at: new Date().toISOString(),
+      status: 'sent'
+    };
+
+    setMessages([...messages, msg]);
+    setNewMessage('');
   };
 
-  const getClassName = (classId: string) => {
-    return classes.find(c => c.id === classId)?.name || 'Unknown Class';
-  };
-
-  const getTeacherName = (teacherId: string) => {
-    return teachers.find(t => t.id === teacherId)?.name || 'Unknown Teacher';
-  };
-
-  const getStudentStats = (studentId: string) => {
-    const studentResults = results.filter(r => r.studentId === studentId);
-    const studentFees = fees.filter(f => f.studentId === studentId);
-    const studentSuspensions = suspensions.filter(s => s.studentId === studentId && s.status === 'ACTIVE');
-
-    const avgMarks = studentResults.length > 0 
-      ? studentResults.reduce((acc, r) => acc + r.marks, 0) / studentResults.length 
-      : 0;
-    
-    const feeBalance = studentFees.reduce((acc, f) => acc + (f.amount - f.paid), 0);
-    
-    const meanGrade = avgMarks >= 80 ? 'A' : avgMarks >= 70 ? 'B' : avgMarks >= 60 ? 'C' : avgMarks >= 50 ? 'D' : 'E';
-
-    const rank = getStudentRank(studentId, 'Term 3', 2024);
-
-    return { avgMarks, meanGrade, feeBalance, activeSuspensions: studentSuspensions.length, rank };
-  };
-
-  const filteredStudents = students.filter(s => 
-    s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.admissionNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.guardianName.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredSessions = sessions.filter(s => 
+    s.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Chat Parents</h1>
-          <p className="text-gray-500 dark:text-zinc-400">Communicate directly with parents via WhatsApp</p>
-        </div>
-        <div className="relative w-full md:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-          <input 
-            type="text"
-            placeholder="Search student or parent..."
-            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <Card className="bg-emerald-600 text-white border-none flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-4 mb-4">
-              <div className="p-3 bg-white/20 rounded-2xl">
-                <Users size={24} />
-              </div>
-              <h3 className="text-xl font-bold">Class Group</h3>
+    <div className="h-[calc(100vh-140px)] flex bg-white dark:bg-zinc-950 rounded-3xl overflow-hidden border border-zinc-100 dark:border-zinc-800 shadow-2xl relative">
+      
+      {/* SESSION LIST */}
+      <div className={cn(
+        "w-full md:w-80 lg:w-96 flex flex-col border-r border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 transition-all duration-300",
+        !isMobileListOpen && "hidden md:flex"
+      )}>
+        <div className="p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-bold font-sora">Messages</h1>
+            <div className="flex items-center gap-2">
+               <button className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-colors"><Users size={18}/></button>
+               <button className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-colors"><MoreVertical size={18}/></button>
             </div>
-            <p className="text-emerald-100 text-sm mb-6">Send an update to all parents in your assigned class.</p>
           </div>
-          <Button 
-            className="w-full bg-white text-emerald-600 hover:bg-emerald-50"
-            onClick={() => handleWhatsApp('254700000000', 'Hello parents, this is your class teacher. Just a quick update on...')}
-          >
-            <MessageSquare size={18} /> Open Group Chat
-          </Button>
-        </Card>
+          
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={14} />
+            <input 
+              type="text" 
+              placeholder="Search chats..."
+              className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border-none rounded-xl text-xs font-medium outline-none shadow-sm focus:ring-2 focus:ring-emerald-500/20"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
+        </div>
 
-        {filteredStudents.slice(0, 20).map(s => (
-          <Card 
-            key={s.id} 
-            className="hover:border-emerald-200 transition-all cursor-pointer group"
-            onClick={() => setSelectedStudent(s)}
-          >
-            <div className="flex items-center gap-4 mb-6">
-              <img src={s.photo} className="w-12 h-12 rounded-full border border-gray-100 group-hover:scale-105 transition-transform" />
+        <div className="flex-1 overflow-y-auto">
+          {filteredSessions.map(session => (
+            <div 
+              key={session.id} 
+              onClick={() => setActiveSession(session)}
+              className={cn(
+                "flex items-center gap-3 p-4 cursor-pointer transition-all border-b border-zinc-50 dark:border-zinc-800/30 hover:bg-white dark:hover:bg-zinc-800",
+                activeSession?.id === session.id && "bg-white dark:bg-zinc-800 border-l-4 border-l-emerald-500"
+              )}
+            >
+              <div className="w-12 h-12 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center text-zinc-400 relative">
+                {session.type === 'group' ? <Users size={20}/> : <UserIcon size={20}/>}
+                {session.unreadCount && (
+                  <span className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[8px] font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-white dark:border-zinc-900">
+                    {session.unreadCount}
+                  </span>
+                )}
+              </div>
               <div className="flex-1 min-w-0">
-                <h4 className="font-bold truncate">{s.name}</h4>
-                <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">{getClassName(s.classId)} • {s.admissionNumber}</p>
+                <div className="flex items-center justify-between mb-0.5">
+                  <h4 className="text-sm font-bold font-sora truncate">{session.name}</h4>
+                  <span className="text-[9px] font-medium text-zinc-400 uppercase">{session.lastMessageTime}</span>
+                </div>
+                <p className="text-[10px] text-zinc-500 font-medium truncate">{session.lastMessage}</p>
               </div>
             </div>
-            
-            <div className="space-y-2">
-              <div className="flex justify-between items-center text-[10px] text-gray-500 mb-2">
-                <span>Parent: <span className="font-bold text-gray-700 dark:text-gray-300">{s.guardianName}</span></span>
-              </div>
-              <Button 
-                variant="outline" 
-                className="w-full border-emerald-100 text-emerald-600 hover:bg-emerald-50 h-9 text-xs"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleWhatsApp(s.parentPhone, `Hello, this is Mr. Anderson. I'd like to discuss ${s.name}'s progress.`);
-                }}
-              >
-                <Phone size={14} /> WhatsApp Parent
-              </Button>
-              <Button 
-                variant="ghost" 
-                className="w-full text-[10px] h-8 text-gray-400 hover:text-emerald-600"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedStudent(s);
-                }}
-              >
-                <ExternalLink size={12} /> View Detailed Profile
-              </Button>
-            </div>
-          </Card>
-        ))}
+          ))}
+        </div>
       </div>
 
-      {filteredStudents.length === 0 && (
-        <div className="text-center py-12">
-          <div className="w-16 h-16 bg-gray-100 dark:bg-zinc-800 rounded-full flex items-center justify-center text-gray-400 mx-auto mb-4">
-            <Search size={32} />
-          </div>
-          <p className="text-gray-500 dark:text-zinc-400">No students found matching "{searchQuery}"</p>
-        </div>
-      )}
-
-      <Modal 
-        isOpen={!!selectedStudent} 
-        onClose={() => setSelectedStudent(null)} 
-        title="Student Detailed Profile"
-      >
-        {selectedStudent && (
-          <div className="space-y-6">
-            <div className="flex items-center gap-5 p-5 bg-emerald-50/50 dark:bg-emerald-900/10 rounded-3xl border border-emerald-100/50 dark:border-emerald-800/20">
-              <img src={selectedStudent.photo} className="w-20 h-20 rounded-2xl border-2 border-white dark:border-zinc-800 shadow-md object-cover" />
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-xl font-bold">{selectedStudent.name}</h3>
-                  <Badge variant="info" className="text-[10px]">{selectedStudent.admissionNumber}</Badge>
+      {/* CHAT AREA */}
+      <div className={cn(
+        "flex-1 flex flex-col bg-white dark:bg-zinc-950",
+        isMobileListOpen && "hidden md:flex"
+      )}>
+        {activeSession ? (
+          <>
+            {/* CHAT HEADER */}
+            <div className="h-16 flex items-center justify-between px-4 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/20">
+              <div className="flex items-center gap-3">
+                <button onClick={() => setIsMobileListOpen(true)} className="md:hidden p-2 -ml-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full">
+                  <ChevronLeft size={20}/>
+                </button>
+                <div className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center text-zinc-400">
+                  {activeSession.type === 'group' ? <Users size={16}/> : <UserIcon size={16}/>}
                 </div>
-                <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400 font-semibold">
-                  <GraduationCap size={16} />
-                  <span>{getClassName(selectedStudent.classId)}</span>
+                <div>
+                  <h3 className="text-sm font-bold font-sora leading-none">{activeSession.name}</h3>
+                  <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-tight mt-1">Online</p>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">Class Teacher: {getTeacherName(selectedStudent.teacherId)}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"><Video size={18}/></button>
+                <button className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"><Phone size={18}/></button>
+                <button className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"><Search size={18}/></button>
+                <button className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"><MoreVertical size={18}/></button>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {(() => {
-                const stats = getStudentStats(selectedStudent.id);
+            {/* MESSAGES AREA */}
+            <div 
+              ref={scrollRef}
+              className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 bg-zinc-50/30 dark:bg-zinc-900/10 bg-[url('https://i.pinimg.com/originals/ab/ab/60/abab60f38a6a6e553a1a97d9196b42b7.png')] bg-repeat bg-[length:400px]"
+            >
+              <div className="flex justify-center my-4">
+                 <span className="px-3 py-1 bg-zinc-200 dark:bg-zinc-800 text-[9px] font-bold uppercase text-zinc-500 rounded-md shadow-sm">Today</span>
+              </div>
+
+              {messages.map((msg) => {
+                const isMe = msg.sender_id === user?.id || msg.sender_id === 'me';
                 return (
-                  <>
-                    <div className="p-3 bg-gray-50 dark:bg-zinc-800/50 rounded-2xl text-center border border-gray-100 dark:border-zinc-800">
-                      <TrendingUp size={14} className="mx-auto mb-1 text-blue-500" />
-                      <p className="text-[8px] uppercase font-bold text-gray-400">Mean Grade</p>
-                      <p className="text-lg font-bold text-blue-600">{stats.meanGrade}</p>
+                  <div key={msg.id} className={cn(
+                    "flex flex-col max-w-[85%] md:max-w-[70%]",
+                    isMe ? "ml-auto items-end" : "mr-auto items-start"
+                  )}>
+                    <div className={cn(
+                      "px-4 py-2.5 rounded-2xl text-[12px] font-medium leading-relaxed shadow-sm relative",
+                      isMe 
+                        ? "bg-emerald-600 text-white rounded-tr-none" 
+                        : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-tl-none border border-zinc-100 dark:border-zinc-700/50"
+                    )}>
+                      {msg.content}
+                      <div className={cn(
+                        "flex items-center gap-1.5 mt-1.5 justify-end",
+                        isMe ? "text-emerald-100" : "text-zinc-400"
+                      )}>
+                        <span className="text-[8px] font-semibold">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        {isMe && <CheckCheck size={12} className={cn(msg.status === 'read' ? "text-white" : "text-emerald-200")}/>}
+                      </div>
                     </div>
-                    <div className="p-3 bg-gray-50 dark:bg-zinc-800/50 rounded-2xl text-center border border-gray-100 dark:border-zinc-800">
-                      <CreditCard size={14} className="mx-auto mb-1 text-orange-500" />
-                      <p className="text-[8px] uppercase font-bold text-gray-400">Fee Balance</p>
-                      <p className={cn("text-sm font-bold", stats.feeBalance > 0 ? "text-rose-500" : "text-emerald-500")}>
-                        {stats.feeBalance > 0 ? `Ksh ${stats.feeBalance.toLocaleString()}` : 'Cleared'}
-                      </p>
-                    </div>
-                    <div className="p-3 bg-gray-50 dark:bg-zinc-800/50 rounded-2xl text-center border border-gray-100 dark:border-zinc-800">
-                      <TrendingUp size={14} className="mx-auto mb-1 text-emerald-500 rotate-90" />
-                      <p className="text-[8px] uppercase font-bold text-gray-400">Class Rank</p>
-                      <p className="text-sm font-bold text-emerald-600">{stats.rank.classRank}/{stats.rank.classTotal}</p>
-                    </div>
-                    <div className="p-3 bg-gray-50 dark:bg-zinc-800/50 rounded-2xl text-center border border-gray-100 dark:border-zinc-800">
-                      <TrendingUp size={14} className="mx-auto mb-1 text-purple-500" />
-                      <p className="text-[8px] uppercase font-bold text-gray-400">Form Rank</p>
-                      <p className="text-sm font-bold text-purple-600">{stats.rank.formRank}/{stats.rank.formTotal}</p>
-                    </div>
-                  </>
+                  </div>
                 );
-              })()}
+              })}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 border border-gray-100 dark:border-zinc-800 rounded-2xl space-y-3">
-                <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-50 dark:border-zinc-800 pb-2">Guardian Information</h4>
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-3 text-sm">
-                    <div className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-zinc-800 flex items-center justify-center text-gray-400">
-                      <UserIcon size={14} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[10px] text-gray-400 leading-none mb-0.5">Name</p>
-                      <p className="font-medium">{selectedStudent.guardianName}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 text-sm">
-                    <div className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-zinc-800 flex items-center justify-center text-gray-400">
-                      <Mail size={14} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[10px] text-gray-400 leading-none mb-0.5">Email</p>
-                      <p className="font-medium truncate">{selectedStudent.parentEmail}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 text-sm">
-                    <div className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-zinc-800 flex items-center justify-center text-gray-400">
-                      <Phone size={14} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[10px] text-gray-400 leading-none mb-0.5">Phone</p>
-                      <p className="font-medium">+{selectedStudent.parentPhone}</p>
-                    </div>
-                  </div>
-                </div>
+            {/* INPUT AREA */}
+            <form onSubmit={handleSendMessage} className="p-4 bg-white dark:bg-zinc-950 border-t border-zinc-100 dark:border-zinc-800 flex items-center gap-3">
+              <div className="flex items-center gap-1">
+                <button type="button" className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"><Smile size={20}/></button>
+                <button type="button" className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"><Paperclip size={20}/></button>
               </div>
-
-              <div className="p-4 border border-gray-100 dark:border-zinc-800 rounded-2xl space-y-3">
-                <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-50 dark:border-zinc-800 pb-2">Personal Details</h4>
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-3 text-sm">
-                    <div className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-zinc-800 flex items-center justify-center text-gray-400">
-                      <Calendar size={14} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[10px] text-gray-400 leading-none mb-0.5">Date of Birth</p>
-                      <p className="font-medium">{selectedStudent.dateOfBirth}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 text-sm">
-                    <div className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-zinc-800 flex items-center justify-center text-gray-400">
-                      <MapPin size={14} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[10px] text-gray-400 leading-none mb-0.5">Residential Address</p>
-                      <p className="font-medium text-xs leading-relaxed">{selectedStudent.address}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <input 
+                type="text" 
+                placeholder="Type a message..."
+                value={newMessage}
+                onChange={e => setNewMessage(e.target.value)}
+                className="flex-1 bg-zinc-100 dark:bg-zinc-900 border-none rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-500/20"
+              />
+              {newMessage.trim() ? (
+                <button type="submit" className="w-10 h-10 bg-emerald-600 text-white rounded-full flex items-center justify-center hover:bg-emerald-700 transition-all active:scale-90 shadow-lg shadow-emerald-600/20">
+                  <Send size={18} />
+                </button>
+              ) : (
+                <button type="button" className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"><Mic size={20}/></button>
+              )}
+            </form>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-6">
+            <div className="w-24 h-24 bg-zinc-50 dark:bg-zinc-900 rounded-full flex items-center justify-center text-zinc-200 dark:text-zinc-800">
+               <MessageSquare size={48} />
             </div>
-
-            <div className="flex gap-3 pt-2">
-              <Button 
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-6 rounded-2xl"
-                onClick={() => handleWhatsApp(selectedStudent.parentPhone, `Hello ${selectedStudent.guardianName}, this is Mr. Anderson...`)}
-              >
-                <MessageSquare size={18} /> Chat with Parent
-              </Button>
-              <Button variant="outline" className="px-6 rounded-2xl" onClick={() => setSelectedStudent(null)}>
-                Close
-              </Button>
+            <div>
+               <h3 className="text-xl font-bold font-sora text-zinc-900 dark:text-white">Select a Chat</h3>
+               <p className="text-sm font-medium text-zinc-400 mt-2 max-w-xs mx-auto">Choose a conversation from the list to start messaging.</p>
+            </div>
+            <button 
+               onClick={() => setIsMobileListOpen(true)}
+               className="md:hidden bg-zinc-900 text-white px-6 py-2.5 rounded-full text-xs font-bold shadow-xl"
+            >
+               Open Chats
+            </button>
+            <div className="pt-12 flex items-center gap-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest opacity-50">
+               <CheckCheck size={14}/> Secure Messaging Enabled
             </div>
           </div>
         )}
-      </Modal>
+      </div>
+
     </div>
   );
 };
