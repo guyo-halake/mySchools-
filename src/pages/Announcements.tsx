@@ -1,516 +1,315 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import { Badge, Button, Modal } from '../components/UI';
-import { Plus, Save, Trash2, CheckCircle2, AlarmClock } from 'lucide-react';
-import { formatDate } from '../utils/utils';
+import { Badge, Modal, Table } from '../components/UI';
+import {
+  Plus,
+  Search,
+  Clock,
+  MapPin,
+  CalendarDays,
+  X,
+  LayoutGrid,
+  List,
+  CalendarCheck,
+  BellRing,
+  ChevronLeft,
+  ChevronRight,
+  BookOpen,
+  Trash2,
+  Bell,
+  CheckCircle2,
+  AlertCircle,
+  MessageCircle,
+  Send,
+  Sparkles
+} from 'lucide-react';
+import { formatDate, cn } from '../utils/utils';
 
-type AnnouncementRow = {
+type HubType = 'announcement' | 'event' | 'reminder';
+
+interface HubItem {
   id: string;
-  school_id: string;
+  type: HubType;
   title: string;
   content: string;
-  author_id: string | null;
-  target_roles: string[] | null;
-  created_at: string;
-};
-
-type EventRow = {
-  id: string;
-  school_id: string;
-  title: string;
-  description: string | null;
   date: string;
-  location: string | null;
-  rsvps: string[] | null;
-  created_by: string | null;
-};
-
-type ReminderRow = {
-  id: string;
-  event_id: string;
-  user_id: string;
-  remind_at: string;
-};
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const isUuid = (value?: string | null) => Boolean(value && UUID_RE.test(value));
+  author?: string;
+  location?: string;
+  theme?: string;
+  rsvps?: string[];
+}
 
 export const Announcements: React.FC = () => {
   const { user } = useAuth();
-  const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
-  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [busyEventId, setBusyEventId] = useState('');
-  const [statusMessage, setStatusMessage] = useState('');
-  const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([]);
-  const [events, setEvents] = useState<EventRow[]>([]);
-  const [reminders, setReminders] = useState<ReminderRow[]>([]);
-  const [profileNameById, setProfileNameById] = useState<Record<string, string>>({});
+  const [activeTab, setActiveTab] = useState<'recents' | 'announcements' | 'events' | 'calendar' | 'reminders'>('recents');
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [items, setItems] = useState<HubItem[]>([]);
+  const [reminders, setReminders] = useState<any[]>([]);
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'err' | 'info' } | null>(null);
+  const [currentDate, setCurrentDate] = useState(new Date());
 
-  const [announcementForm, setAnnouncementForm] = useState({
-    title: '',
-    content: '',
-    targetRoles: ['PARENT', 'STUDENT', 'TEACHER'] as string[]
-  });
+  const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
+  const [reminderModal, setReminderModal] = useState<{ open: boolean; item: HubItem | null }>({ open: false, item: null });
+  const [submitting, setSubmitting] = useState(false);
 
-  const [eventForm, setEventForm] = useState({
-    title: '',
-    description: '',
-    date: new Date().toISOString().slice(0, 10),
-    time: '09:00',
-    location: ''
-  });
+  const [remForm, setRemForm] = useState({ date: '', time: '08:00', offset: '0', whatsapp: true });
 
-  const canManage = user?.role === 'ADMIN' || user?.role === 'PRINCIPAL';
+  const showToast = (msg: string, type: 'success' | 'err' | 'info' = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
-  const loadData = async () => {
-    if (!user?.school_id) {
-      setAnnouncements([]);
-      setEvents([]);
-      setReminders([]);
-      setLoading(false);
-      return;
-    }
-
+  const loadHubData = async () => {
+    if (!user?.school_id) return;
     setLoading(true);
     try {
-      const [announcementRes, eventsRes, remindersRes] = await Promise.all([
-        supabase
-          .from('announcements')
-          .select('*')
-          .eq('school_id', user.school_id)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('events')
-          .select('*')
-          .eq('school_id', user.school_id)
-          .order('date', { ascending: true }),
-        isUuid(user.id)
-          ? supabase
-              .from('event_reminders')
-              .select('*')
-              .eq('school_id', user.school_id)
-              .eq('user_id', user.id)
-          : Promise.resolve({ data: [], error: null })
+      const [{ data: annData }, { data: eveData }, { data: remData }] = await Promise.all([
+        supabase.from('announcements').select('*, profiles(full_name)').eq('school_id', user.school_id).order('created_at', { ascending: false }),
+        supabase.from('events').select('*').eq('school_id', user.school_id).order('date', { ascending: true }),
+        supabase.from('reminders').select('*').eq('user_id', user.id)
       ]);
 
-      if (announcementRes.error) throw announcementRes.error;
-      if (eventsRes.error) throw eventsRes.error;
+      const normalizedAnn = (annData || []).map(a => ({
+        id: a.id, type: 'announcement' as HubType, title: a.title, content: a.content,
+        date: a.created_at, author: a.profiles?.full_name || 'Admin', theme: 'News'
+      }));
 
-      setAnnouncements((announcementRes.data || []) as AnnouncementRow[]);
-      setEvents((eventsRes.data || []) as EventRow[]);
-      setReminders((remindersRes.data || []) as ReminderRow[]);
+      const normalizedEve = (eveData || []).map(e => ({
+        id: e.id, type: 'event' as HubType, title: e.title, content: e.description || '',
+        date: e.date, location: e.location || 'Main Campus', theme: 'Event', rsvps: e.rsvps || []
+      }));
 
-      const authorIds = Array.from(new Set([
-        ...(announcementRes.data || []).map((row: any) => row.author_id).filter(Boolean),
-        ...(eventsRes.data || []).map((row: any) => row.created_by).filter(Boolean)
-      ]));
-
-      if (authorIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, full_name')
-          .in('id', authorIds);
-
-        const nextMap: Record<string, string> = {};
-        (profiles || []).forEach((profile: any) => {
-          nextMap[profile.id] = profile.full_name || 'School Staff';
-        });
-        setProfileNameById(nextMap);
-      } else {
-        setProfileNameById({});
-      }
-    } catch (error: any) {
-      setStatusMessage(error?.message ? `Could not load updates: ${error.message}` : 'Could not load updates.');
-    } finally {
-      setLoading(false);
-    }
+      setItems([...normalizedAnn, ...normalizedEve]);
+      setReminders(remData || []);
+    } catch (err) { console.error("Sync Failed", err); }
+    finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    loadData();
-  }, [user?.id, user?.school_id]);
+  useEffect(() => { loadHubData(); }, [user?.school_id]);
 
-  const handleCreateAnnouncement = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user?.school_id) return;
-
-    const { error } = await supabase.from('announcements').insert({
-      school_id: user.school_id,
-      title: announcementForm.title,
-      content: announcementForm.content,
-      author_id: user.id,
-      target_roles: announcementForm.targetRoles
-    });
-
-    if (error) {
-      setStatusMessage(`Could not save announcement: ${error.message}`);
-      return;
+  const filteredItems = useMemo(() => {
+    let source = items;
+    if (activeTab === 'announcements') source = items.filter(i => i.type === 'announcement');
+    else if (activeTab === 'events') source = items.filter(i => i.type === 'event');
+    else if (activeTab === 'recents') source = items; 
+    else if (activeTab === 'reminders') {
+        source = reminders.map(r => ({
+            id: r.id, type: 'reminder' as HubType, title: r.title,
+            content: `Scheduled alert for ${new Date(r.remind_at).toLocaleDateString()}`,
+            date: r.remind_at, theme: 'Reminder'
+        }));
     }
+    // Sort by recent date FIRST (Descending)
+    return source.filter(i => i.title.toLowerCase().includes(searchQuery.toLowerCase()) || i.content.toLowerCase().includes(searchQuery.toLowerCase())).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [items, activeTab, searchQuery, reminders]);
 
-    setIsAnnouncementModalOpen(false);
-    setAnnouncementForm({
-      title: '',
-      content: '',
-      targetRoles: ['PARENT', 'STUDENT', 'TEACHER']
-    });
-    setStatusMessage('Announcement saved.');
-    await loadData();
+  const handleSaveReminder = async () => {
+    if (!user || !reminderModal.item) return;
+    setSubmitting(true);
+    try {
+      const targetDate = new Date(`${remForm.date}T${remForm.time}`);
+      const remindAt = new Date(targetDate.getTime() - parseInt(remForm.offset) * 60000).toISOString();
+      const { error } = await supabase.from('reminders').insert({
+        user_id: user.id, item_id: reminderModal.item.id, item_type: reminderModal.item.type,
+        remind_at: remindAt, title: reminderModal.item.title, school_id: user.school_id
+      });
+      if (error) throw error;
+      showToast("Updated!");
+      setReminderModal({ open: false, item: null });
+      loadHubData();
+    } catch (e: any) { showToast("Error", 'err'); }
+    finally { setSubmitting(false); }
   };
 
-  const handleCreateEvent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user?.school_id) return;
-
-    const eventDate = new Date(`${eventForm.date}T${eventForm.time}:00`);
-    if (Number.isNaN(eventDate.getTime())) {
-      setStatusMessage('Please choose a valid date and time.');
-      return;
-    }
-
-    const { error } = await supabase.from('events').insert({
-      school_id: user.school_id,
-      title: eventForm.title,
-      description: eventForm.description || null,
-      date: eventDate.toISOString(),
-      location: eventForm.location || null,
-      rsvps: [],
-      created_by: isUuid(user.id) ? user.id : null
-    });
-
-    if (error) {
-      setStatusMessage(`Could not save event: ${error.message}`);
-      return;
-    }
-
-    setIsEventModalOpen(false);
-    setEventForm({
-      title: '',
-      description: '',
-      date: new Date().toISOString().slice(0, 10),
-      time: '09:00',
-      location: ''
-    });
-    setStatusMessage('Event saved.');
-    await loadData();
-  };
-
-  const handleRsvp = async (event: EventRow) => {
-    if (!isUuid(user?.id)) {
-      setStatusMessage('Please sign in again to RSVP.');
-      return;
-    }
-
-    setBusyEventId(event.id);
-    const current = Array.isArray(event.rsvps) ? [...event.rsvps] : [];
-    const already = current.includes(user.id);
-    const next = already ? current.filter((id) => id !== user.id) : [...current, user.id];
-
-    const { error } = await supabase
-      .from('events')
-      .update({ rsvps: next })
-      .eq('id', event.id)
-      .eq('school_id', user.school_id || '');
-
-    setBusyEventId('');
-    if (error) {
-      setStatusMessage(`Could not update RSVP: ${error.message}`);
-      return;
-    }
-
-    setStatusMessage(already ? 'RSVP removed.' : 'RSVP added.');
-    await loadData();
-  };
-
-  const handleRemindMe = async (event: EventRow) => {
-    if (!isUuid(user?.id) || !user?.school_id) {
-      setStatusMessage('Please sign in again to set reminders.');
-      return;
-    }
-
-    setBusyEventId(event.id);
-
-    const eventDate = new Date(event.date);
-    const remindAt = new Date(eventDate.getTime() - 24 * 60 * 60 * 1000);
-    if (!Number.isFinite(remindAt.getTime())) {
-      setBusyEventId('');
-      setStatusMessage('Could not set reminder for this event.');
-      return;
-    }
-
-    const { error } = await supabase
-      .from('event_reminders')
-      .upsert({
-        school_id: user.school_id,
-        event_id: event.id,
-        user_id: user.id,
-        remind_at: remindAt.toISOString()
-      }, { onConflict: 'event_id,user_id' });
-
-    setBusyEventId('');
-    if (error) {
-      setStatusMessage(`Could not save reminder: ${error.message}`);
-      return;
-    }
-
-    setStatusMessage('Reminder set.');
-    await loadData();
-  };
-
-  const handleDeleteEvent = async (eventId: string) => {
-    if (!canManage || !user?.school_id) return;
-
-    setBusyEventId(eventId);
-    const { error } = await supabase
-      .from('events')
-      .delete()
-      .eq('id', eventId)
-      .eq('school_id', user.school_id);
-    setBusyEventId('');
-
-    if (error) {
-      setStatusMessage(`Could not delete event: ${error.message}`);
-      return;
-    }
-
-    setStatusMessage('Event deleted.');
-    await loadData();
-  };
-
-  const reminderSet = useMemo(() => {
-    const set = new Set<string>();
-    reminders.forEach((row) => set.add(row.event_id));
-    return set;
-  }, [reminders]);
-
-  const eventRows = useMemo(() => {
-    return events.map((event) => {
-      const dateObj = new Date(event.date);
-      const dateLabel = Number.isFinite(dateObj.getTime()) ? dateObj.toLocaleDateString('en-GB') : '-';
-      const timeLabel = Number.isFinite(dateObj.getTime()) ? dateObj.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '-';
-      const byLabel = event.created_by ? (profileNameById[event.created_by] || 'School Staff') : 'School Admin';
-      const rsvpCount = Array.isArray(event.rsvps) ? event.rsvps.length : 0;
-      const rsvped = Boolean(isUuid(user?.id) && Array.isArray(event.rsvps) && event.rsvps.includes(user.id));
-      const reminded = reminderSet.has(event.id);
-
-      return {
-        ...event,
-        dateLabel,
-        timeLabel,
-        byLabel,
-        rsvpCount,
-        rsvped,
-        reminded
-      };
-    });
-  }, [events, profileNameById, reminderSet, user?.id]);
+  const GlassCard = ({ item }: { item: HubItem }) => (
+    <div className="relative overflow-hidden rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-900 p-6 shadow-sm transition-all flex flex-col justify-between h-full hover:shadow-lg">
+        <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2 overflow-hidden">
+                <Badge variant={item.type === 'event' ? 'outline' : 'info'} className="text-[7px] uppercase tracking-widest px-2 py-0.5 border-zinc-200">
+                    {item.theme}
+                </Badge>
+                <div className="flex items-center gap-1 text-[8px] font-bold text-zinc-400 uppercase">
+                    <Clock size={10}/> {formatDate(item.date)}
+                </div>
+            </div>
+            
+            <div className="space-y-1">
+                <h3 className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-white uppercase font-sora line-clamp-1">{item.title}</h3>
+                {item.type === 'event' && (
+                    <div className="flex flex-col gap-1 mt-1.5 py-1.5 border-y border-zinc-50 border-dashed">
+                        <div className="flex items-center gap-1.5 text-[9px] font-bold text-zinc-600">
+                            <MapPin size={10} className="text-zinc-400" /> 
+                            <span className="truncate">{item.location}</span>
+                        </div>
+                    </div>
+                )}
+                <p className="text-[10px] text-zinc-500 font-medium leading-relaxed line-clamp-2 mt-1">{item.content}</p>
+            </div>
+        </div>
+        
+        <div className="mt-4 pt-4 border-t border-zinc-100 flex items-center justify-between gap-1.5">
+            <div className="flex gap-2 w-full">
+                <button onClick={() => {
+                    setRemForm({ date: item.date.split('T')[0], time: '08:00', offset: '0', whatsapp: true });
+                    setReminderModal({ open: true, item });
+                }} className="flex-1 py-2 bg-zinc-900 text-white rounded-lg text-[8px] font-bold uppercase flex items-center justify-center gap-1.5 active:scale-95 transition-all"><BellRing size={10}/> Remind</button>
+                
+                {item.type === 'event' ? (
+                    <button onClick={() => supabase.from('events').update({ rsvps: [...(item.rsvps || []), user?.id] }).eq('id', item.id).then(() => { showToast("RSVP Status Updated"); loadHubData(); })} className={cn("flex-1 py-2 rounded-lg text-[8px] font-bold uppercase flex items-center justify-center gap-1.5 active:scale-95 transition-all", item.rsvps?.includes(user?.id || '') ? "bg-zinc-100 text-zinc-900" : "bg-black text-white hover:bg-zinc-800")}>
+                        <CalendarCheck size={10}/> {item.rsvps?.includes(user?.id || '') ? 'Going' : 'RSVP Now'}
+                    </button>
+                ) : (
+                    <button onClick={() => alert(item.content)} className="flex-1 py-2 bg-zinc-50 text-zinc-600 rounded-lg text-[8px] font-bold uppercase flex items-center justify-center gap-1.5 active:scale-95 transition-all"><BookOpen size={10}/> Read News</button>
+                )}
+            </div>
+            {(user?.role === 'ADMIN' || user?.role === 'PRINCIPAL') && (
+                <button onClick={() => supabase.from(item.type === 'event' ? 'events' : 'announcements').delete().eq('id', item.id).then(() => loadHubData())} className="p-1.5 text-zinc-200 hover:text-rose-500 transition-colors"><Trash2 size={12}/></button>
+            )}
+        </div>
+    </div>
+  );
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Announcements and Events</h1>
-            <p className="text-sm text-zinc-500">School updates, notices, and upcoming events.</p>
-          </div>
-          {canManage && (
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setIsAnnouncementModalOpen(true)}><Plus size={16} /> New Announcement</Button>
-              <Button onClick={() => setIsEventModalOpen(true)}><Plus size={16} /> New Event</Button>
+    <div className="max-w-[1200px] mx-auto p-4 sm:p-6 space-y-6 pb-24 font-inter text-zinc-900">
+      
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+        <div className="space-y-4">
+            <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white font-sora tracking-tight">School Updates</h1>
+            <div className="flex flex-wrap items-center gap-1.5">
+                <TabBtn active={activeTab === 'recents'} onClick={() => setActiveTab('recents')}><Sparkles size={10}/> Recents</TabBtn>
+                <TabBtn active={activeTab === 'announcements'} onClick={() => setActiveTab('announcements')}>News</TabBtn>
+                <TabBtn active={activeTab === 'events'} onClick={() => setActiveTab('events')}>Events</TabBtn>
+                <TabBtn active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')}>Calendar</TabBtn>
+                <button onClick={() => setActiveTab('reminders')} className={cn("px-4 py-2 rounded-full text-[9px] font-bold uppercase flex items-center gap-2 transition-all shadow-sm", activeTab === 'reminders' ? "bg-zinc-900 text-white" : "bg-zinc-50 text-zinc-400")}>
+                    <Bell size={10}/> Saved
+                </button>
             </div>
-          )}
         </div>
-        {statusMessage && (
-          <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300">
-            {statusMessage}
-          </div>
-        )}
-      </section>
 
-      <section className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
-        <div className="border-b border-zinc-200 dark:border-zinc-800 px-5 py-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Announcements</h2>
+        <div className="flex items-center gap-2">
+            <div className="relative flex-1 md:flex-none">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={12} />
+                <input type="text" placeholder="Search..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full md:w-56 pl-8 pr-4 py-2.5 bg-zinc-50 border-none rounded-xl text-[11px] font-medium outline-none" />
+            </div>
+            {(user?.role === 'ADMIN' || user?.role === 'PRINCIPAL') && (
+                <button onClick={() => setIsAnnouncementModalOpen(true)} className="p-2.5 bg-zinc-900 text-white rounded-xl active:scale-95 shadow-lg"><Plus size={20}/></button>
+            )}
         </div>
-        {loading ? (
-          <div className="px-5 py-6 text-sm text-zinc-500">Loading...</div>
-        ) : announcements.length === 0 ? (
-          <div className="px-5 py-6 text-sm text-zinc-500">No announcements yet.</div>
-        ) : (
-          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {announcements.map((announcement) => (
-              <article key={announcement.id} className="px-5 py-4">
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{announcement.title}</h3>
-                  <span className="text-xs text-zinc-500 whitespace-nowrap">{formatDate(announcement.created_at)}</span>
-                </div>
-                <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">{announcement.content}</p>
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-                  <span>By {announcement.author_id ? (profileNameById[announcement.author_id] || 'School Staff') : 'School Admin'}</span>
-                  {(announcement.target_roles || []).map((role) => (
-                    <Badge key={`${announcement.id}-${role}`} variant="neutral">{role}</Badge>
-                  ))}
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
+      </div>
 
-      <section className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
-        <div className="border-b border-zinc-200 dark:border-zinc-800 px-5 py-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Events</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] border-collapse">
-            <thead>
-              <tr className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-zinc-500">Event Name</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-zinc-500">Date</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-zinc-500">Time</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-zinc-500">By</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-zinc-500">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {eventRows.map((event) => (
-                <tr key={event.id} className="border-b border-zinc-100 dark:border-zinc-800 last:border-b-0">
-                  <td className="px-4 py-3">
-                    <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{event.title}</div>
-                    <div className="text-xs text-zinc-500">{event.location || '-'}</div>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-zinc-700 dark:text-zinc-200">{event.dateLabel}</td>
-                  <td className="px-4 py-3 text-sm text-zinc-700 dark:text-zinc-200">{event.timeLabel}</td>
-                  <td className="px-4 py-3 text-sm text-zinc-700 dark:text-zinc-200">{event.byLabel}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant={event.rsvped ? 'secondary' : 'outline'}
-                        className="h-8 px-3 text-xs"
-                        onClick={() => handleRsvp(event)}
-                        disabled={busyEventId === event.id}
-                        title={`${event.rsvpCount} RSVP`}
-                      >
-                        <CheckCircle2 size={13} /> {event.rsvped ? 'RSVPed' : 'RSVP'}
-                      </Button>
-                      <Button
-                        variant={event.reminded ? 'secondary' : 'outline'}
-                        className="h-8 px-3 text-xs"
-                        onClick={() => handleRemindMe(event)}
-                        disabled={busyEventId === event.id}
-                      >
-                        <AlarmClock size={13} /> {event.reminded ? 'Reminder Set' : 'Remind Me'}
-                      </Button>
-                      {canManage && (
-                        <Button
-                          variant="danger"
-                          className="h-8 px-3 text-xs"
-                          onClick={() => handleDeleteEvent(event.id)}
-                          disabled={busyEventId === event.id}
-                        >
-                          <Trash2 size={13} /> Delete
-                        </Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      {/* LIST/GRID */}
+      {loading ? (
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
+              {[1,2,3].map(i => <div key={i} className="h-48 bg-zinc-100 rounded-2xl" />)}
+          </div>
+      ) : activeTab === 'calendar' ? <CalendarView items={items} /> : (
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredItems.map(item => <GlassCard key={item.id} item={item} />)}
+          </div>
+      )}
 
-      <Modal isOpen={isAnnouncementModalOpen} onClose={() => setIsAnnouncementModalOpen(false)} title="New Announcement">
-        <form onSubmit={handleCreateAnnouncement} className="space-y-4">
-          <div>
-            <label className="block text-sm font-semibold mb-1">Title</label>
-            <input
-              type="text"
-              className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none"
-              value={announcementForm.title}
-              onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })}
-              required
-            />
+      {/* REMINDER MODAL */}
+      <Modal isOpen={reminderModal.open} onClose={() => setReminderModal({ open: false, item: null })} title="Schedule Alert">
+          <div className="space-y-5">
+              <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
+                  <p className="text-[9px] font-black uppercase text-zinc-400 mb-1">Item Reference</p>
+                  <p className="text-xs font-bold text-zinc-900 truncate uppercase">{reminderModal.item?.title}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                      <label className="text-[9px] font-black uppercase text-zinc-400 ml-1">Reminder Date</label>
+                      <input type="date" value={remForm.date} onChange={e => setRemForm({...remForm, date: e.target.value})} className="w-full p-3 bg-zinc-50 border border-zinc-100 rounded-xl text-xs font-bold" />
+                  </div>
+                  <div className="space-y-1.5">
+                      <label className="text-[9px] font-black uppercase text-zinc-400 ml-1">Reminder Time</label>
+                      <input type="time" value={remForm.time} onChange={e => setRemForm({...remForm, time: e.target.value})} className="w-full p-3 bg-zinc-50 border border-zinc-100 rounded-xl text-xs font-bold" />
+                  </div>
+              </div>
+
+              <div className="p-4 bg-emerald-50/50 border border-emerald-100 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                      <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><MessageCircle size={18}/></div>
+                      <div>
+                          <p className="text-[10px] font-bold text-emerald-900 uppercase">WhatsApp Alert</p>
+                          <p className="text-[9px] font-medium text-emerald-700/70">Send notification automatically</p>
+                      </div>
+                  </div>
+                  <input type="checkbox" checked={remForm.whatsapp} onChange={e => setRemForm({...remForm, whatsapp: e.target.checked})} className="w-5 h-5 accent-emerald-600 cursor-pointer" />
+              </div>
+
+              <button onClick={handleSaveReminder} disabled={submitting} className="w-full py-4 bg-zinc-900 text-white rounded-2xl font-bold uppercase text-[11px] tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all shadow-xl shadow-zinc-200">
+                  <Send size={14}/> {submitting ? 'Updating...' : 'Confirm Schedule'}
+              </button>
           </div>
-          <div>
-            <label className="block text-sm font-semibold mb-1">Content</label>
-            <textarea
-              className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none min-h-[120px]"
-              value={announcementForm.content}
-              onChange={(e) => setAnnouncementForm({ ...announcementForm, content: e.target.value })}
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold mb-1">Target Roles (comma separated)</label>
-            <input
-              type="text"
-              className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none"
-              value={announcementForm.targetRoles.join(', ')}
-              onChange={(e) => setAnnouncementForm({
-                ...announcementForm,
-                targetRoles: e.target.value.split(',').map((item) => item.trim().toUpperCase()).filter(Boolean)
-              })}
-            />
-          </div>
-          <Button type="submit" className="w-full py-4"><Save size={18} /> Save Announcement</Button>
-        </form>
       </Modal>
 
-      <Modal isOpen={isEventModalOpen} onClose={() => setIsEventModalOpen(false)} title="New Event">
-        <form onSubmit={handleCreateEvent} className="space-y-4">
-          <div>
-            <label className="block text-sm font-semibold mb-1">Event Name</label>
-            <input
-              type="text"
-              className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none"
-              value={eventForm.title}
-              onChange={(e) => setEventForm({ ...eventForm, title: e.target.value })}
-              required
-            />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-semibold mb-1">Date</label>
-              <input
-                type="date"
-                className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none"
-                value={eventForm.date}
-                onChange={(e) => setEventForm({ ...eventForm, date: e.target.value })}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-1">Time</label>
-              <input
-                type="time"
-                className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none"
-                value={eventForm.time}
-                onChange={(e) => setEventForm({ ...eventForm, time: e.target.value })}
-                required
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold mb-1">Location</label>
-            <input
-              type="text"
-              className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none"
-              value={eventForm.location}
-              onChange={(e) => setEventForm({ ...eventForm, location: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold mb-1">Description</label>
-            <textarea
-              className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 outline-none min-h-[90px]"
-              value={eventForm.description}
-              onChange={(e) => setEventForm({ ...eventForm, description: e.target.value })}
-            />
-          </div>
-          <Button type="submit" className="w-full py-4"><Save size={18} /> Save Event</Button>
-        </form>
-      </Modal>
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 bg-zinc-900 text-white animate-in slide-in-from-bottom-4">
+            {toast.type === 'success' ? <CheckCircle2 size={16} className="text-emerald-400"/> : <AlertCircle size={16} className="text-rose-400"/>}
+            <span className="text-[10px] font-bold uppercase tracking-widest">{toast.msg}</span>
+        </div>
+      )}
     </div>
   );
 };
+
+const CalendarView = ({ items }: { items: HubItem[] }) => {
+    const [curr, setCurr] = useState(new Date());
+    const year = curr.getFullYear();
+    const month = curr.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const totalDays = new Date(year, month + 1, 0).getDate();
+    const days = [];
+    for (let i = 0; i < firstDay; i++) days.push(null);
+    for (let i = 1; i <= totalDays; i++) days.push(i);
+
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold font-sora text-zinc-900">{curr.toLocaleString('default', { month: 'long', year: 'numeric' })}</h2>
+                <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl">
+                    <button onClick={() => setCurr(new Date(year, month - 1, 1))} className="p-1.5 hover:bg-white rounded-lg text-zinc-400"><ChevronLeft size={16}/></button>
+                    <button onClick={() => setCurr(new Date(year, month + 1, 1))} className="p-1.5 hover:bg-white rounded-lg text-zinc-400"><ChevronRight size={16}/></button>
+                </div>
+            </div>
+            <div className="bg-white border border-zinc-100 rounded-3xl overflow-hidden shadow-sm overflow-x-auto">
+                <div className="min-w-[500px]">
+                    <div className="grid grid-cols-7 bg-zinc-50/10">
+                        {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d} className="py-3 text-center text-[9px] font-black uppercase text-zinc-400 tracking-widest">{d}</div>)}
+                    </div>
+                    <div className="grid grid-cols-7 auto-rows-[70px] sm:auto-rows-[110px]">
+                        {days.map((d, idx) => {
+                            const dateStr = `${year}-${String(month + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                            const dayEvents = items.filter(i => i.date.startsWith(dateStr));
+                            return (
+                                <div key={idx} className="p-2 border-r border-b border-zinc-50 last:border-r-0 relative group hover:bg-zinc-50/50 transition-colors">
+                                    {d && (
+                                        <>
+                                            <span className="text-[9px] font-bold text-zinc-400">{d}</span>
+                                            <div className="mt-1 space-y-1">
+                                                {dayEvents.slice(0, 3).map((e, i) => (
+                                                    <div key={i} className={cn("px-1.5 py-1 rounded-md text-[7px] font-bold truncate tracking-tight uppercase shadow-sm", e.type === 'event' ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-700")}>{e.title}</div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const TabBtn = ({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) => (
+    <button onClick={onClick} className={cn("px-5 py-2.5 rounded-full text-[9px] font-bold uppercase tracking-widest transition-all flex items-center gap-1.5", active ? "bg-zinc-900 text-white shadow-xl shadow-zinc-200" : "text-zinc-500 hover:bg-zinc-50")}>
+        {children}
+    </button>
+);
