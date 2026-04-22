@@ -1,14 +1,14 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppProvider } from './context/AppContext';
+import { ToastProvider } from './components/Toast';
+import GlobalNotificationManager from './components/GlobalNotificationManager';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Results } from './pages/Results';
 import { Fees } from './pages/Fees';
-import { Suspensions } from './pages/Suspensions';
-import { Events } from './pages/Events';
 import { Announcements } from './pages/Announcements';
 import { FeesManagement } from './pages/FeesManagement';
 import { UserDirectory } from './pages/UserDirectory';
@@ -22,9 +22,13 @@ import { TemplatesPermision } from './pages/TemplatesPermision';
 import { TemplatesList } from './pages/TemplatesList';
 import { TemplateDetail } from './pages/TemplateDetail';
 import { ProfileSettings } from './pages/ProfileSettings';
+import MyChats from './pages/MyChats';
+import { AdminOS } from './pages/AdminOS';
+import { Calendar } from './pages/Calendar';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
+  const location = useLocation();
   
   if (loading) {
     return (
@@ -34,63 +38,55 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     );
   }
 
-  if (!user) return <Navigate to="/login" />;
+  if (!user) return <Navigate to={`/login${location.search}`} />;
   return <Layout>{children}</Layout>;
 };
 
-const RoleProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles: string[] }> = ({ children, allowedRoles }) => {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-white dark:bg-zinc-950 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-zinc-900 dark:border-white border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
-
-  if (!user) return <Navigate to="/login" />;
-  if (!allowedRoles.includes(String(user.role).toUpperCase())) return <Navigate to="/dashboard" />;
-
-  return <Layout>{children}</Layout>;
+const AppContent = () => {
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route
+        path="/*"
+        element={
+          <ProtectedRoute>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/results" element={<Results />} />
+              <Route path="/fees" element={<Fees />} />
+              <Route path="/fees-management" element={<FeesManagement />} />
+              <Route path="/announcements" element={<Announcements />} />
+              <Route path="/directory" element={<UserDirectory />} />
+              <Route path="/classes" element={<ClassesManagement />} />
+              <Route path="/results-management" element={<ResultsManagement />} />
+              <Route path="/chat" element={<Chat />} />
+              <Route path="/my-chats" element={<MyChats />} />
+              <Route path="/assignments" element={<Assignments />} />
+              <Route path="/timetable" element={<Timetable />} />
+              <Route path="/my-classroom" element={<MyClassroom />} />
+              <Route path="/templates" element={<TemplatesList />} />
+              <Route path="/templates/permissions" element={<TemplatesPermision />} />
+              <Route path="/templates/:id" element={<TemplateDetail />} />
+              <Route path="/profile-settings" element={<ProfileSettings />} />
+              <Route path="/admin" element={<AdminOS />} />
+              <Route path="/calendar" element={<Calendar />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </ProtectedRoute>
+        }
+      />
+    </Routes>
+  );
 };
 
 export default function App() {
   return (
     <AuthProvider>
       <AppProvider>
-        <Router>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            
-            {/* Common Routes */}
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/results-management" element={<ProtectedRoute><ResultsManagement /></ProtectedRoute>} />
-            <Route path="/results" element={<ProtectedRoute><Results /></ProtectedRoute>} />
-            <Route path="/fees" element={<ProtectedRoute><Fees /></ProtectedRoute>} />
-            <Route path="/suspensions" element={<ProtectedRoute><Suspensions /></ProtectedRoute>} />
-            <Route path="/events" element={<ProtectedRoute><Events /></ProtectedRoute>} />
-            <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
-            <Route path="/assignments" element={<ProtectedRoute><Assignments /></ProtectedRoute>} />
-            <Route path="/profile-settings" element={<ProtectedRoute><ProfileSettings /></ProtectedRoute>} />
-            
-            {/* Functional Routes */}
-            <Route path="/fees-management" element={<ProtectedRoute><FeesManagement /></ProtectedRoute>} />
-            <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
-            <Route path="/timetable" element={<ProtectedRoute><Timetable /></ProtectedRoute>} />
-            <Route path="/my-classroom" element={<ProtectedRoute><MyClassroom /></ProtectedRoute>} />
-            <Route path="/templates" element={<RoleProtectedRoute allowedRoles={['TEACHER', 'ADMIN', 'PRINCIPAL']}><TemplatesList /></RoleProtectedRoute>} />
-            <Route path="/template-detail/:templateId" element={<RoleProtectedRoute allowedRoles={['TEACHER', 'ADMIN', 'PRINCIPAL']}><TemplateDetail /></RoleProtectedRoute>} />
-            <Route path="/templates-permission" element={<RoleProtectedRoute allowedRoles={['TEACHER', 'ADMIN', 'PRINCIPAL']}><TemplatesPermision /></RoleProtectedRoute>} />
-            
-            {/* Admin Routes */}
-            <Route path="/students" element={<ProtectedRoute><UserDirectory /></ProtectedRoute>} />
-            <Route path="/teachers" element={<ProtectedRoute><UserDirectory /></ProtectedRoute>} />
-            <Route path="/classes" element={<ProtectedRoute><ClassesManagement /></ProtectedRoute>} />
-            
-            <Route path="/" element={<Navigate to="/dashboard" />} />
-          </Routes>
-        </Router>
+        <ToastProvider>
+           <GlobalNotificationManager />
+           <AppContent />
+        </ToastProvider>
       </AppProvider>
     </AuthProvider>
   );
