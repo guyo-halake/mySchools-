@@ -509,8 +509,16 @@ export const TemplateDetail: React.FC = () => {
       status: 'PUBLISHED'
     }));
 
+    const dbTermsSync: AcademicTerm[] = (termsForYear || []).map(term => ({
+      termNumber: parseTermNumberFromName(term.name) || 1,
+      name: term.name,
+      startDate: term.start_date || '',
+      endDate: term.end_date || ''
+    })).sort((a, b) => a.termNumber - b.termNumber);
+
     return {
       ...baseCalendar,
+      terms: dbTermsSync.length > 0 ? dbTermsSync : baseCalendar.terms,
       holidays: dbHolidays.length > 0 ? dbHolidays : baseCalendar.holidays,
       events: dbEvents.length > 0 ? dbEvents : baseCalendar.events
     };
