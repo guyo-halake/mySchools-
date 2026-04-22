@@ -16,6 +16,7 @@ interface AppContextType {
   suspensions: SuspensionComplaint[];
   events: SchoolEvent[];
   announcements: Announcement[];
+  parents: Profile[];
   schoolInfo: any;
   loading: boolean;
   
@@ -71,6 +72,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       suspensions: [],
       events: [],
       announcements: [],
+      parents: [],
       schoolInfo: null,
     };
   });
@@ -88,7 +90,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         streams,
         announcements,
         events,
-        schoolInfo
+        schoolInfo,
+        parents
       ] = await Promise.all([
         api.getStudents(user.school_id),
         api.getTeachers(user.school_id),
@@ -97,7 +100,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         api.getStreams(user.school_id),
         api.getAnnouncements(user.school_id),
         api.getEvents(user.school_id),
-        api.getSchool(user.school_id)
+        api.getSchool(user.school_id),
+        api.getParents(user.school_id)
       ]);
 
       setData(prev => ({
@@ -109,6 +113,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         streams,
         announcements,
         events,
+        parents,
         schoolInfo: schoolInfo || prev.schoolInfo
       }));
     } catch (error) {
