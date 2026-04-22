@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Card, Table, Button, Badge, Modal } from '../components/UI';
-import { Search, Plus, Upload, Save, UserPlus, Trash2, Edit } from 'lucide-react';
+import { Search, Plus, Upload, Save, UserPlus, Trash2, Edit, Eye } from 'lucide-react';
+import { StudentFullDetailsView } from '../components/StudentFullDetailsView';
 
 export const StudentsManagement: React.FC = () => {
   const { students, classes, teachers, addStudent, updateStudent, deleteStudent } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [fullViewStudent, setFullViewStudent] = useState<any>(null);
   const [formData, setFormData] = useState({
     name: '',
     admissionNumber: '',
@@ -39,6 +41,15 @@ export const StudentsManagement: React.FC = () => {
     setFormData({ ...s });
     setIsModalOpen(true);
   };
+
+  if (fullViewStudent) {
+    return (
+      <StudentFullDetailsView 
+        student={fullViewStudent} 
+        onClose={() => setFullViewStudent(null)} 
+      />
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -83,6 +94,7 @@ export const StudentsManagement: React.FC = () => {
               <td className="px-4 py-4 text-sm text-gray-500">{s.parentEmail}</td>
               <td className="px-4 py-4">
                 <div className="flex gap-2">
+                  <Button variant="ghost" className="p-2 h-auto" onClick={() => setFullViewStudent(s)}><Eye size={16} /></Button>
                   <Button variant="ghost" className="p-2 h-auto" onClick={() => handleEdit(s)}><Edit size={16} /></Button>
                   <Button variant="ghost" className="p-2 h-auto text-red-500" onClick={() => deleteStudent(s.id)}><Trash2 size={16} /></Button>
                 </div>
