@@ -1,0 +1,45 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - preview
+  pull_request:
+    branches:
+      - main
+      - preview
+
+jobs:
+  validate:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+
+  deploy-preview:
+    name: Deploy to Preview
+    needs: validate
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/preview'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Vercel (Preview)
+        run: npx vercel deploy --prebuilt --token ${{ secrets.VERCEL_TOKEN }}
+
+  deploy-production:
+    name: Deploy to Production
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Vercel (Production)
+        run: npx vercel deploy --prod --prebuilt --token ${{ secrets.VERCEL_TOKEN }}
