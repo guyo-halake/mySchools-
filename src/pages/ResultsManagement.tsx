@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { Button, Badge, Modal } from '../components/UI';
+import { StudentFullDetailsView } from '../components/StudentFullDetailsView';
 import { Eye, PencilLine, Download, Save, Pause, ArrowUpRight } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -87,6 +88,7 @@ export const ResultsManagement: React.FC = () => {
   const [viewStudentResults, setViewStudentResults] = useState<any[]>([]);
   const [viewStudentSubjects, setViewStudentSubjects] = useState<any[]>([]);
   const [viewStudentLoading, setViewStudentLoading] = useState(false);
+  const [fullViewStudent, setFullViewStudent] = useState<any>(null);
   const [onlyMySubjects, setOnlyMySubjects] = useState(false);
   const [teacherSubjectIds, setTeacherSubjectIds] = useState<string[]>([]);
   const [studentTargetMode, setStudentTargetMode] = useState<'ALL' | 'SUBJECT_GROUP' | 'UNRECORDED'>('ALL');
@@ -721,6 +723,15 @@ export const ResultsManagement: React.FC = () => {
     }
   };
 
+  if (fullViewStudent) {
+    return (
+      <StudentFullDetailsView 
+        student={fullViewStudent} 
+        onClose={() => setFullViewStudent(null)} 
+      />
+    );
+  }
+
   if (loading && streams.length === 0) return <div className="p-10 font-sans font-bold text-zinc-900 animate-pulse">Establishing Live Connection...</div>;
 
   const selectedSubject = subjects.find((s: any) => s.id === selection.subjectId);
@@ -1317,7 +1328,7 @@ export const ResultsManagement: React.FC = () => {
                             </div>
                           ) : (
                             <div className="flex items-center gap-1">
-                              <Button variant="ghost" className="h-8 w-8 p-0" onClick={() => openStudentDetails(s)} type="button"><Eye size={14} /></Button>
+                              <Button variant="ghost" className="h-8 w-8 p-0" onClick={() => setFullViewStudent(s)} type="button"><Eye size={14} /></Button>
                               <Button variant="ghost" className="h-8 w-8 p-0" onClick={() => { setShowRecordForm(true); setWorkflowMode('MY_ENTRIES'); setSelectedStudentIds([s.id]); }} type="button"><PencilLine size={14} /></Button>
                               <Button variant="ghost" className="h-8 w-8 p-0" onClick={() => exportStudentSummary(s)} type="button"><Download size={14} /></Button>
                             </div>
