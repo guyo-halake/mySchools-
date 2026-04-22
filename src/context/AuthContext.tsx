@@ -117,44 +117,92 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [isDarkMode]);
 
-  const login = async (email: string, password?: string) => {
-    console.log('--- Attempting Login ---');
-    const cleanEmail = email.trim().toLowerCase();
-    console.log('Email:', cleanEmail);
+  const login = async (identifier: string, password?: string) => {
+    console.log('--- Attempting Smart Login ---');
+    const cleanId = identifier.trim();
+    console.log('Identifier:', cleanId);
 
-    // 1. Check if the user exists at all (Case-insensitive email)
-    const { data: userExists, error: existError } = await supabase
+    let targetEmail = '';
+
+    // 1. Resolve Identity
+    if (cleanId.includes('@')) {
+      // Standard Email Login
+      targetEmail = cleanId.toLowerCase();
+    } else {
+      // Admission Number Login (Students)
+      console.log('--- RECOGNIZED ADM NO ---');
+      console.log('Resolving ADM:', cleanId);
+      
+      // 1. Find Student record first
+      const { data: students, error: studentError } = await supabase
+        .from('students')
+        .select('id')
+        .ilike('adm_no', cleanId)
+        .limit(1);
+
+      if (studentError) {
+        console.error('Student query error:', studentError);
+        throw new Error('System error while looking up student.');
+      }
+
+      if (!students || students.length === 0) {
+        console.warn('Login Error: ADM NO not found ->', cleanId);
+        throw new Error(`The admission number "${cleanId}" was not found.`);
+      }
+
+      const student = students[0];
+
+      // 2. Resolve Profile Email from Student ID
+      const { data: profiles, error: profileRefError } = await supabase
+        .from('profiles')
+        .select('email')
+        .eq('id', student.id)
+        .limit(1);
+
+      if (profileRefError || !profiles || profiles.length === 0) {
+        console.error('Profile resolution failed:', profileRefError);
+        throw new Error('Student record exists but has no account profile.');
+      }
+      
+      targetEmail = profiles[0].email.toLowerCase();
+      console.log('Identity Resolved to:', targetEmail);
+    }
+
+    // 2. Check if the profile exists
+    const { data: userEntries, error: existError } = await supabase
       .from('profiles')
       .select('email, password')
-      .ilike('email', cleanEmail)
-      .maybeSingle();
+      .ilike('email', targetEmail)
+      .limit(1);
 
     if (existError) {
       console.error('Database query error:', existError);
       throw new Error('Database connection issue.');
     }
 
-    if (!userExists) {
-      console.warn('Login Failed: User not found with email:', email);
-      throw new Error('No account found with this email.');
+    if (!userEntries || userEntries.length === 0) {
+      throw new Error('No account found for this identity.');
     }
 
-    // 2. Check password if provided
+    const userExists = userEntries[0];
+
+    // 3. Password Verification
     if (password) {
       if (userExists.password !== password) {
-        console.warn('Login Failed: Incorrect password for:', email);
+        console.warn('Login Failed: Incorrect password.');
         throw new Error('Incorrect password. Please try again.');
       }
     }
 
-    // 3. Fetch full profile (Case-insensitive)
-    const { data: profile, error: profileError } = await supabase
+    // 4. Load full profile
+    const { data: profiles, error: profileError } = await supabase
       .from('profiles')
       .select('*')
-      .ilike('email', cleanEmail)
-      .single();
+      .ilike('email', targetEmail)
+      .limit(1);
 
-    if (profile && !profileError) {
+    if (profiles && profiles.length > 0 && !profileError) {
+       const profile = profiles[0];
        console.log('Login Success! Profile:', profile.full_name, 'Role:', profile.role);
        rememberSchoolId(profile.school_id);
        setUser(profile);
