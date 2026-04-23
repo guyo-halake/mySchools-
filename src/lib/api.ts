@@ -23,6 +23,37 @@ export const api = {
     return data as any[];
   },
 
+  async getStudentsByParentId(schoolId: string, parentId: string): Promise<Student[]> {
+    if (!isUuid(schoolId) || !isUuid(parentId)) return [];
+    const { data, error } = await supabase
+      .from('students')
+      .select('*, profile:profiles!students_id_fkey(*), stream:streams!students_stream_id_fkey(*, class:classes!streams_class_id_fkey(*), teacher:profiles!streams_class_teacher_id_fkey(*))')
+      .eq('school_id', schoolId)
+      .eq('parent_id', parentId);
+
+    if (error) {
+      console.error('API getStudentsByParentId error:', error);
+      throw error;
+    }
+    return data as any[];
+  },
+
+  async getStudentByProfileId(schoolId: string, profileId: string): Promise<Student | null> {
+    if (!isUuid(schoolId) || !isUuid(profileId)) return null;
+    const { data, error } = await supabase
+      .from('students')
+      .select('*, profile:profiles!students_id_fkey(*), stream:streams!students_stream_id_fkey(*, class:classes!streams_class_id_fkey(*), teacher:profiles!streams_class_teacher_id_fkey(*))')
+      .eq('school_id', schoolId)
+      .eq('id', profileId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('API getStudentByProfileId error:', error);
+      throw error;
+    }
+    return data;
+  },
+
   async getStudentById(studentId: string): Promise<any> {
     if (!isUuid(studentId)) return null;
     const { data, error } = await supabase
@@ -69,6 +100,24 @@ export const api = {
       .eq('role', 'PARENT');
     if (error) throw error;
     return data || [];
+  },
+
+  async bookAppointment(appointment: { 
+    school_id: string, 
+    parent_id: string, 
+    teacher_id: string, 
+    student_id: string, 
+    appointment_date: string, 
+    appointment_time: string, 
+    reason: string 
+  }) {
+    const { data, error } = await supabase
+      .from('appointments')
+      .insert(appointment)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
   },
 
   // 3. ACADEMICS
@@ -277,9 +326,33 @@ export const api = {
     const { data, error } = await supabase
       .from('events')
       .select('*')
-      .eq('school_id', schoolId);
+      .eq('school_id', schoolId)
+      .order('date', { ascending: true });
     if (error) throw error;
     return data as any[];
+  },
+
+  async getNotifications(userId: string, schoolId: string) {
+    if (!isUuid(userId) || !isUuid(schoolId)) return [];
+    const { data, error } = await supabase
+      .from('in_app_notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('school_id', schoolId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('API getNotifications error:', error);
+      return [];
+    }
+    return data || [];
+  },
+
+  async markNotificationAsRead(id: string) {
+    if (!isUuid(id)) return;
+    await supabase
+      .from('in_app_notifications')
+      .update({ is_read: true })
+      .eq('id', id);
   },
 
   async getSchool(schoolId: string) {
