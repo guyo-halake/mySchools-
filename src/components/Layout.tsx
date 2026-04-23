@@ -89,30 +89,51 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id || !user?.school_id) return;
+    
     const fetchNotifs = async () => {
-      const data = await api.getNotifications(user.id);
-      setNotifications(data || []);
+      try {
+        const data = await api.getNotifications(user.id, user.school_id);
+        setNotifications(data || []);
+      } catch (err) {
+        console.error('Failed to fetch global notifs:', err);
+      }
     };
+    
     fetchNotifs();
 
     const channel = supabase
-      .channel('notif-status')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'in_app_notifications', filter: `user_id=eq.${user.id}` }, (p) => {
-        setNotifications(prev => [p.new, ...prev]);
-      })
+      .channel(`user-notifs-${user.id}`)
+      .on(
+        'postgres_changes', 
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'in_app_notifications', 
+          filter: `user_id=eq.${user.id}` 
+        }, 
+        (payload) => {
+          if (payload.new && payload.new.school_id === user.school_id) {
+            setNotifications(prev => [payload.new, ...prev]);
+          }
+        }
+      )
       .subscribe();
+
     return () => { supabase.removeChannel(channel); };
-  }, [user?.id]);
+  }, [user?.id, user?.school_id]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (notifRef.current && !notifRef.current.contains(event.target as Node)) setIsNotifOpen(false);
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) setIsProfileOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -319,14 +340,52 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 {isDarkMode ? <Sun size={15} /> : <Moon size={15} />}
               </button>
               
-              <div className="flex items-center gap-3 pl-3 border-l border-zinc-100 dark:border-zinc-800 ml-1">
-                <div className="text-right hidden sm:block">
-                  <p className="text-[11px] font-semibold leading-none text-zinc-900 dark:text-zinc-100">{user.full_name}</p>
-                  <p className="text-[9px] text-zinc-400 mt-0.5 uppercase tracking-widest font-bold">{user.role}</p>
-                </div>
-                <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 shadow-sm overflow-hidden shrink-0">
-                  {getUserInitials(user.full_name)}
-                </div>
+              <div className="relative" ref={profileRef}>
+                <button 
+                  onClick={() => setIsProfileOpen(!isProfileOpen)}
+                  className="flex items-center gap-3 pl-3 border-l border-zinc-100 dark:border-zinc-800 ml-1 group transition-all"
+                >
+                  <div className="text-right hidden sm:block">
+                    <p className="text-[11px] font-semibold leading-none text-zinc-900 dark:text-zinc-100 group-hover:text-emerald-500 transition-colors uppercase tracking-tight">{user.full_name}</p>
+                    <p className="text-[9px] text-zinc-400 mt-1 uppercase tracking-widest font-black leading-none">{user.role}</p>
+                  </div>
+                  <div className="w-9 h-9 rounded-xl bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-black text-zinc-900 dark:text-zinc-100 border border-zinc-100 dark:border-zinc-700 shadow-sm overflow-hidden shrink-0 group-hover:border-emerald-500/50 transition-all active:scale-95">
+                    {getUserInitials(user.full_name)}
+                  </div>
+                </button>
+
+                {isProfileOpen && (
+                  <div className="absolute right-0 mt-3 w-64 bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-[100]">
+                    <div className="p-5 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+                      <p className="text-[12px] font-black text-zinc-900 dark:text-white uppercase tracking-tight leading-none mb-1.5">{user.full_name}</p>
+                      <p className="text-[10px] font-bold text-zinc-400 truncate">{user.email}</p>
+                    </div>
+                    <div className="p-2">
+                       <Link 
+                        to="/settings" 
+                        onClick={() => setIsProfileOpen(false)}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 text-[11px] font-bold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-xl transition-all"
+                       >
+                         <Settings size={14} className="text-zinc-400" /> Settings & Accounts
+                       </Link>
+                       <Link 
+                        to="/privacy" 
+                        onClick={() => setIsProfileOpen(false)}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 text-[11px] font-bold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-xl transition-all"
+                       >
+                         <ShieldCheck size={14} className="text-zinc-400" /> Privacy Policy
+                       </Link>
+                    </div>
+                    <div className="p-2 border-t border-zinc-100 dark:border-zinc-800">
+                       <button 
+                        onClick={() => { logout(); setIsProfileOpen(false); }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 text-[11px] font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/10 rounded-xl transition-all"
+                       >
+                         <LogOut size={14} /> Log Out
+                       </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
