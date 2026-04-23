@@ -102,14 +102,14 @@ export const api = {
     return data || [];
   },
 
-  async bookAppointment(appointment: { 
-    school_id: string, 
-    parent_id: string, 
-    teacher_id: string, 
-    student_id: string, 
-    appointment_date: string, 
-    appointment_time: string, 
-    reason: string 
+  async bookAppointment(appointment: {
+    school_id: string,
+    parent_id: string,
+    teacher_id: string,
+    student_id: string,
+    appointment_date: string,
+    appointment_time: string,
+    reason: string
   }) {
     const { data, error } = await supabase
       .from('appointments')
@@ -142,6 +142,28 @@ export const api = {
     return (data || []) as Subject[];
   },
 
+  async getAppointmentsByTeacher(teacherId: string) {
+    if (!isUuid(teacherId)) return [];
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('*, parent:profiles!appointments_parent_id_fkey(*), student:students(id, profile:profiles!students_id_fkey(*))')
+      .eq('teacher_id', teacherId)
+      .order('appointment_date', { ascending: true });
+    if (error) throw error;
+    return data;
+  },
+
+  async getStudentsByParentId(schoolId: string, parentId: string) {
+    if (!isUuid(schoolId) || !isUuid(parentId)) return [];
+    const { data, error } = await supabase
+      .from('students')
+      .select('*, profile:profiles!students_id_fkey(*), class:classes(*), stream:streams(*)')
+      .eq('school_id', schoolId)
+      .eq('parent_id', parentId);
+    if (error) throw error;
+    return data;
+  },
+
   async getExams(schoolId: string): Promise<Exam[]> {
     if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
@@ -155,7 +177,7 @@ export const api = {
 
   async upsertTerm(term: { school_id: string, name: string, year: number, start_date: string, end_date: string }) {
     if (!isUuid(term.school_id)) return null;
-    
+
     // Check for existing
     const { data: existing } = await supabase
       .from('terms')
@@ -187,7 +209,7 @@ export const api = {
 
   async setCurrentTerm(schoolId: string, termId: string) {
     if (!isUuid(schoolId) || !isUuid(termId)) return null;
-    
+
     // 1. Reset all
     await supabase
       .from('terms')
@@ -282,14 +304,14 @@ export const api = {
       .eq('school_id', schoolId)
       .order('name', { ascending: true });
     if (error) throw error;
-    
+
     // De-duplicate by name to prevent "Form 1" repeating if multiple records exist
     const uniqueClasses = (data || []).reduce((acc: any[], current: any) => {
       const x = acc.find(item => item.name === current.name);
       if (!x) return acc.concat([current]);
       else return acc;
     }, []);
-    
+
     return uniqueClasses;
   },
 
@@ -578,7 +600,7 @@ export const api = {
 
   async getFeesFull(schoolId: string): Promise<any[]> {
     if (!isUuid(schoolId)) return [];
-    
+
     // 1. Try direct match
     const { data, error } = await supabase
       .from('fees')
@@ -596,9 +618,9 @@ export const api = {
       `)
       .eq('school_id', schoolId)
       .order('created_at', { ascending: false });
-    
+
     if (error) throw error;
-    
+
     // 2. If no data, try to find fees where the student belongs to this school 
     // (Legacy protection in case school_id in fees table is null)
     if (!data || data.length === 0) {
@@ -618,7 +640,7 @@ export const api = {
         `)
         .eq('student.school_id', schoolId)
         .order('created_at', { ascending: false });
-      
+
       if (!legacyErr && legacyFees && legacyFees.length > 0) return legacyFees;
     }
 
@@ -652,7 +674,7 @@ export const api = {
     if (!isUuid(schoolId)) return [];
     const currentTerm = await this.getLatestTerm(schoolId);
     if (!currentTerm?.id) return [];
-    
+
     // We update EVERY fee record for the school in the current term to have the new amount_due
     const { data, error } = await supabase
       .from('fees')
@@ -1031,12 +1053,12 @@ export const api = {
       .from('fee_structure_items')
       .select('*')
       .eq('structure_id', structureId);
-    
+
     const totalAmount = (items || []).reduce((acc, curr) => acc + Number(curr.amount), 0);
 
     // 3. Find target students
     let studentQuery = supabase.from('students').select('id, school_id, parent_id, profile:profiles!students_id_fkey(full_name)').eq('school_id', structure.school_id);
-    
+
     if (structure.target_type === 'CLASS') {
       const { data: streams } = await supabase.from('streams').select('id').eq('class_id', structure.target_id);
       const streamIds = (streams || []).map(s => s.id);
@@ -1099,7 +1121,7 @@ export const api = {
         .from('fee_types')
         .select('*')
         .eq('school_id', schoolId);
-      
+
       // 2. Scan existing fees for types used in records (auto-detect)
       const { data: existing } = await supabase
         .from('fees')
@@ -1107,7 +1129,7 @@ export const api = {
 
       const masterTypes = types || [];
       const autoDetected = (existing || []).map(e => e.type).filter(Boolean);
-      
+
       const allNames = Array.from(new Set([
         ...masterTypes.map(t => t.name),
         ...autoDetected
@@ -1139,7 +1161,7 @@ export const api = {
 
     const today = new Date().toISOString().split('T')[0];
     let selectedTerm = terms.find(t => t.start_date && t.end_date && today >= t.start_date && today <= t.end_date);
-    
+
     // Fallback to latest term if no active match
     if (!selectedTerm) {
       selectedTerm = [...terms].sort((a, b) => (b.start_date || '').localeCompare(a.start_date || ''))[0];

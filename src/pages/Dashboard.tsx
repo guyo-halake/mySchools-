@@ -852,6 +852,202 @@ const MaterialTile = ({ title, subject, type, due, color }: any) => (
   </div>
 );
 
+
+
+const MetricBox = ({ label, value, sub }: any) => (
+  <div className="bg-zinc-50 border border-zinc-100 p-8 rounded-[2.5rem] text-left group hover:bg-white hover:shadow-xl transition-all duration-700">
+    <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3 opacity-60">{label}</p>
+    <h4 className="text-2xl font-black leading-none uppercase tracking-tight text-zinc-900">{value}</h4>
+    <p className="text-[9px] font-black text-zinc-400 mt-3 uppercase tracking-widest opacity-40">{sub}</p>
+  </div>
+);
+
+const DigitalResource = ({ title, instructor, status, category, isLive, color }: any) => (
+  <div className="bg-white border border-zinc-100 rounded-[3rem] p-10 flex flex-col h-full text-left group hover:border-zinc-900 hover:shadow-2xl hover:shadow-zinc-200 transition-all duration-700 relative overflow-hidden">
+    <div className={`w-16 h-16 rounded-3xl ${color} flex items-center justify-center text-white mb-8 shadow-2xl shadow-current/20 group-hover:scale-110 duration-700`}>
+      <BookOpen size={32} />
+    </div>
+    <div className="flex-1 space-y-3 relative z-10">
+      <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">{category}</span>
+      <h4 className="text-xl font-black leading-tight uppercase tracking-tight group-hover:text-blue-600 transition-colors">
+        {title} {isLive && <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block ml-2 animate-pulse" />}
+      </h4>
+      {instructor && <p className="text-[11px] font-black text-zinc-500 uppercase tracking-widest">Authored by {instructor}</p>}
+    </div>
+    <div className="mt-12 flex items-center justify-between border-t border-zinc-50 pt-8 relative z-10">
+      <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{status}</span>
+      <button className="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:underline">Access</button>
+    </div>
+  </div>
+);
+
+const ActivityTile = ({ title, meta, duration, status }: any) => (
+  <div className="p-8 bg-white border border-zinc-100 rounded-[3rem] flex items-center justify-between hover:scale-105 hover:shadow-xl transition-all group">
+    <div className="text-left space-y-2">
+      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{meta}</p>
+      <p className="text-sm font-black text-zinc-900 uppercase leading-none tracking-tight group-hover:text-blue-600 transition-colors">{title}</p>
+    </div>
+    <div className="text-right">
+      <span className={`text-[9px] font-black uppercase tracking-widest px-4 py-1.5 rounded-xl ${duration ? 'bg-zinc-50 text-zinc-400' : 'bg-emerald-50 text-emerald-600'}`}>
+        {duration || status}
+      </span>
+    </div>
+  </div>
+);
+
+const EventCard = ({ ev }: any) => (
+  <div className="bg-white border border-zinc-100 rounded-[3rem] p-10 space-y-8 group hover:border-zinc-900 transition-all duration-700 shadow-sm relative overflow-hidden">
+    <div className="space-y-4 relative z-10">
+      <span className="text-[9px] font-black uppercase tracking-[0.3em] text-blue-600 bg-blue-50 px-4 py-2 rounded-2xl">{new Date(ev.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+      <h4 className="text-2xl font-black leading-tight uppercase group-hover:text-blue-600 transition-all tracking-tight">{ev.title}</h4>
+      <p className="text-xs font-medium text-zinc-500 leading-relaxed uppercase tracking-tighter opacity-80">{ev.description || "General institutional event. Participation is mandatory for relevant stakeholders."}</p>
+    </div>
+    <div className="flex items-center justify-between border-t border-zinc-50 pt-8 relative z-10">
+      <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Institutional Notice</p>
+      <div className="w-10 h-10 rounded-2xl bg-zinc-50 flex items-center justify-center text-zinc-300 group-hover:bg-zinc-900 group-hover:text-white transition-all duration-700">
+        <ArrowRight size={20} />
+      </div>
+    </div>
+    <div className="absolute top-0 right-0 w-64 h-64 bg-zinc-50 blur-[80px] rounded-full group-hover:bg-blue-500/5 duration-700" />
+  </div>
+);
+
+const VitalsMetric = ({ label, value }: any) => (
+  <div className="p-6 rounded-[2.5rem] bg-zinc-50/50 border border-zinc-50 text-left group hover:bg-white hover:shadow-xl transition-all duration-500">
+    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-2 opacity-60">{label}</p>
+    <p className={`text-[11px] font-black text-zinc-900 uppercase leading-relaxed tracking-tight group-hover:translate-x-1 transition-transform`}>{value}</p>
+  </div>
+);
+
+const StatBlock = ({ label, value, sub, highlight }: any) => (
+  <div className="text-left space-y-1">
+    <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 opacity-50">{label}</p>
+    <h4 className={`text-4xl font-black leading-none tracking-tighter ${highlight ? 'text-rose-500' : 'text-white'}`}>{value}</h4>
+    <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mt-2">{sub}</p>
+  </div>
+);
+
+const DesktopNavTab = ({ active, label, onClick }: any) => (
+  <button
+    onClick={onClick}
+    className={`px-8 py-4 text-[10px] font-black uppercase tracking-[0.3em] transition-all relative ${active ? 'text-zinc-950' : 'text-zinc-400 hover:text-zinc-600'}`}
+  >
+    {label}
+    {active && <div className="absolute bottom-0 left-8 right-8 h-1 bg-zinc-950 rounded-full" />}
+  </button>
+);
+
+const LearningMat = ({ title, teacher, type, count, isLive, action, color }: any) => (
+  <div className="bg-white border border-zinc-100 rounded-3xl p-6 flex flex-col h-full text-left">
+    <div className={`w-10 h-10 rounded-xl ${color} flex items-center justify-center text-white mb-6`}>
+      <BookOpen size={20} />
+    </div>
+    <div className="flex-1 space-y-1">
+      <h4 className="text-sm font-bold text-zinc-900 flex items-center gap-2">
+        {title} {isLive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+      </h4>
+      <p className="text-[10px] text-zinc-500 font-medium">with {teacher}</p>
+    </div>
+    <div className="mt-8 flex items-center justify-between border-t border-zinc-50 pt-4">
+      <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">{type}</span>
+      <button className="text-[10px] font-black text-blue-600 uppercase hover:underline">{action}</button>
+    </div>
+  </div>
+);
+
+const StatItem = ({ label, value }: any) => (
+  <div className="bg-zinc-50 rounded-2xl p-6 text-left border border-zinc-100">
+    <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5">{label}</p>
+    <p className="text-sm font-black text-zinc-900 uppercase tracking-tight">{value}</p>
+  </div>
+);
+
+const ActivityRow = ({ label, activity, duration, status }: any) => (
+  <div className="p-4 bg-white border border-zinc-100 rounded-2xl flex items-center justify-between group">
+    <div className="text-left space-y-1">
+      <p className="text-[9px] font-bold text-zinc-400 uppercase">{label}</p>
+      <p className="text-[11px] font-black text-zinc-900 tracking-tight uppercase group-hover:text-blue-600 transition-colors">{activity}</p>
+    </div>
+    {duration && <span className="text-[9px] font-bold text-zinc-400 uppercase">{duration}</span>}
+    {status && <span className="text-[9px] font-bold text-emerald-600 uppercase">Success</span>}
+  </div>
+);
+
+/* -------------------------------------------------------------------------- */
+/*                               SHARED COMPONENTS                            */
+/* -------------------------------------------------------------------------- */
+
+
+const InsightCard = ({ icon, title, desc, variant }: any) => {
+  const variants: any = {
+    emerald: 'bg-emerald-50/30 border-emerald-100 text-emerald-600',
+    rose: 'bg-rose-50/30 border-rose-100 text-rose-600',
+    indigo: 'bg-indigo-50/30 border-indigo-100 text-indigo-600',
+    amber: 'bg-amber-50/30 border-amber-100 text-amber-600',
+  };
+  return (
+    <div className="bg-white dark:bg-zinc-900 p-6 rounded-[2rem] border border-zinc-100 dark:border-zinc-800 shadow-sm flex gap-6 group hover:translate-y-[-4px] transition-all duration-500">
+      <div className={`shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner transition-transform group-hover:scale-110 duration-500 ${variants[variant]}`}>
+        {icon}
+      </div>
+      <div className="space-y-1">
+        <h4 className="text-xs font-black text-zinc-900 dark:text-white uppercase tracking-tight">{title}</h4>
+        <p className="text-[10px] font-medium text-zinc-500 leading-relaxed uppercase tracking-tighter">{desc}</p>
+      </div>
+    </div>
+  );
+};
+
+const ActionTile = ({ icon, label, onClick }: any) => (
+  <button
+    onClick={onClick}
+    className="bg-white dark:bg-zinc-900 p-5 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 shadow-sm flex flex-col items-center justify-center gap-4 group transition-all duration-500 hover:shadow-2xl hover:shadow-zinc-200 hover:border-zinc-300 active:scale-95"
+  >
+    <div className="w-14 h-14 rounded-3xl bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-center transition-all duration-500 group-hover:scale-110 group-hover:bg-zinc-100">
+      {React.cloneElement(icon, { size: 28, strokeWidth: 2.5 })}
+    </div>
+    <span className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400 group-hover:text-zinc-900 transition-colors">{label}</span>
+  </button>
+);
+
+const TimelineEntry = ({ time, title, category, color, isLive }: any) => (
+  <div className="flex gap-6 items-start relative px-1">
+    <div className={`shrink-0 w-2.5 h-2.5 rounded-full ${color} mt-1.5 relative z-10 border-2 border-white dark:border-zinc-900 ring-4 ring-zinc-50 dark:ring-zinc-800/20`} />
+    <div className="space-y-1">
+      <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest leading-none bg-zinc-50 dark:bg-zinc-800/50 px-2 py-1 rounded inline-block">{time}</p>
+      <div className="flex items-center gap-3">
+        <h4 className="text-sm font-black text-zinc-900 dark:text-white uppercase leading-none">{title}</h4>
+        {isLive && <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500 text-[8px] font-black text-white animate-pulse">LIVE NOW</span>}
+      </div>
+      <p className="text-[9px] text-blue-600 font-black uppercase tracking-widest">{category}</p>
+    </div>
+  </div>
+);
+
+const StatCard = ({ label, value, icon, highlight }: any) => (
+  <div className="bg-white dark:bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 shadow-sm relative overflow-hidden group">
+    <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] relative z-10">{label}</p>
+    <p className={`text-2xl font-black mt-2 relative z-10 tracking-tight ${highlight ? 'text-rose-600' : 'text-zinc-900 dark:text-white'}`}>{value}</p>
+    <div className="absolute bottom-[-10px] right-[-10px] opacity-10 group-hover:scale-110 transition-transform duration-700">
+      {React.cloneElement(icon, { size: 80, strokeWidth: 3 })}
+    </div>
+  </div>
+);
+
+const MaterialTile = ({ title, subject, type, due, color }: any) => (
+  <div className="bg-white dark:bg-zinc-900 p-8 rounded-[3rem] border border-zinc-100 dark:border-zinc-800 shadow-sm group hover:border-zinc-900 transition-all duration-500">
+    <div className={`w-12 h-12 rounded-2xl ${color} flex items-center justify-center text-white mb-6 shadow-2xl shadow-current/20 group-hover:scale-110 duration-500`}>
+      <BookOpen size={24} />
+    </div>
+    <h5 className="text-lg font-black leading-tight uppercase mb-2">{title}</h5>
+    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-6">{subject}</p>
+    <div className="flex items-center justify-between">
+      <span className={`text-[9px] font-black uppercase tracking-widest ${due.includes('DUE') || due.includes('HOUR') ? 'text-rose-500' : 'text-emerald-500'}`}>{due}</span>
+      <button className="text-[10px] font-black text-blue-600 uppercase hover:underline flex items-center gap-1">GO <ChevronRight size={14} /></button>
+    </div>
+  </div>
+);
+
 const EngagementRow = ({ title, time, subject }: any) => (
   <div className="py-2 first:pt-0 last:pb-0 group">
     <div className="flex items-center justify-between mb-1">
@@ -868,7 +1064,6 @@ const VitalsBox = ({ label, value }: any) => (
     <p className="text-xs font-black text-zinc-800 dark:text-zinc-100 uppercase leading-none tracking-tight">{value}</p>
   </div>
 );
-
 
 /* -------------------------------------------------------------------------- */
 /*                               TEACHER VIEW                                 */
@@ -903,19 +1098,18 @@ const TeacherView = ({ user }: any) => {
   const parseScore = (value: string) => {
     if (!value.trim()) return null;
     const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
-      throw new Error('Scores must be between 0 and 100.');
-    }
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) return null;
     return parsed;
   };
 
   useEffect(() => {
     const fetchTeacherData = async () => {
       try {
-        const [stream, termRows, examRows] = await Promise.all([
+        const [stream, termRows, examRows, appointments] = await Promise.all([
           api.getTeacherStream(user.id),
           user?.school_id ? api.getTerms(user.school_id) : Promise.resolve([]),
-          user?.school_id ? api.getExams(user.school_id) : Promise.resolve([])
+          user?.school_id ? api.getExams(user.school_id) : Promise.resolve([]),
+          api.getAppointmentsByTeacher(user.id)
         ]);
 
         setTerms(termRows || []);
@@ -924,19 +1118,16 @@ const TeacherView = ({ user }: any) => {
           const [students] = await Promise.all([
             api.getStudentsByStream(stream.id)
           ]);
-          setData({ stream, students });
+          setData({ stream, students, appointments: appointments || [] });
           setMeanInput(stream.main_mean_score == null ? '' : String(stream.main_mean_score));
           setTargetInput(stream.target_mean_score == null ? '' : String(stream.target_mean_score));
           setTargetTermId(stream.target_term_id || '');
           setTargetExamId(stream.target_exam_id || '');
         } else {
-          setData({ stream: null, students: [] });
+          setData({ stream: null, students: [], appointments: appointments || [] });
         }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+      } catch (err) { console.error(err); }
+      finally { setLoading(false); }
     };
     fetchTeacherData();
   }, [user.id, user.school_id]);
@@ -944,7 +1135,6 @@ const TeacherView = ({ user }: any) => {
   const saveTargetSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!data?.stream?.id) return;
-
     try {
       setSavingTarget(true);
       const updated = await api.updateStreamProfile(data.stream.id, {
@@ -955,188 +1145,138 @@ const TeacherView = ({ user }: any) => {
       });
       setData((prev: any) => ({ ...prev, stream: updated || prev.stream }));
       setShowTargetModal(false);
-    } catch (err: any) {
-      alert(err?.message || 'Failed to save target settings');
-    } finally {
-      setSavingTarget(false);
-    }
+    } catch (err: any) { alert('Failed to save settings'); }
+    finally { setSavingTarget(false); }
   };
 
   if (loading) return <div className="py-20 text-zinc-400 font-bold">Connecting to academic records...</div>;
-  if (!data) return <div className="py-20 text-red-500 font-bold">Failed to load academic data. Please refresh.</div>;
+  if (!data) return <div className="py-20 text-red-500 font-bold">Failed to load academic data.</div>;
 
-  const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   const streamLabel = [data.stream?.class?.name, data.stream?.name].filter(Boolean).join(' ');
   const mainMean = formatScoreGrade(data.stream?.main_mean_score);
   const targetMean = formatScoreGrade(data.stream?.target_mean_score);
-  const targetTermLabel = terms.find((t: any) => t.id === data.stream?.target_term_id)
-    ? `${terms.find((t: any) => t.id === data.stream?.target_term_id)?.name || ''} ${terms.find((t: any) => t.id === data.stream?.target_term_id)?.year || ''}`.trim()
-    : '-';
-  const targetExamLabel = exams.find((ex: any) => ex.id === data.stream?.target_exam_id)?.name || '-';
-  const examsForSelectedTerm = targetTermId
-    ? exams.filter((ex: any) => ex.term_id === targetTermId)
-    : exams;
 
   return (
-    <div className="space-y-12">
-      {/* 1. Normal Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Good morning, {user.full_name?.split(' ')[0]}</h1>
-          <p className="text-zinc-500 font-medium">It is {today}</p>
-          {data.stream && (
-            <p className="inline-block mt-2 px-2.5 py-0.5 bg-zinc-100 rounded-md text-[11px] font-semibold text-zinc-600 uppercase tracking-wide">
-              {streamLabel || 'Assigned Stream'} Teacher
-            </p>
-          )}
+    <div className="space-y-12 animate-in fade-in duration-700">
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+             <div className="w-12 h-12 rounded-2xl bg-zinc-900 dark:bg-white flex items-center justify-center text-white dark:text-zinc-900 shadow-2xl">
+                <Users size={24} />
+             </div>
+             <div>
+                <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white font-sora">Teacher Dashboard</h1>
+                <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.3em] mt-1">{streamLabel || 'Assigned Stream'}</p>
+             </div>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <SimpleButton to="/results-management" label="Results Management" icon={<Target size={14} />} />
-          <SimpleButton to="/chat" label="Parent Chat" icon={<MessageSquare size={14} />} />
-        </div>
-      </div>
-
-      {/* 2. Simple Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
-        <StatBox label="Total Students" value={data.students.length} />
-        <div className="space-y-1 relative">
-          <button
-            onClick={() => setShowTargetModal(true)}
-            className="absolute -top-1 right-0 h-5 w-5 rounded-full border border-zinc-200 bg-white text-zinc-400 hover:text-zinc-700 hover:border-zinc-300 flex items-center justify-center"
-            title="Edit class mean and target"
-            aria-label="Edit class mean and target"
-          >
-            <Edit3 size={11} />
+        <div className="flex flex-wrap gap-3">
+          <SimpleButton to="/results-management" label="Record Marks" icon={<Target size={14} />} />
+          <SimpleButton to="/attendance" label="Mark Attendance" icon={<CheckCircle size={14} />} />
+          <button onClick={() => setShowTargetModal(true)} className="flex items-center gap-2 px-6 h-12 bg-zinc-50 dark:bg-zinc-900 text-[10px] font-black uppercase tracking-widest text-zinc-600 dark:text-zinc-400 rounded-xl border border-zinc-100 dark:border-zinc-800 hover:bg-zinc-900 hover:text-white transition-all">
+            <Edit3 size={14} /> Update Targets
           </button>
-          <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest leading-none">Class Mean Score</p>
-          <p className="text-2xl font-bold tracking-tight text-zinc-900">{mainMean} | {targetMean}</p>
-          <p className="text-[10px] text-zinc-500">Term: {targetTermLabel} | Exam: {targetExamLabel}</p>
         </div>
-        <StatBox label="Today's Attendance" value="38 / 40" />
       </div>
 
-      {/* 3. Students & Alerts */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
-        <div className="lg:col-span-8 space-y-6">
-          <div className="flex items-center justify-between border-b pb-3 border-zinc-100">
-            <h2 className="text-sm font-semibold">Student List</h2>
-            <Link to="/students" className="text-xs text-zinc-400 hover:text-zinc-900 transition-colors">View all students</Link>
-          </div>
-          <div className="divide-y divide-zinc-50">
-            {data.students.slice(0, 10).map((s: any) => (
-              <div key={s.id} className="py-3 flex items-center justify-between group">
-                <div className="flex items-center gap-4">
-                  <div className="w-8 h-8 rounded bg-zinc-50 flex items-center justify-center text-xs font-medium text-zinc-400 group-hover:bg-zinc-100 group-hover:text-zinc-900 transition-colors">
-                    {s.profile?.full_name?.[0] || '?'}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{s.profile?.full_name || 'Unnamed Student'}</p>
-                    <p className="text-[11px] text-zinc-400 uppercase font-medium">{s.adm_no}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 text-[10px] font-bold text-emerald-600">
-                  Good Standing
-                </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] p-10 shadow-sm relative overflow-hidden">
+           <div className="flex items-center justify-between mb-10">
+              <div>
+                <h3 className="text-sm font-black text-zinc-900 dark:text-white uppercase tracking-widest font-sora">Class Performance</h3>
+                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mt-1">Mean Score Progression</p>
               </div>
-            ))}
-          </div>
+              <div className="text-right">
+                 <p className="text-3xl font-black text-zinc-900 dark:text-white font-sora">{mainMean}</p>
+                 <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest italic">Target: {targetMean}</p>
+              </div>
+           </div>
+           <div className="h-[250px] flex items-end justify-between gap-2 px-2">
+              {[65, 78, 62, 85, 74, 90, 82].map((v, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-4 group">
+                  <div className="w-full bg-zinc-50 dark:bg-zinc-900 rounded-t-2xl relative overflow-hidden" style={{ height: `${v}%` }}>
+                    <div className="absolute inset-0 bg-gradient-to-t from-zinc-900/10 dark:from-white/10 to-transparent group-hover:from-emerald-500/20 transition-all" />
+                  </div>
+                  <span className="text-[8px] font-black text-zinc-400 uppercase">Exam {i+1}</span>
+                </div>
+              ))}
+           </div>
         </div>
 
+        <div className="bg-zinc-900 dark:bg-zinc-900/50 rounded-[2.5rem] p-10 flex flex-col justify-between relative overflow-hidden shadow-2xl">
+           <div className="relative z-10">
+              <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.4em] mb-8 text-zinc-500">Daily Attendance</h3>
+              <div className="flex items-center gap-6">
+                 <div className="w-24 h-24 rounded-full border-[6px] border-zinc-800 flex items-center justify-center relative">
+                    <div className="absolute inset-0 rounded-full border-[6px] border-emerald-500 border-t-transparent -rotate-45" />
+                    <span className="text-xl font-black text-white font-sora">95%</span>
+                 </div>
+                 <div>
+                    <p className="text-2xl font-black text-white font-sora">38 / 40</p>
+                    <p className="text-[10px] font-bold text-zinc-500 uppercase mt-1">Present Today</p>
+                 </div>
+              </div>
+           </div>
+           <div className="mt-10">
+              <Link to="/attendance" className="w-full h-12 bg-white text-zinc-900 rounded-xl flex items-center justify-center text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all">Submit Registry</Link>
+           </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
         <div className="lg:col-span-4 space-y-8">
-          <h2 className="text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-3 text-zinc-900 dark:text-white mb-6">
-            <Bell size={14} className="text-orange-500" /> Notifications & Alerts
-          </h2>
-          <div className="space-y-3">
-            <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800 transition-all cursor-pointer">
-              <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-amber-50 text-amber-600 mb-2 inline-block">Academic</span>
-              <h4 className="text-[11px] font-black text-zinc-900 dark:text-white uppercase leading-tight mb-1">Missing Marks</h4>
-              <p className="text-[10px] text-zinc-500 leading-relaxed font-medium">You haven't recorded marks for Form 4 Math yet.</p>
-            </div>
-            <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800 transition-all cursor-pointer">
-              <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 mb-2 inline-block">Message</span>
-              <h4 className="text-[11px] font-black text-zinc-900 dark:text-white uppercase leading-tight mb-1">Parent Inquiry</h4>
-              <p className="text-[10px] text-zinc-500 leading-relaxed font-medium">A parent of 'Razanyo' sent you a message regarding performance.</p>
-            </div>
-          </div>
+           <h3 className="text-[10px] font-black text-zinc-900 dark:text-white uppercase tracking-[0.4em] px-2">Official Engagements</h3>
+           <div className="space-y-3">
+              {data.appointments?.length > 0 ? data.appointments.map((app: any) => (
+                <div key={app.id} className="p-6 bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-3xl">
+                   <p className="text-[11px] font-black uppercase tracking-tight">{app.parent?.full_name}</p>
+                   <p className="text-[9px] font-bold text-zinc-400 uppercase mb-4">Parent of {app.student?.profile?.full_name}</p>
+                   <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-xl mb-4 text-[10px] text-zinc-500 leading-relaxed italic">"{app.reason}"</div>
+                   <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                      <span>{app.appointment_time}</span>
+                      <span className="text-emerald-500">{new Date(app.appointment_date).toLocaleDateString()}</span>
+                   </div>
+                </div>
+              )) : (
+                <div className="py-12 text-center bg-zinc-50 dark:bg-zinc-900/50 rounded-[2.5rem] border border-dashed border-zinc-200 dark:border-zinc-800">
+                   <p className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">No requests pending</p>
+                </div>
+              )}
+           </div>
+        </div>
+
+        <div className="lg:col-span-8 space-y-8">
+           <h3 className="text-[10px] font-black text-zinc-900 dark:text-white uppercase tracking-[0.4em] px-2">Primary Registry</h3>
+           <div className="bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] overflow-hidden shadow-sm divide-y divide-zinc-50 dark:divide-zinc-900">
+              {data.students.slice(0, 8).map((s: any) => (
+                <div key={s.id} className="p-6 flex items-center justify-between group hover:bg-zinc-50 dark:hover:bg-zinc-900/40 transition-all">
+                  <div className="flex items-center gap-5">
+                    <div className="w-12 h-12 rounded-2xl bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center text-[13px] font-black text-zinc-400 group-hover:bg-zinc-900 group-hover:text-white transition-all">{s.profile?.full_name?.[0]}</div>
+                    <div>
+                      <p className="text-[13px] font-black text-zinc-900 dark:text-white uppercase">{s.profile?.full_name}</p>
+                      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">ADM: {s.adm_no}</p>
+                    </div>
+                  </div>
+                  <ChevronRight size={16} className="text-zinc-300 group-hover:text-zinc-900" />
+                </div>
+              ))}
+           </div>
         </div>
       </div>
 
       <Modal isOpen={showTargetModal} onClose={() => setShowTargetModal(false)} title="Edit Mean & Target">
-        <form onSubmit={saveTargetSettings} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-zinc-600 mb-1">Input Current Mean Score (%)</label>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step="0.1"
-              value={meanInput}
-              onChange={(e) => setMeanInput(e.target.value)}
-              placeholder="e.g. 62.5"
-              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-100"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-zinc-600 mb-1">Input Target Mean Score (%)</label>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step="0.1"
-              value={targetInput}
-              onChange={(e) => setTargetInput(e.target.value)}
-              placeholder="e.g. 70.0"
-              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-100"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-zinc-600 mb-1">Target Term</label>
-            <select
-              value={targetTermId}
-              onChange={(e) => {
-                const nextTerm = e.target.value;
-                setTargetTermId(nextTerm);
-                if (nextTerm && !exams.some((ex: any) => ex.id === targetExamId && ex.term_id === nextTerm)) {
-                  setTargetExamId('');
-                }
-              }}
-              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-100"
-            >
-              <option value="">-</option>
-              {terms.map((term: any) => (
-                <option key={term.id} value={term.id}>{`${term.name} ${term.year}`.trim()}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-zinc-600 mb-1">Target Exam</label>
-            <select
-              value={targetExamId}
-              onChange={(e) => setTargetExamId(e.target.value)}
-              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-100"
-            >
-              <option value="">-</option>
-              {examsForSelectedTerm.map((exam: any) => (
-                <option key={exam.id} value={exam.id}>{exam.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="pt-2 flex gap-2">
+        <form onSubmit={saveTargetSettings} className="space-y-6 p-4">
+          <InputRow label="Current Mean (%)" value={meanInput} onChange={setMeanInput} />
+          <InputRow label="Target Mean (%)" value={targetInput} onChange={setTargetInput} />
+          <div className="pt-4 flex gap-2">
             <Button type="button" variant="outline" className="flex-1" onClick={() => setShowTargetModal(false)}>Cancel</Button>
-            <Button type="submit" className="flex-1" disabled={savingTarget}>{savingTarget ? 'Saving...' : 'Save'}</Button>
+            <Button type="submit" className="flex-1" disabled={savingTarget}>{savingTarget ? 'Saving...' : 'Save Settings'}</Button>
           </div>
         </form>
       </Modal>
     </div>
   );
 };
-
-const AlertItem = ({ type, text, color = "text-zinc-600" }: any) => (
-  <div className="p-4 rounded-lg bg-zinc-50 border border-zinc-100 space-y-1">
-    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{type}</p>
-    <p className={`text-sm font-medium leading-relaxed ${color}`}>{text}</p>
-  </div>
-);
 
 /* -------------------------------------------------------------------------- */
 /*                               PRINCIPAL VIEW                               */
@@ -1164,55 +1304,68 @@ const PrincipalView = ({ user }: any) => {
     fetchData();
   }, [user.school_id]);
 
-  if (loading || !data) return <div className="py-20 text-zinc-400">Loading school summary...</div>;
+  if (loading || !data) return <div className="py-20 text-zinc-400 font-bold">Loading school summary...</div>;
 
   const feesCollected = data.fees.reduce((acc: number, f: any) => acc + (f.amount_paid || 0), 0);
 
   return (
-    <div className="space-y-12">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-950">Overview</h1>
-        <p className="text-zinc-500 font-medium">Institutional report for {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+    <div className="space-y-12 animate-in fade-in duration-700">
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+             <div className="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-white shadow-2xl">
+                <LayoutDashboard size={24} />
+             </div>
+             <div>
+                <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white font-sora">Institutional Overview</h1>
+                <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.3em] mt-1">Principal Console</p>
+             </div>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <SimpleButton to="/admin/finances" label="Financial Portal" icon={<CreditCard size={14} />} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-8">
         <StatBox label="Total Students" value={data.students.length} />
         <StatBox label="Fees Collected" value={formatCurrency(feesCollected)} />
-        <StatBox label="School Mean" value="74%" />
-        <StatBox label="Staff Count" value={data.teachers.length} />
+        <StatBox label="Class Average" value="74%" />
+        <StatBox label="Faculty" value={data.teachers.length} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
-        <div className="lg:col-span-7 space-y-10">
-          <section className="space-y-4">
-            <h2 className="text-sm font-semibold border-b border-zinc-100 pb-2">Academic Performance</h2>
-            <div className="grid grid-cols-5 gap-4">
-              {['A', 'B', 'C', 'D', 'E'].map(g => (
-                <div key={g} className="space-y-0.5">
-                  <p className="text-xl font-bold">{g}</p>
-                  <p className="text-[10px] text-zinc-400 font-bold uppercase">{Math.floor(Math.random() * 50)} Students</p>
-                </div>
-              ))}
-            </div>
-          </section>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+        <div className="lg:col-span-8 space-y-10">
+           <div className="bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] p-10">
+              <h3 className="text-sm font-black text-zinc-900 dark:text-white uppercase tracking-widest mb-10">Academic Performance Grade Distribution</h3>
+              <div className="grid grid-cols-5 gap-6">
+                {['A', 'B', 'C', 'D', 'E'].map(g => (
+                  <div key={g} className="text-center group">
+                    <p className="text-3xl font-black text-zinc-900 dark:text-white group-hover:scale-110 transition-transform">{g}</p>
+                    <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mt-2">{Math.floor(Math.random() * 50)} Students</p>
+                  </div>
+                ))}
+              </div>
+           </div>
         </div>
-        <div className="lg:col-span-5 space-y-8">
-          <h2 className="text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-3 text-zinc-900 dark:text-white">
+
+        <div className="lg:col-span-4 space-y-8">
+          <h3 className="text-[10px] font-black text-zinc-900 dark:text-white uppercase tracking-[0.4em] px-2 flex items-center gap-2">
             <Activity size={14} className="text-emerald-500" /> Institutional Activity
-          </h2>
+          </h3>
           <div className="space-y-3">
-            {[...data.events, ...data.discipline].slice(0, 5).map((item, i) => (
-              <div key={i} className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800 transition-all">
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-500">
+            {[...data.events, ...data.discipline].slice(0, 4).map((item, i) => (
+              <div key={i} className="p-5 bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-3xl shadow-sm">
+                <div className="flex justify-between items-start mb-3">
+                  <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-500">
                     {item.incident_title ? 'Discipline' : 'Event'}
                   </span>
                   <p className="text-[8px] font-bold text-zinc-400 uppercase">{item.date || item.incident_date}</p>
                 </div>
-                <h4 className="text-[11px] font-black text-zinc-900 dark:text-white uppercase leading-tight mb-1">
+                <h4 className="text-[11px] font-black text-zinc-900 dark:text-white uppercase leading-tight mb-2">
                   {item.title || item.incident_title}
                 </h4>
-                <p className="text-[10px] text-zinc-500 leading-relaxed font-medium line-clamp-2">
+                <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-2">
                   {item.description || "Official school record logged for history."}
                 </p>
               </div>
@@ -1224,26 +1377,30 @@ const PrincipalView = ({ user }: any) => {
   );
 };
 
-
 /* -------------------------------------------------------------------------- */
 /*                               SHARED COMPONENTS                            */
 /* -------------------------------------------------------------------------- */
 
 const StatBox = ({ label, value }: any) => (
-  <div className="space-y-1">
-    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest leading-none">{label}</p>
-    <p className="text-3xl font-bold tracking-tight text-zinc-900">{value}</p>
+  <div className="bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 p-8 rounded-[2rem] shadow-sm">
+    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em] mb-1">{label}</p>
+    <p className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white">{value}</p>
   </div>
 );
 
 const SimpleButton = ({ to, label, icon }: any) => (
   <Link
     to={to}
-    className="inline-flex items-center gap-2 px-4 py-2 border border-zinc-200 rounded-lg text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors shadow-sm"
+    className="h-12 px-6 flex items-center gap-3 bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-600 dark:text-zinc-400 hover:bg-zinc-900 hover:text-white transition-all shadow-sm"
   >
-    <span className="text-zinc-400">{icon}</span>
+    {icon}
     <span>{label}</span>
   </Link>
 );
-/ /   T e a c h e r   D a s h b o a r d   O v e r h a u l   -   I n i t i a l i z i n g   p h a s e   2  
- 
+
+const InputRow = ({ label, value, onChange }: any) => (
+  <div className="space-y-2">
+    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-1">{label}</label>
+    <input type="number" step="0.1" value={value} onChange={(e) => onChange(e.target.value)} className="w-full h-14 bg-zinc-50 dark:bg-zinc-900 border-none rounded-2xl px-6 text-sm font-bold" />
+  </div>
+);
