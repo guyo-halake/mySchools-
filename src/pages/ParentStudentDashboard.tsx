@@ -3,19 +3,9 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Bell, BarChart3, Calendar, CreditCard, FileText, GraduationCap, MessageSquare, ShieldAlert, TrendingUp, UserCircle2, Users, ArrowUpRight, ChevronRight, LayoutDashboard, X, LineChart as LineChartIcon, Activity } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Tooltip,
-  Legend,
-  Filler
-} from 'chart.js';
-import { Line, Bar } from 'react-chartjs-2';
-
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell
+} from 'recharts';
 import { markToGrade, gradeWeight } from '../utils/grading';
 import { cn } from '../utils/utils';
 
@@ -27,7 +17,7 @@ const formatDate = (date?: string | null) => {
   return parsed.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 };
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Tooltip, Legend, Filler);
+// Setup Recharts specific components if needed, otherwise just proceed
 
 export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
   const navigate = useNavigate();
@@ -38,15 +28,20 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
   const [fees, setFees] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [schoolName, setSchoolName] = useState('School');
 
   // UI CONTROLS
   const [graphType, setGraphType] = useState<'LINE' | 'BAR'>('LINE');
-  const [timelineView, setTimelineView] = useState<'MULTI_YEAR' | 'YEAR' | 'TERM 1' | 'TERM 2' | 'TERM 3'>('YEAR');
+  const [viewMode, setViewMode] = useState<'PROGRESSION' | 'SUBJECTS'>('PROGRESSION');
   const [selectedSubjectId, setSelectedSubjectId] = useState<'OVERALL' | string>('OVERALL');
   const [showAllStats, setShowAllStats] = useState(false);
   const [showAppointmentsMsg, setShowAppointmentsMsg] = useState(false);
   const [showActivitiesMobile, setShowActivitiesMobile] = useState(false);
+  const [showChildModal, setShowChildModal] = useState(false);
+  const [selectedProfileStudent, setSelectedProfileStudent] = useState<any>(null);
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const [appointmentForm, setAppointmentForm] = useState({ teacherId: '', date: '', time: '', reason: '' });
 
   const selectedStudent = useMemo(() => students[0] || null, [students]);
   const selectedStream = useMemo(() => streams.find((s: any) => s.id === selectedStudent?.stream_id) || null, [streams, selectedStudent?.stream_id]);
@@ -64,156 +59,202 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
     return { totalDue, totalPaid, balance: totalDue - totalPaid, lastPayment };
   }, [fees]);
 
-  // DYNAMIC ACTIVITY FEED
+  // DYNAMIC NOTIFICATION FEED
   const recentActivities = useMemo(() => {
     const activities: any[] = [];
-
-    // Results Activities
-    results.slice(0, 3).forEach(r => {
+    notifications.slice(0, 5).forEach(n => {
       activities.push({
-        id: `res-${r.id}`,
-        title: `RESULTS PUBLISHED: ${r.subject?.name}`,
-        content: `Score: ${r.marks}% (${r.grade || markToGrade(r.marks)}) for ${r.exam?.name}`,
-        date: r.created_at,
-        type: 'RESULTS'
+        id: n.id,
+        title: n.title,
+        content: n.message,
+        date: n.created_at,
+        type: n.type?.toUpperCase() || 'INFO',
+        is_read: n.is_read
       });
     });
-
-    // Fee Activities
-    if (feeSummary.balance > 0) {
+    if (feeSummary.balance > 0 && !notifications.some(n => n.title.includes('FEES'))) {
       activities.push({
-        id: 'fees-unpaid',
-        title: 'UNPAID FEES BALANCE',
-        content: `Outstanding balance of ${formatMoney(feeSummary.balance)}. Please clear to avoid inconvenience.`,
+        id: 'fees-unpaid-auto',
+        title: 'Outstanding Dues',
+        content: `Standard balance of ${formatMoney(feeSummary.balance)} detected.`,
         date: new Date().toISOString(),
-        type: 'FEES',
+        type: 'WARNING',
         urgent: true
       });
     }
-    if (feeSummary.lastPayment) {
-      activities.push({
-        id: `fee-pay-${feeSummary.lastPayment.id}`,
-        title: 'PAYMENT RECEIVED',
-        content: `Receipt of ${formatMoney(feeSummary.lastPayment.amount_paid)} processed successfully on ${formatDate(feeSummary.lastPayment.created_at)}.`,
-        date: feeSummary.lastPayment.created_at,
-        type: 'FEES'
-      });
-    }
+    return activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 8);
+  }, [notifications, feeSummary]);
 
-    // School Events/Anns
-    events.slice(0, 2).forEach(e => {
-      activities.push({ id: `ev-${e.id}`, title: e.title, content: e.description, date: e.date, type: 'EVENT' });
-    });
-    announcements.slice(0, 2).forEach(a => {
-      activities.push({ id: `ann-${a.id}`, title: a.title, content: a.content, date: a.created_at, type: 'ANNOUNCEMENT' });
-    });
-
-    return activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 6);
-  }, [results, fees, events, announcements, feeSummary]);
-
-  // GRAPH ENGINE
+  // 📊 SMART GRAPH ENGINE (Sequential Terms & Grade Mapping)
   const analyticsData = useMemo(() => {
-    if (!results.length) return { labels: [], datasets: [] };
-    let labels: string[] = [];
-    let processedData: number[] = [];
-    const filteredResults = selectedSubjectId === 'OVERALL' ? results : results.filter(r => r.subject_id === selectedSubjectId);
+    if (!results.length) return [];
 
-    if (timelineView === 'YEAR') {
-      labels = ['Term 1', 'Term 2', 'Term 3'];
-      processedData = labels.map((termName, idx) => {
-        const matches = filteredResults.filter(r => {
-          const rTerm = (r.exam?.term?.name || '').toUpperCase();
-          const num = (idx + 1).toString();
-          const words = ['FIRST', 'SECOND', 'THIRD'];
-          return rTerm.includes(num) || rTerm.includes(termName.toUpperCase()) || rTerm.includes(words[idx]);
-        });
-        if (!matches.length) return 0;
-        return matches.reduce((acc, r) => acc + Number(r.marks || 0), 0) / matches.length;
+    const getLevel = (m: number) => {
+      if (m >= 80) return 5;
+      if (m >= 70) return 4;
+      if (m >= 60) return 3;
+      if (m >= 50) return 2;
+      return 1;
+    };
+
+    if (viewMode === 'SUBJECTS') {
+      const subjectMap = new Map();
+      results.forEach(r => {
+        const name = r.subject?.name || 'Unknown';
+        if (!subjectMap.has(name)) subjectMap.set(name, []);
+        subjectMap.get(name).push(Number(r.marks || 0));
       });
-    } else if (timelineView === 'MULTI_YEAR') {
-      const yearTerms = [...new Set(results.map(r => `${r.exam?.term?.year || '2026'} ${r.exam?.term?.name || 'T1'}`))].sort();
-      labels = yearTerms;
-      processedData = labels.map(yt => {
-        const matches = filteredResults.filter(r => `${r.exam?.term?.year || '2026'} ${r.exam?.term?.name || 'T1'}` === yt);
-        if (!matches.length) return 0;
-        return matches.reduce((acc, r) => acc + Number(r.marks || 0), 0) / matches.length;
-      });
-    } else {
-      labels = ['Opener', 'Mid', 'End'];
-      processedData = labels.map(examKey => {
-        const matches = filteredResults.filter(r => {
-          const rTerm = (r.exam?.term?.name || '').toUpperCase();
-          const rExamName = (r.exam?.name || '').toUpperCase();
-          const rExamType = (r.exam?.type || '').toUpperCase();
-          const termNum = timelineView.slice(-1);
-          const isTerm = rTerm.includes(termNum) || rTerm.includes(timelineView.toUpperCase());
-          if (!isTerm) return false;
-          const query = examKey.toUpperCase();
-          const isOpener = query === 'OPENER' && (rExamName.includes('OPENER') || rExamName.includes('START') || rExamType.includes('OPENER'));
-          const isMid = query === 'MID' && (rExamName.includes('MID') || rExamType.includes('MID'));
-          const isEnd = query === 'END' && (rExamName.includes('END') || rExamName.includes('FINAL') || rExamType.includes('END'));
-          return isOpener || isMid || isEnd;
-        });
-        if (!matches.length) return 0;
-        return matches.reduce((acc, r) => acc + Number(r.marks || 0), 0) / matches.length;
+      
+      return Array.from(subjectMap.entries()).map(([name, scores]) => {
+        const avg = scores.reduce((a:any,b:any)=>a+b,0) / scores.length;
+        const level = getLevel(avg);
+        return {
+          name,
+          grade: level,
+          color: level >= 4 ? '#10b981' : level >= 2 ? '#f59e0b' : '#ef4444'
+        };
       });
     }
 
-    const subName = selectedSubjectId === 'OVERALL' ? 'Overall Average' : results.find(r => r.subject_id === selectedSubjectId)?.subject?.name || 'Subject';
+    const examGrouping = results.reduce((acc: any[], r) => {
+      const examId = r.exam_id;
+      const existing = acc.find(e => e.id === examId);
+      if (existing) existing.scores.push(Number(r.marks || 0));
+      else acc.push({
+        id: examId,
+        name: r.exam?.name || 'Exam',
+        term: r.exam?.term?.name || 'T1',
+        date: new Date(r.exam?.date || 0),
+        scores: [Number(r.marks || 0)]
+      });
+      return acc;
+    }, []).sort((a,b) => a.date.getTime() - b.date.getTime());
 
-    return {
-      labels,
-      datasets: [{
-        label: subName,
-        data: processedData,
-        borderColor: '#10b981',
-        backgroundColor: graphType === 'BAR' ? processedData.map(v => v >= 70 ? '#10b981' : v >= 50 ? '#3b82f6' : '#ef4444') : '#10b98122',
-        fill: graphType === 'LINE',
-        borderWidth: 2,
-        tension: 0.4,
-        pointRadius: processedData.map(v => v > 0 ? 5 : 0),
-        pointBackgroundColor: '#10b981',
-        borderRadius: graphType === 'BAR' ? 6 : 0,
-        barThickness: processedData.length > 5 ? 18 : 30,
-        spanGaps: true
-      }]
-    };
-  }, [results, timelineView, selectedSubjectId, graphType]);
+    // 🏛️ STABLE YEAR SKELETON (O, MT, ET for all 3 Terms)
+    const skeleton = [
+      { t: 'Term 1', e: 'O', label: 'Term 1', search: ['OPEN'] },
+      { t: 'Term 1', e: 'MT', search: ['MID'] },
+      { t: 'Term 1', e: 'ET', search: ['END'] },
+      { t: 'Term 2', e: 'O', label: 'Term 2', search: ['OPEN'] },
+      { t: 'Term 2', e: 'MT', search: ['MID'] },
+      { t: 'Term 2', e: 'ET', search: ['END'] },
+      { t: 'Term 3', e: 'O', label: 'Term 3', search: ['OPEN'] },
+      { t: 'Term 3', e: 'MT', search: ['MID'] },
+      { t: 'Term 3', e: 'ET', search: ['END'] }
+    ];
+
+    return skeleton.map((slot, idx) => {
+      const matches = results.filter(r => {
+        const tRaw = (r.exam?.term?.name || '').toUpperCase();
+        const eRaw = (r.exam?.name || '').toUpperCase();
+        
+        const isCorrectTerm = (slot.t === 'Term 1' && (tRaw.includes('1') || tRaw.includes('ONE') || tRaw.includes('FIRST'))) ||
+                             (slot.t === 'Term 2' && (tRaw.includes('2') || tRaw.includes('TWO') || tRaw.includes('SECOND'))) ||
+                             (slot.t === 'Term 3' && (tRaw.includes('3') || tRaw.includes('THREE') || tRaw.includes('THIRD')));
+        
+        const isCorrectExam = slot.search.some(s => eRaw.includes(s));
+        return isCorrectTerm && isCorrectExam;
+      });
+
+      const avg = matches.length ? matches.reduce((a,b)=>a+Number(b.marks||0),0)/matches.length : 0; // Default to 0 if missing
+      const level = getLevel(avg);
+
+      // Find previous term same exam for comparison
+      const prevTermIdx = idx - 3;
+      const prevData = prevTermIdx >= 0 ? skeleton[prevTermIdx] : null; 
+      // We'll calculate the actual marks comparison in the tooltip or here.
+      // For simplicity, let's just pass the raw data and the tooltip will handle the rest.
+
+      return {
+        name: slot.e,
+        termLabel: slot.label,
+        isFirstOfTerm: !!slot.label,
+        grade: level,
+        marks: avg.toFixed(1),
+        gradeLabel: markToGrade(avg),
+        color: avg > 0 ? (level >= 4 ? '#10b981' : level >= 2 ? '#f59e0b' : '#ef4444') : '#f4f4f5',
+        prevIndex: prevTermIdx
+      };
+    });
+  }, [results, viewMode]);
+
+  const strugglingSubjects = useMemo(() => {
+    const map = new Map();
+    results.forEach(r => {
+      const n = r.subject?.name || 'Unknown';
+      if (!map.has(n)) map.set(n, []);
+      map.get(n).push(Number(r.marks || 0));
+    });
+    return Array.from(map.entries())
+      .map(([name, scores]) => ({ name, avg: scores.reduce((a:any,b:any)=>a+b,0)/scores.length }))
+      .filter(s => s.avg < 60)
+      .map(s => ({ ...s, grade: s.avg >= 50 ? 'D' : 'E' }));
+  }, [results]);
 
   const loadDashboard = async () => {
     if (!user?.school_id) return;
     try {
-      const { data: profile } = await supabase.from('profiles').select('school_id').eq('id', user.id).single();
-      const schoolId = profile?.school_id || user.school_id;
-
-      const [allStudents, schoolEvents, schoolAnnouncements, school, schoolStreams] = await Promise.all([
-        api.getStudents(schoolId),
-        api.getEvents(schoolId),
-        api.getAnnouncements(schoolId),
-        api.getSchool(schoolId),
-        api.getStreams(schoolId)
+      setLoading(true);
+      const [visible, schoolEvents, schoolAnnouncements, school, schoolStreams, userNotifs, schoolTeachers] = await Promise.all([
+        user.role === 'PARENT' 
+          ? api.getStudentsByParentId(user.school_id, user.id) 
+          : api.getStudentByProfileId(user.school_id, user.id).then(s => s ? [s] : []),
+        api.getEvents(user.school_id),
+        api.getAnnouncements(user.school_id),
+        api.getSchool(user.school_id),
+        api.getStreams(user.school_id),
+        api.getNotifications(user.id, user.school_id),
+        api.getTeachers(user.school_id)
       ]);
 
-      const visible = user.role === 'PARENT' ? allStudents.filter((s: any) => s.parent_id === user.id) : allStudents.filter((s: any) => s.id === user.id);
-      setStudents(visible);
-      setEvents(schoolEvents);
-      setAnnouncements(schoolAnnouncements);
+      setStudents(visible || []);
+      setNotifications(userNotifs || []);
+      setTeachers(schoolTeachers || []);
+      
+      const now = new Date();
+      const upcoming = (schoolEvents || []).filter(e => new Date(e.date) >= now);
+      setEvents(upcoming.length > 0 ? upcoming : (schoolEvents || []));
+      setAnnouncements(schoolAnnouncements || []);
       setSchoolName(school?.name || 'School');
-      setStreams(schoolStreams);
+      setStreams(schoolStreams || []);
 
-      if (visible[0]) {
+      if (visible && visible[0]) {
         const student = visible[0];
         const [res, fee] = await Promise.all([
-          api.getResults(schoolId).then(all => all.filter((r: any) => r.student_id === student.id)),
-          api.getFees(schoolId).then(all => all.filter((f: any) => f.student_id === student.id))
+          api.getStudentResultsAll(student.id),
+          api.getFees(user.school_id).then(all => all.filter((f: any) => f.student_id === student.id))
         ]);
-        setResults(res); setFees(fee);
+        setResults(res || []); 
+        setFees(fee || []);
       }
-    } catch (err) { }
-    finally { setLoading(false); }
+    } catch (error) {
+      console.error('Error loading parent dashboard:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { loadDashboard(); }, [user?.id]);
+  const handleBookAppointment = async () => {
+    if (!appointmentForm.teacherId || !appointmentForm.date) return;
+    try {
+      await api.bookAppointment({
+        school_id: user.school_id,
+        parent_id: user.id,
+        teacher_id: appointmentForm.teacherId,
+        student_id: selectedStudent?.id,
+        appointment_date: appointmentForm.date,
+        appointment_time: appointmentForm.time,
+        reason: appointmentForm.reason
+      });
+      setShowAppointmentsMsg(false);
+      setAppointmentForm({ teacherId: '', date: '', time: '', reason: '' });
+      // Optional: Add success toast or notification
+    } catch (error) {
+      console.error('Failed to book appointment:', error);
+    }
+  };
+
+  useEffect(() => { loadDashboard(); }, [user?.id, user?.school_id]);
 
   if (loading) return (
     <div className="max-w-[1400px] mx-auto p-4 sm:p-6 space-y-8">
@@ -236,38 +277,185 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
   return (
     <div className="max-w-[1400px] mx-auto p-4 sm:p-6 pb-24 space-y-6 sm:space-y-8 animate-in fade-in duration-500 relative min-h-screen">
 
+      {/* MODALS */}
       {showAppointmentsMsg && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 max-w-sm w-full shadow-2xl scale-in duration-300">
-            <div className="flex justify-between items-center mb-6">
-              <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center text-amber-600"><ShieldAlert size={20} /></div>
-              <button onClick={() => setShowAppointmentsMsg(false)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"><X size={18} /></button>
-            </div>
-            <h3 className="text-lg font-black text-zinc-900 dark:text-white uppercase tracking-tight mb-2">Notice</h3>
-            <p className="text-sm text-zinc-500 leading-relaxed">Appointments are currently unavailable. Please contact the teacher directly.</p>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+           <div className="bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] p-8 max-w-lg w-full shadow-2xl animate-in zoom-in-95 duration-300">
+              <div className="flex justify-between items-center mb-8">
+                <div>
+                  <h3 className="text-lg font-black text-zinc-900 dark:text-white font-sora">Book Appointment</h3>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mt-1">Official Engagement Request</p>
+                </div>
+                <button onClick={() => setShowAppointmentsMsg(false)} className="w-10 h-10 rounded-full bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center text-zinc-400 hover:text-zinc-900 transition-colors"><X size={18} /></button>
+              </div>
+
+              <div className="space-y-5">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-1">Select Professional</label>
+                  <select 
+                    value={appointmentForm.teacherId}
+                    onChange={(e) => setAppointmentForm(p => ({ ...p, teacherId: e.target.value }))}
+                    className="w-full h-14 bg-zinc-50 dark:bg-zinc-900 border-none rounded-2xl px-6 text-sm font-bold text-zinc-900 dark:text-white focus:ring-2 focus:ring-emerald-500/20 transition-all appearance-none"
+                  >
+                    <option value="">Select Class Teacher or Administrator</option>
+                    {teachers.map(t => (
+                      <option key={t.id} value={t.id}>{t.full_name} — {t.title || 'Teacher'}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <textarea 
+                  value={appointmentForm.reason}
+                  onChange={(e) => setAppointmentForm(p => ({ ...p, reason: e.target.value }))}
+                  placeholder="Briefly describe the matter..." 
+                  className="w-full h-32 bg-zinc-50 dark:bg-zinc-900 border-none rounded-3xl p-6 text-sm font-bold resize-none" 
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-1">Preferred Date</label>
+                    <input 
+                      type="date" 
+                      value={appointmentForm.date}
+                      onChange={(e) => setAppointmentForm(p => ({ ...p, date: e.target.value }))}
+                      className="w-full h-14 bg-zinc-50 dark:bg-zinc-900 border-none rounded-2xl px-6 text-sm font-bold" 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-1">Preferred Time</label>
+                    <input 
+                      type="time" 
+                      value={appointmentForm.time}
+                      onChange={(e) => setAppointmentForm(p => ({ ...p, time: e.target.value }))}
+                      className="w-full h-14 bg-zinc-50 dark:bg-zinc-900 border-none rounded-2xl px-6 text-sm font-bold" 
+                    />
+                  </div>
+                </div>
+
+                <button 
+                  onClick={handleBookAppointment}
+                  className="w-full h-16 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-3xl font-black uppercase text-[11px] tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all mt-4"
+                >
+                  Confirm Appointment Request
+                </button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {showChildModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+           <div className="bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] p-8 max-w-lg w-full shadow-2xl animate-in zoom-in-95 duration-300">
+              <div className="flex justify-between items-center mb-8">
+                <div>
+                  <h3 className="text-lg font-black text-zinc-900 dark:text-white font-sora">Institutional Records</h3>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mt-1">Dependent Profiles</p>
+                </div>
+                <button onClick={() => setShowChildModal(false)} className="w-10 h-10 rounded-full bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center text-zinc-400 hover:text-zinc-900 transition-colors"><X size={18} /></button>
+              </div>
+
+              <div className="space-y-3">
+                {students.map(s => (
+                  <div 
+                    key={s.id} 
+                    onClick={() => {
+                      setSelectedProfileStudent(s);
+                      // Switch actual context if needed, but the user asked for a profile popup on click in the switcher
+                    }}
+                    className={cn("flex items-center justify-between p-4 rounded-3xl border transition-all cursor-pointer group", 
+                      selectedStudent?.id === s.id ? "bg-emerald-50/50 border-emerald-100 dark:bg-emerald-900/10 dark:border-emerald-800" : "bg-zinc-50/50 border-zinc-100 dark:bg-zinc-900/50 dark:border-zinc-800 hover:border-emerald-500/30")}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center overflow-hidden border-2 border-white dark:border-zinc-800 shadow-sm">
+                        {s.profile?.avatar_url ? <img src={s.profile.avatar_url} className="w-full h-full object-cover" /> : <UserCircle2 size={24} className="text-zinc-400" />}
+                      </div>
+                      <div>
+                        <p className="text-[12px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">{s.profile?.full_name}</p>
+                        <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">Adm: {s.adm_no || 'TBD'}</p>
+                      </div>
+                    </div>
+                    {selectedStudent?.id === s.id && <div className="px-3 py-1 bg-emerald-500 text-white rounded-full text-[8px] font-black uppercase tracking-widest">Active</div>}
+                  </div>
+                ))}
+              </div>
+           </div>
+        </div>
+      )}
+
+      {selectedProfileStudent && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] p-10 max-w-lg w-full shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-500">
+             <div className="flex justify-between items-center mb-10">
+               <div className="flex items-center gap-5">
+                 <div className="w-16 h-16 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center overflow-hidden border border-zinc-100 dark:border-zinc-800">
+                   {selectedProfileStudent.profile?.avatar_url ? <img src={selectedProfileStudent.profile.avatar_url} className="w-full h-full object-cover" /> : <UserCircle2 size={32} className="text-zinc-300" />}
+                 </div>
+                 <div>
+                   <h2 className="text-xl font-black text-zinc-900 dark:text-white font-sora uppercase">{selectedProfileStudent.profile?.full_name}</h2>
+                   <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">{selectedProfileStudent.stream?.name || 'Assigned Class'}</p>
+                 </div>
+               </div>
+               <button onClick={() => setSelectedProfileStudent(null)} className="w-10 h-10 rounded-full bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center text-zinc-400 hover:text-zinc-900 transition-colors"><X size={18} /></button>
+             </div>
+
+             <div className="space-y-6">
+               <div className="grid grid-cols-1 gap-4">
+                 <div className="flex justify-between items-center py-3 border-b border-zinc-50 dark:border-zinc-900">
+                   <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Class Teacher</span>
+                   <span className="text-[11px] font-bold text-zinc-900 dark:text-white">{selectedProfileStudent.stream?.teacher?.full_name || 'Not Available'}</span>
+                 </div>
+                 <div className="flex justify-between items-center py-3 border-b border-zinc-50 dark:border-zinc-900">
+                   <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Admission Number</span>
+                   <span className="text-[11px] font-bold text-zinc-900 dark:text-white">#{selectedProfileStudent.adm_no || 'TBD'}</span>
+                 </div>
+                 <div className="flex justify-between items-center py-3 border-b border-zinc-50 dark:border-zinc-900">
+                   <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Contact Number</span>
+                   <span className="text-[11px] font-bold text-zinc-900 dark:text-white">{selectedProfileStudent.profile?.phone || 'None Registered'}</span>
+                 </div>
+                 <div className="flex justify-between items-center py-3 border-b border-zinc-50 dark:border-zinc-900">
+                   <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Mean Grade</span>
+                   <span className="text-[11px] font-black text-emerald-600">{currentGradeLabel.grade} ({currentGradeLabel.mean}%)</span>
+                 </div>
+               </div>
+
+               <div className="pt-2">
+                 <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 block mb-3">Subjects Done</span>
+                 <div className="flex flex-wrap gap-2 text-[10px] font-bold text-zinc-500">
+                   {(selectedProfileStudent.subjects || ['English', 'Mathematics', 'Science', 'Kiswahili', 'History']).join(', ')}
+                 </div>
+               </div>
+             </div>
+
+             <button 
+               onClick={() => {
+                 setStudents([selectedProfileStudent, ...students.filter(s => s.id !== selectedProfileStudent.id)]);
+                 setSelectedProfileStudent(null);
+                 setShowChildModal(false);
+               }}
+               className="w-full h-14 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] shadow-xl hover:scale-[1.02] active:scale-95 transition-all mt-10"
+             >
+               Switch to this Child
+             </button>
           </div>
         </div>
       )}
 
       {/* 1. Header */}
-      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 sm:gap-12">
         <div className="space-y-0.5">
-          <h1 className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white tracking-tight font-sora">Welcome, {user?.full_name?.split(' ')[0]}</h1>
-          <p className="text-[13px] sm:text-[14px] text-emerald-600 font-medium tracking-tight font-sora">{schoolName}</p>
-          <div className="flex items-center gap-2 pt-1 font-black uppercase text-[9px] tracking-[0.2em] font-inter">
-            <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
+          <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 dark:text-white tracking-tight font-sora">Welcome, {user?.full_name?.split(' ')[0]}</h1>
+          <p className="text-[14px] text-emerald-600 font-medium tracking-tight font-sora uppercase tracking-[0.1em]">{schoolName}</p>
+          <div className="flex items-center gap-2 pt-2 font-black uppercase text-[10px] tracking-[0.2em] font-inter">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-zinc-400">{selectedStudent?.profile?.full_name}</span>
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 lg:gap-8">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <HeaderAction onClick={() => setShowAppointmentsMsg(true)} label="Appointments" icon={<MessageSquare size={14} />} />
-            <Link to="/results"><HeaderAction label="Results" icon={<FileText size={14} />} /></Link>
-            <Link to="/fees"><HeaderAction label="Fees" icon={<CreditCard size={14} />} /></Link>
-            <HeaderAction onClick={() => setShowActivitiesMobile(true)} label="Recent Activity" icon={<Activity size={14} />} />
-            <HeaderAction onClick={() => students.length > 1 && setStudents([...students.slice(1), students[0]])} label="My Child" icon={<Users size={14} />} />
-          </div>
+        <div className="flex items-center gap-4 sm:gap-10 pb-4 sm:pb-0 overflow-x-auto no-scrollbar">
+          <NavButton onClick={() => setShowAppointmentsMsg(true)} label="Appointments" icon={<MessageSquare size={18} />} />
+          <Link to="/results"><NavButton label="Results" icon={<FileText size={18} />} /></Link>
+          <Link to="/fees"><NavButton label="Fees" icon={<CreditCard size={18} />} /></Link>
+          <NavButton onClick={() => setShowChildModal(true)} label="My Child" icon={<Users size={18} />} />
         </div>
       </header>
 
@@ -287,42 +475,192 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
       {/* 3. Main Dashboard */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-8">
-          <section className="bg-white dark:bg-zinc-950 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm">
-            <div className="px-5 py-4 border-b border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <h2 className="text-[10px] font-black text-zinc-900 dark:text-white uppercase tracking-[0.2em] flex items-center gap-2 font-sora">
-                <TrendingUp className="w-3.5 h-3.5 text-emerald-600" /> Academic Performance
-              </h2>
-              <div className="flex items-center gap-2">
-                <div className="flex bg-zinc-50 dark:bg-zinc-900 p-0.5 rounded-lg border border-zinc-100 dark:border-zinc-800">
-                  <GraphToggle active={graphType === 'LINE'} onClick={() => setGraphType('LINE')} label="Line" />
-                  <GraphToggle active={graphType === 'BAR'} onClick={() => setGraphType('BAR')} label="Bar" />
+          <div className="bg-white dark:bg-zinc-950 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 shadow-sm overflow-hidden mb-8">
+            <div className="p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6 border-b border-zinc-50 dark:border-zinc-900">
+              <div>
+                <h2 className="text-[12px] font-black uppercase tracking-[0.4em] text-zinc-900 dark:text-white mb-1.5 font-sora">Academic Performance</h2>
+                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest uppercase">Institutional Progress Tracking</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="inline-flex bg-zinc-50 dark:bg-zinc-900/50 p-1 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                  <button 
+                    onClick={() => setViewMode('PROGRESSION')}
+                    className={cn("px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all", 
+                      viewMode === 'PROGRESSION' ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm" : "text-zinc-400 hover:text-zinc-600")}
+                  >
+                    Progression
+                  </button>
+                  <button 
+                    onClick={() => setViewMode('SUBJECTS')}
+                    className={cn("px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all", 
+                      viewMode === 'SUBJECTS' ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm" : "text-zinc-400 hover:text-zinc-600")}
+                  >
+                    By Subjects
+                  </button>
                 </div>
-                <select value={timelineView} onChange={e => setTimelineView(e.target.value as any)} className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-lg px-2 py-1 text-[9px] font-black uppercase outline-none cursor-pointer">
-                  <option value="YEAR">Timeline</option>
-                  <option value="TERM 1">Term 1</option>
-                  <option value="TERM 2">Term 2</option>
-                  <option value="TERM 3">Term 3</option>
-                  <option value="MULTI_YEAR">History</option>
-                </select>
-                <select value={selectedSubjectId} onChange={e => setSelectedSubjectId(e.target.value)} className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-lg px-2 py-1 text-[9px] font-black uppercase outline-none cursor-pointer">
-                  <option value="OVERALL">Mean</option>
-                  {[...new Map(results.map(r => [r.subject_id, r.subject?.name])).entries()].map(([id, name]) => (
-                    <option key={id} value={id}>{name}</option>
-                  ))}
-                </select>
+                
+                <div className="inline-flex bg-zinc-50 dark:bg-zinc-900/50 p-1 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                  <button 
+                    onClick={() => setGraphType('LINE')}
+                    className={cn("p-2 rounded-lg transition-all", 
+                      graphType === 'LINE' ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm" : "text-zinc-400")}
+                  >
+                    <LineChartIcon size={14} />
+                  </button>
+                  <button 
+                    onClick={() => setGraphType('BAR')}
+                    className={cn("p-2 rounded-lg transition-all", 
+                      graphType === 'BAR' ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm" : "text-zinc-400")}
+                  >
+                    <BarChart3 size={14} />
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div className="p-4 sm:p-6 h-[280px] sm:h-[380px]">
-              {results.length > 0 ? (
-                graphType === 'LINE' ? <Line data={analyticsData} options={graphOptions as any} /> : <Bar data={analyticsData} options={graphOptions as any} />
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-zinc-300 border border-dashed border-zinc-100 dark:border-zinc-800 rounded-2xl font-inter">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Loading records...</p>
+            <div className="p-0 sm:p-6 pb-2">
+              <div className="h-[450px] sm:h-[550px] w-full mt-4">
+                {results.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    {viewMode === 'PROGRESSION' && graphType === 'LINE' ? (
+                      <LineChart data={analyticsData} margin={{ top: 20, right: 30, left: 40, bottom: 40 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                        <XAxis 
+                          dataKey="name" 
+                          axisLine={false} 
+                          tickLine={false} 
+                          interval={0}
+                          padding={{ left: 50, right: 50 }}
+                          tick={(props: any) => {
+                            const { x, y, index } = props;
+                            const data = analyticsData[index];
+                            if (!data) return null;
+                            return (
+                              <g transform={`translate(${x},${y})`}>
+                                <text x={0} y={0} dy={16} textAnchor="middle" fill="#18181b" fontSize={11} fontWeight={900}>{data.name}</text>
+                                {data.isFirstOfTerm && (
+                                  <text x={0} y={20} dy={22} textAnchor="middle" fill="#a1a1aa" fontSize={9} fontWeight={900} className="uppercase tracking-[0.2em]">{data.termLabel}</text>
+                                )}
+                              </g>
+                            );
+                          }}
+                        />
+                        <YAxis 
+                          domain={[0.5, 5.5]} 
+                          ticks={[1, 2, 3, 4, 5]} 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tickFormatter={(val) => ({ 5: 'A', 4: 'B', 3: 'C', 2: 'D', 1: 'E' }[val] || '')}
+                          tick={{ fontSize: 13, fontWeight: 900, fill: '#18181b' }}
+                          label={{ value: 'GRADE', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fontWeight: 900, fill: '#a1a1aa' }}
+                        />
+                        <Tooltip 
+                          cursor={{ stroke: '#f4f4f5', strokeWidth: 2 }}
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              const prevData = data.prevIndex >= 0 ? analyticsData[data.prevIndex] : null;
+                              const currentMarks = Number(data.marks);
+                              const prevMarks = prevData ? Number(prevData.marks) : -1;
+                              const diff = prevMarks >= 0 ? currentMarks - prevMarks : 0;
+
+                              return (
+                                <div className="bg-white border border-zinc-100 shadow-2xl rounded-3xl p-5 min-w-[180px] animate-in zoom-in-95 duration-200">
+                                  <div className="flex items-center justify-between mb-4">
+                                    <span className="text-[9px] font-black uppercase tracking-widest text-zinc-400 font-sora">{data.termLabel} • {data.name}</span>
+                                    {prevMarks >= 0 && (
+                                      <div className={cn("flex items-center group", diff >= 0 ? "text-emerald-500" : "text-rose-500")}>
+                                        {diff >= 0 ? <TrendingUp size={12} /> : <ShieldAlert size={12} />}
+                                        <span className="text-[10px] font-black ml-1">{Math.abs(diff).toFixed(1)}%</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="space-y-1">
+                                    <div className="flex items-end gap-2">
+                                      <span className="text-4xl font-black text-zinc-900 leading-none font-sora">{data.gradeLabel}</span>
+                                      <span className="text-sm font-bold text-zinc-400 mb-1">{data.marks}%</span>
+                                    </div>
+                                    <div className="pt-4 border-t border-zinc-50 mt-4">
+                                      <p className="text-[8px] font-black text-zinc-300 uppercase tracking-widest mb-1">Historical Comparison</p>
+                                      <p className="text-[10px] font-bold text-zinc-500">Previous Term: <span className="text-zinc-900">{prevData ? `${prevData.gradeLabel} (${prevData.marks}%)` : 'No Data'}</span></p>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="grade" 
+                          stroke="#18181b" 
+                          strokeWidth={2.5} 
+                          connectNulls={true}
+                          dot={(props: any) => {
+                            const { cx, cy, payload } = props;
+                            return <rect x={cx - 5} y={cy - 5} width={10} height={10} fill={payload.color} stroke="#fff" strokeWidth={2} />;
+                          }}
+                          activeDot={{ r: 8, strokeWidth: 0 }}
+                          animationDuration={1500}
+                        />
+                      </LineChart>
+                    ) : viewMode === 'SUBJECTS' || graphType === 'BAR' ? (
+                      <BarChart data={analyticsData} margin={{ top: 20, right: 30, left: 40, bottom: 40 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                        <XAxis 
+                          dataKey="name" 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tick={{ fontSize: 10, fontWeight: 900, fill: '#71717a' }} 
+                          label={{ value: viewMode === 'SUBJECTS' ? 'SUBJECTS' : 'EXAMS', position: 'insideBottom', offset: -10, fontSize: 10, fontWeight: 900, fill: '#a1a1aa' }}
+                        />
+                        <YAxis 
+                          domain={[0.5, 5.5]} 
+                          ticks={[1, 2, 3, 4, 5]} 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tickFormatter={(val) => ({ 5: 'A', 4: 'B', 3: 'C', 2: 'D', 1: 'E' }[val] || '')} 
+                          tick={{ fontSize: 13, fontWeight: 900, fill: '#18181b' }} 
+                          label={{ value: 'GRADE', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fontWeight: 900, fill: '#a1a1aa' }}
+                        />
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: '#18181b', borderRadius: '12px', border: 'none', color: '#fff', padding: '12px' }}
+                          itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
+                          labelStyle={{ opacity: 0.5, fontSize: '9px', marginBottom: '4px', textTransform: 'uppercase', color: '#fff' }}
+                          cursor={{ stroke: '#f4f4f5', strokeWidth: 1 }}
+                        />
+                        <Bar dataKey="grade" radius={[8, 8, 8, 8]} barSize={viewMode === 'SUBJECTS' ? 24 : 32}>
+                          {analyticsData.map((entry: any, index: number) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.8} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    ) : null}
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-zinc-300 border border-dashed border-zinc-100 dark:border-zinc-800 rounded-2xl">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Database Empty</p>
+                  </div>
+                )}
+              </div>
+              
+              {strugglingSubjects.length > 0 && (
+                <div className="mt-8 p-6 bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl flex flex-col sm:flex-row items-center gap-8">
+                  <div className="bg-rose-50 dark:bg-rose-900/20 px-4 py-2 rounded-xl text-[10px] font-black text-rose-600 uppercase tracking-widest whitespace-nowrap">Needs Improvement</div>
+                  <div className="flex flex-wrap gap-6 items-center">
+                    {strugglingSubjects.map(s => (
+                      <div key={s.name} className="flex items-center gap-3">
+                         <div className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                         <span className="text-[10px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">{s.name}</span>
+                         <span className="text-[9px] font-bold text-rose-500">Grade {s.grade}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
-          </section>
+          </div>
         </div>
 
         {/* RECENT ACTIVITIES - DESKTOP */}
@@ -348,58 +686,61 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
 };
 
 const ActivityFeed: React.FC<{ activities: any[]; isDrawer?: boolean }> = ({ activities, isDrawer }) => (
-  <section className={cn("bg-zinc-900 rounded-3xl p-6 text-white h-full", !isDrawer && "shadow-xl shadow-zinc-900/10")}>
-    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2.5 mb-8 font-sora">
-      <Activity size={14} className="text-emerald-400" /> Recent Updates
-    </h3>
-    <div className="space-y-6">
+  <section className={cn("bg-zinc-50 dark:bg-zinc-900/50 rounded-3xl p-6 h-full border border-zinc-100 dark:border-zinc-800 animate-in fade-in slide-in-from-right-4 duration-1000", isDrawer && "bg-white dark:bg-zinc-950 border-0 p-0")}>
+    <div className="flex items-center justify-between mb-8 px-1">
+      <h3 className="text-[11px] font-black uppercase tracking-[0.3em] flex items-center gap-3 text-zinc-900 dark:text-white font-sora">
+        <Bell size={14} className="text-orange-500" /> Notifications
+      </h3>
+      <span className="text-[9px] font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-md">{activities.length} New</span>
+    </div>
+    
+    <div className="space-y-3">
       {activities.length > 0 ? activities.map(item => (
-        <div key={item.id} className={cn("pb-5 border-b border-white/5 last:border-0 last:pb-0 group")}>
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[7.5px] font-black text-emerald-500 uppercase tracking-widest">{formatDate(item.date)}</p>
-            {item.urgent && <span className="text-[7px] font-black bg-rose-500 text-white px-1.5 py-0.5 rounded uppercase">Urgent</span>}
+        <div key={item.id} className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 group hover:border-orange-500/30 transition-all cursor-pointer relative overflow-hidden">
+          <div className="flex justify-between items-start mb-2">
+            <span className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md", 
+              item.type === 'ERROR' || item.urgent ? "bg-rose-50 text-rose-600" : 
+              item.type === 'WARNING' ? "bg-amber-50 text-amber-600" : 
+              item.type === 'SUCCESS' ? "bg-emerald-50 text-emerald-600" : 
+              "bg-zinc-100 text-zinc-500")}>
+              {item.type}
+            </span>
+            <p className="text-[8px] font-bold text-zinc-400 uppercase">{formatDate(item.date)}</p>
           </div>
-          <h4 className={cn("text-[10.5px] font-black leading-tight uppercase group-hover:text-emerald-400 transition-colors", item.urgent && "text-rose-400")}>{item.title}</h4>
-          <p className="text-[9.5px] text-zinc-400 line-clamp-2 leading-relaxed font-bold mt-1.5 opacity-80">{item.content}</p>
+          <h4 className="text-[11px] font-black text-zinc-900 dark:text-white uppercase leading-tight tracking-tight mb-1">{item.title}</h4>
+          <p className="text-[10px] text-zinc-500 leading-relaxed font-medium line-clamp-2">{item.content}</p>
+          {!item.is_read && item.id.length > 15 && <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-orange-500 rounded-full" />}
         </div>
       )) : (
-        <p className="text-[10px] font-black uppercase text-zinc-600 text-center py-12">No recent activity detected</p>
+        <div className="py-20 flex flex-col items-center justify-center opacity-20 transform scale-75">
+          <Bell size={40} className="mb-4" />
+          <p className="text-[10px] font-black uppercase tracking-widest">Inbox Zero</p>
+        </div>
       )}
     </div>
   </section>
 );
 
 const StatCard: React.FC<{ label: string; value: string; sub: string; trend: 'success' | 'warning' | 'danger' | 'neutral'; icon: React.ReactNode; hideMobile?: boolean }> = ({ label, value, sub, trend, icon, hideMobile }) => (
-  <div className={cn("rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2.5 sm:p-5 shadow-sm transition-all hover:shadow-md", hideMobile ? "hidden lg:block" : "block")}>
-    <div className="flex items-center justify-between mb-1.5 sm:mb-4">
-      <div className={cn("p-1 sm:p-2 rounded-lg", trend === 'success' ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/10 dark:text-emerald-400" : trend === 'danger' ? "bg-rose-50 text-rose-700 dark:bg-rose-900/10 dark:text-rose-400" : "bg-zinc-50 text-zinc-600 dark:bg-zinc-800/50 dark:text-zinc-400")}>{icon}</div>
-      <div className={cn("px-1.5 py-0.5 rounded-full text-[6px] sm:text-[7px] font-black uppercase tracking-[0.1em]", trend === 'success' ? "bg-emerald-500/10 text-emerald-600" : trend === 'danger' ? "bg-rose-500/10 text-rose-600" : "bg-zinc-500/10 text-zinc-500")}>{trend}</div>
+  <div className={cn("rounded-[2rem] border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-sm transition-all hover:shadow-xl", hideMobile ? "hidden lg:block" : "block")}>
+    <div className="flex items-center justify-between mb-6">
+      <div className={cn("p-2 rounded-xl", trend === 'success' ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/10 dark:text-emerald-400" : trend === 'danger' ? "bg-rose-50 text-rose-700 dark:bg-rose-900/10 dark:text-rose-400" : "bg-zinc-50 text-zinc-600 dark:bg-zinc-800/50 dark:text-zinc-400")}>{icon}</div>
+       <div className={cn("px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-[0.1em]", trend === 'success' ? "bg-emerald-500/10 text-emerald-600" : trend === 'danger' ? "bg-rose-500/10 text-rose-600" : "bg-zinc-500/10 text-zinc-500")}>{trend}</div>
     </div>
-    <p className="text-[7.5px] sm:text-[8.5px] font-black text-zinc-400 uppercase tracking-widest">{label}</p>
-    <p className="text-xs sm:text-lg font-black text-zinc-900 dark:text-zinc-100 mt-0.5 leading-none">{value}</p>
-    <p className="mt-2 text-[7px] sm:text-[8.5px] font-bold uppercase text-zinc-500 truncate bg-zinc-50 dark:bg-zinc-800/50 py-1 px-1.5 rounded-md border border-zinc-100 dark:border-zinc-800/50">{sub || "No history"}</p>
+    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-1 font-sora">{label}</p>
+    <p className="text-xl font-black text-zinc-900 dark:text-zinc-100 leading-none">{value}</p>
+    <p className="mt-3 text-[9px] font-bold uppercase text-zinc-500 truncate bg-zinc-50 dark:bg-zinc-800/50 py-1.5 px-2 rounded-lg border border-zinc-50 dark:border-zinc-800/50">{sub || "No records"}</p>
   </div>
 );
 
-const HeaderAction: React.FC<{ label: string; icon: React.ReactNode; onClick?: () => void }> = ({ label, icon, onClick }) => (
-  <button onClick={onClick} className="flex items-center gap-1.5 group">
-    <span className="text-zinc-400 group-hover:text-emerald-600 transition-colors shrink-0">{icon}</span>
-    <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500 group-hover:text-zinc-900 dark:group-hover:text-white transition-all whitespace-nowrap">{label}</span>
+const NavButton: React.FC<{ label: string; icon: React.ReactNode; onClick?: () => void }> = ({ label, icon, onClick }) => (
+  <button 
+    onClick={onClick} 
+    className="flex flex-col items-center gap-2 min-w-[70px] group active:scale-95 transition-transform"
+  >
+    <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-[1.25rem] bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center text-zinc-400 group-hover:text-emerald-500 group-hover:bg-emerald-500/5 transition-all shadow-sm group-hover:shadow-emerald-500/10 border border-transparent group-hover:border-emerald-500/10">
+      {icon}
+    </div>
+    <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.1em] text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors font-sora">{label}</span>
   </button>
 );
-
-const GraphToggle: React.FC<{ active: boolean; label: string; onClick: () => void }> = ({ active, label, onClick }) => (
-  <button onClick={onClick} className={cn("px-2 py-1 rounded-md transition-all text-[8px] font-black uppercase", active ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm" : "text-zinc-400 hover:text-zinc-600")}>
-    {label}
-  </button>
-);
-
-const graphOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: { legend: { display: false }, tooltip: { mode: 'index' as const, intersect: false, backgroundColor: '#18181b', titleFont: { size: 9, weight: 'bold' }, bodyFont: { size: 9 }, padding: 10, cornerRadius: 8 } },
-  scales: {
-    x: { grid: { display: false }, ticks: { font: { size: 8, weight: 'bold' }, color: '#a1a1aa' } },
-    y: { min: 0, max: 100, border: { display: false }, grid: { color: 'rgba(244, 244, 245, 0.4)', drawBorder: false }, ticks: { stepSize: 20, font: { size: 8 }, color: '#a1a1aa' } }
-  }
-};
