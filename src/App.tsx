@@ -25,6 +25,8 @@ import { ProfileSettings } from './pages/ProfileSettings';
 import MyChats from './pages/MyChats';
 import { AdminOS } from './pages/AdminOS';
 import { Calendar } from './pages/Calendar';
+import { Settings } from './pages/Settings';
+import { Privacy } from './pages/Privacy';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -70,6 +72,8 @@ const AppContent = () => {
               <Route path="/profile-settings" element={<ProfileSettings />} />
               <Route path="/admin" element={<AdminOS />} />
               <Route path="/calendar" element={<Calendar />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/privacy" element={<Privacy />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </ProtectedRoute>
