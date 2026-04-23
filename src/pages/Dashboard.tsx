@@ -71,19 +71,13 @@ const PersonalPortal = ({ user }: any) => {
     const fetchPortalData = async () => {
       try {
         setLoading(true);
-        const allStudents = await api.getStudents(user.school_id);
-        const lowerEmail = user.email?.toLowerCase?.() || '';
-        const directMatch = allStudents.find((s: any) =>
-          s.id === user.id ||
-          s.profile?.id === user.id ||
-          (lowerEmail && s.profile?.email?.toLowerCase?.() === lowerEmail) ||
-          (user.full_name && s.profile?.full_name === user.full_name)
-        );
-        const myChildren = allStudents.filter((s: any) => s.parent_id === user.id);
-        const visibleStudents = myChildren.length > 0 ? myChildren : (directMatch ? [directMatch] : []);
+        const visibleStudents = user.role === 'PARENT' 
+          ? await api.getStudentsByParentId(user.school_id, user.id)
+          : await api.getStudentByProfileId(user.school_id, user.id).then(s => s ? [s] : []);
+          
         setChildren(visibleStudents);
 
-        const mainChild = visibleStudents[selectedChildIndex] || visibleStudents[0] || directMatch || null;
+        const mainChild = visibleStudents[selectedChildIndex] || visibleStudents[0] || null;
         const [events, announcements] = await Promise.allSettled([
           api.getEvents(user.school_id),
           api.getAnnouncements(user.school_id)
@@ -301,12 +295,21 @@ const HomePortal = ({ env, setActiveTab, userName }: any) => {
       </div>
 
       {/* 📅 TIMELINE */}
-      <div className="space-y-6 pt-4">
-        <h3 className="px-4 text-[10px] font-black text-zinc-400 uppercase tracking-[0.4em]">Campus Timeline • Today</h3>
-        <div className="bg-white border border-zinc-100 rounded-[3rem] p-10 space-y-12 shadow-sm">
-          <TimelineItem time="08:30" title="Pure Mathematics: Calculus Prep" type="Class" isLive />
-          <TimelineItem time="11:15" title="Physical Science: Optics Lab" type="Practical" />
-          <TimelineItem time="14:30" title="School Council Assembly" type="Institutional" />
+      <div className="space-y-6 pt-4 text-left">
+        <h3 className="px-4 text-[10px] font-black text-zinc-400 uppercase tracking-[0.4em]">Campus Timeline • Upcoming</h3>
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-[3rem] p-10 space-y-12 shadow-sm">
+          {env.events && env.events.length > 0 ? (
+            env.events.slice(0, 3).map((e: any) => (
+              <TimelineItem 
+                key={e.id}
+                time={new Date(e.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} 
+                title={e.title} 
+                type="Institutional" 
+              />
+            ))
+          ) : (
+            <p className="text-[10px] font-black text-zinc-300 uppercase tracking-widest text-center py-10 italic">No upcoming events scheduled.</p>
+          )}
         </div>
       </div>
     </div>
@@ -1039,13 +1042,21 @@ const TeacherView = ({ user }: any) => {
           </div>
         </div>
 
-        <div className="lg:col-span-4 space-y-6">
-          <h2 className="text-sm font-semibold border-b border-zinc-100 pb-2">Notices & Alerts</h2>
-          <div className="space-y-4">
-            <AlertItem type="Health" text="Razanyo: Asthma history. Needs inhaler." />
-            <AlertItem type="Academic" text="You haven't recorded marks for Form 4 Math yet." color="text-amber-600" />
-            <AlertItem type="Message" text="A parent of 'Razanyo' sent you a message." color="text-indigo-600" />
-            <AlertItem type="Notice" text="School closes early tomorrow for staff meeting." />
+        <div className="lg:col-span-4 space-y-8">
+          <h2 className="text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-3 text-zinc-900 dark:text-white mb-6">
+            <Bell size={14} className="text-orange-500" /> Notifications & Alerts
+          </h2>
+          <div className="space-y-3">
+            <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800 transition-all cursor-pointer">
+              <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-amber-50 text-amber-600 mb-2 inline-block">Academic</span>
+              <h4 className="text-[11px] font-black text-zinc-900 dark:text-white uppercase leading-tight mb-1">Missing Marks</h4>
+              <p className="text-[10px] text-zinc-500 leading-relaxed font-medium">You haven't recorded marks for Form 4 Math yet.</p>
+            </div>
+            <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800 transition-all cursor-pointer">
+              <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 mb-2 inline-block">Message</span>
+              <h4 className="text-[11px] font-black text-zinc-900 dark:text-white uppercase leading-tight mb-1">Parent Inquiry</h4>
+              <p className="text-[10px] text-zinc-500 leading-relaxed font-medium">A parent of 'Razanyo' sent you a message regarding performance.</p>
+            </div>
           </div>
         </div>
       </div>
@@ -1185,16 +1196,25 @@ const PrincipalView = ({ user }: any) => {
             </div>
           </section>
         </div>
-        <div className="lg:col-span-5 space-y-6">
-          <h2 className="text-sm font-semibold border-b border-zinc-100 pb-2">Recent School Updates</h2>
-          <div className="space-y-6">
+        <div className="lg:col-span-5 space-y-8">
+          <h2 className="text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-3 text-zinc-900 dark:text-white">
+            <Activity size={14} className="text-emerald-500" /> Institutional Activity
+          </h2>
+          <div className="space-y-3">
             {[...data.events, ...data.discipline].slice(0, 5).map((item, i) => (
-              <div key={i} className="flex gap-4 items-start">
-                <div className="w-2 h-2 rounded-full bg-zinc-900 mt-1.5" />
-                <div className="space-y-0.5">
-                  <p className="text-sm font-medium">{item.title || item.incident_title}</p>
-                  <p className="text-xs text-zinc-500 leading-relaxed">{item.description || "School record logged."}</p>
+              <div key={i} className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800 transition-all">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-500">
+                    {item.incident_title ? 'Discipline' : 'Event'}
+                  </span>
+                  <p className="text-[8px] font-bold text-zinc-400 uppercase">{item.date || item.incident_date}</p>
                 </div>
+                <h4 className="text-[11px] font-black text-zinc-900 dark:text-white uppercase leading-tight mb-1">
+                  {item.title || item.incident_title}
+                </h4>
+                <p className="text-[10px] text-zinc-500 leading-relaxed font-medium line-clamp-2">
+                  {item.description || "Official school record logged for history."}
+                </p>
               </div>
             ))}
           </div>
