@@ -26,6 +26,7 @@ export interface Profile {
   avatar_url?: string;
   tsc_number?: string;
   rating?: number;
+  username?: string;
 }
 
 export interface Class {

@@ -1,19 +1,31 @@
--- 🏛️ Institutional Appointment System
-CREATE TABLE IF NOT EXISTS appointments (
+
+-- Create Appointments table for Teacher-Parent consultations
+CREATE TABLE IF NOT EXISTS public.appointments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE,
-    parent_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
-    student_id UUID REFERENCES students(id) ON DELETE CASCADE,
-    teacher_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    school_id UUID REFERENCES public.schools(id) ON DELETE CASCADE,
+    teacher_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    parent_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    student_id UUID REFERENCES public.students(id) ON DELETE CASCADE,
     appointment_date DATE NOT NULL,
-    appointment_time TIME NOT NULL,
-    reason TEXT NOT NULL,
-    status TEXT DEFAULT 'PENDING', -- PENDING, APPROVED, DECLINED, COMPLETED
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+    appointment_time TEXT NOT NULL,
+    reason TEXT,
+    status TEXT DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'CANCELLED', 'COMPLETED')),
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Index for performance
-CREATE INDEX IF NOT EXISTS idx_appointments_school ON appointments(school_id);
-CREATE INDEX IF NOT EXISTS idx_appointments_parent ON appointments(parent_id);
-CREATE INDEX IF NOT EXISTS idx_appointments_teacher ON appointments(teacher_id);
+-- Enable RLS
+ALTER TABLE public.appointments ENABLE ROW LEVEL SECURITY;
+
+-- Simple RLS Policies
+CREATE POLICY "Users can view their own appointments" ON public.appointments
+    FOR SELECT USING (
+        auth.uid() = teacher_id OR 
+        auth.uid() = parent_id OR 
+        EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('ADMIN', 'PRINCIPAL'))
+    );
+
+CREATE POLICY "Parents can create appointments" ON public.appointments
+    FOR INSERT WITH CHECK (auth.uid() = parent_id);
+
+CREATE POLICY "Teachers can update status" ON public.appointments
+    FOR UPDATE USING (auth.uid() = teacher_id);

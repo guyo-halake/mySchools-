@@ -27,6 +27,7 @@ import { AdminOS } from './pages/AdminOS';
 import { Calendar } from './pages/Calendar';
 import { Settings } from './pages/Settings';
 import { Privacy } from './pages/Privacy';
+import { MyStudents } from './pages/MyStudents';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -74,6 +75,7 @@ const AppContent = () => {
               <Route path="/calendar" element={<Calendar />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/privacy" element={<Privacy />} />
+              <Route path="/my-students" element={<MyStudents />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </ProtectedRoute>

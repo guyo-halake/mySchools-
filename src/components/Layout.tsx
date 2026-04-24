@@ -33,52 +33,56 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
   PARENT: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'Results', icon: FileText, path: '/results' },
-    { label: 'School Fees', icon: CreditCard, path: '/fees' },
-    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
     { label: 'My Class', icon: BookOpen, path: '/my-classroom' },
-    { label: 'Announcements', icon: Bell, path: '/announcements' },
     { label: 'My Chats', icon: MessageSquare, path: '/my-chats' },
+    { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
+    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
+    { label: 'School Fees', icon: CreditCard, path: '/fees' },
   ],
   STUDENT: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'Results', icon: FileText, path: '/results' },
+    { label: 'My Class', icon: BookOpen, path: '/my-classroom' },
+    { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
+    { label: 'Assignments', icon: BookOpen, path: '/assignments' },
     { label: 'School Fees', icon: CreditCard, path: '/fees' },
     { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
-    { label: 'Announcements', icon: Bell, path: '/announcements' },
-    { label: 'My Class', icon: BookOpen, path: '/my-classroom' },
-    { label: 'Assignments', icon: BookOpen, path: '/assignments' },
     { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
   ],
   TEACHER: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-    { label: 'Results and Student mngt', icon: FileText, path: '/results-management' },
-    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
-    { label: 'Announcements', icon: Bell, path: '/announcements' },
-    { label: 'My Chats', icon: MessageSquare, path: '/my-chats' },
+    { label: 'Results and student mngt', icon: FileText, path: '/results-management' },
     { label: 'My Class', icon: BookOpen, path: '/my-classroom' },
+    { label: 'My Chats', icon: MessageSquare, path: '/my-chats' },
+    { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
+    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
+    { label: 'Templates', icon: Settings, path: '/templates' },
     { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
   ],
   PRINCIPAL: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-    { label: 'Results and Student mngt', icon: FileText, path: '/results-management' },
+    { label: 'Results and student mngt', icon: FileText, path: '/results-management' },
+    { label: 'My Class', icon: BookOpen, path: '/my-classroom' },
+    { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
+    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
     { label: 'Students', icon: Users, path: '/students' },
     { label: 'Teachers', icon: ShieldCheck, path: '/teachers' },
     { label: 'Classes', icon: BookOpen, path: '/classes' },
-    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
-    { label: 'Announcements', icon: Bell, path: '/announcements' },
-    { label: 'My Class', icon: BookOpen, path: '/my-classroom' },
+    { label: 'Templates', icon: Settings, path: '/templates' },
     { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
   ],
   ADMIN: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'Admin OS', icon: Activity, path: '/adminos' },
-    { label: 'Results and Student mngt', icon: FileText, path: '/results-management' },
+    { label: 'Results and student mngt', icon: FileText, path: '/results-management' },
+    { label: 'My Class', icon: BookOpen, path: '/my-classroom' },
+    { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
+    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
     { label: 'Students', icon: Users, path: '/students' },
     { label: 'Teachers', icon: ShieldCheck, path: '/teachers' },
     { label: 'Classes', icon: BookOpen, path: '/classes' },
-    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
     { label: 'Fees', icon: CreditCard, path: '/fees' },
-    { label: 'Announcements', icon: Bell, path: '/announcements' },
+    { label: 'Templates', icon: Settings, path: '/templates' },
     { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
   ],
 };
@@ -120,7 +124,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           filter: `user_id=eq.${user.id}` 
         }, 
         (payload) => {
-          if (payload.new && payload.new.school_id === user.school_id) {
+          if (payload.new && (!payload.new.school_id || payload.new.school_id === user.school_id)) {
             setNotifications(prev => [payload.new, ...prev]);
           }
         }
@@ -153,13 +157,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   };
 
   const links = sidebarLinks[user.role] || [];
-  const linksWithTemplates = [...links];
-  const roleName = String(user.role || '').toUpperCase();
-  if (['TEACHER', 'ADMIN', 'PRINCIPAL'].includes(roleName)) {
-    if (!linksWithTemplates.some((l) => l.path === '/templates')) {
-      linksWithTemplates.push({ label: 'Templates', icon: Settings, path: '/templates' });
-    }
-  }
+  const linksWithTemplates = links;
 
   const getUserInitials = (name?: string) => {
     if (!name) return '??';
@@ -226,28 +224,21 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             ))}
           </nav>
 
-          <div className="p-3 border-t border-gray-50 dark:border-zinc-800 space-y-2">
-            <div className="bg-gray-50 dark:bg-zinc-800/30 rounded-lg p-2">
-              <p className="text-[8px] uppercase tracking-widest font-bold text-zinc-400 mb-1.5 px-1">Switch View</p>
-              <div className="grid grid-cols-2 gap-1">
-                {(['PARENT', 'STUDENT', 'TEACHER', 'PRINCIPAL', 'ADMIN'] as Role[]).map(role => (
-                   <button
-                    key={role}
-                    onClick={() => {
-                      switchRole(role);
-                      navigate('/dashboard');
-                      setIsSidebarOpen(false);
-                    }}
-                    className={cn(
-                      "text-[8px] py-1 px-1 rounded border transition-all font-bold",
-                      user.role === role 
-                        ? "bg-zinc-900 text-white border-zinc-900 dark:bg-white dark:text-black dark:border-white" 
-                        : "bg-white dark:bg-zinc-900 border-gray-100 dark:border-zinc-800 text-zinc-400"
-                    )}
-                  >
-                    {role}
-                  </button>
-                ))}
+          <div className="p-4 border-t border-gray-50 dark:border-zinc-800 space-y-3">
+            <div className="px-2">
+              <p className="text-[10px] font-black text-zinc-900 dark:text-white uppercase tracking-tight leading-none mb-1">
+                MySchools Management System
+              </p>
+              <p className="text-[8px] font-bold text-zinc-400 leading-tight">
+                Developed and maintained by:
+              </p>
+              <div className="mt-1 space-y-0.5">
+                <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">
+                  P3L Developers, <span className="text-zinc-600">© Matta Systems</span>
+                </p>
+                <p className="text-[8px] font-bold text-zinc-400">
+                  Nairobi Kenya.
+                </p>
               </div>
             </div>
             <button 

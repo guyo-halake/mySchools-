@@ -86,97 +86,71 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
   }, [notifications, feeSummary]);
 
   // 📊 SMART GRAPH ENGINE (Sequential Terms & Grade Mapping)
-  const analyticsData = useMemo(() => {
-    if (!results.length) return [];
+    const analyticsData = useMemo(() => {
+      if (!results.length) return [];
+  
+      const getLevel = (m: number) => {
+        if (m >= 80) return 5;
+        if (m >= 70) return 4;
+        if (m >= 60) return 3;
+        if (m >= 50) return 2;
+        return 1;
+      };
+  
+      if (viewMode === 'SUBJECTS') {
+        const subjectMap = new Map();
+        results.forEach(r => {
+          const name = r.subject?.name || 'Unknown';
+          if (!subjectMap.has(name)) subjectMap.set(name, []);
+          subjectMap.get(name).push(Number(r.marks || 0));
+        });
+        
+        return Array.from(subjectMap.entries()).map(([name, scores]) => {
+          const avg = scores.reduce((a:any,b:any)=>a+b,0) / scores.length;
+          const level = getLevel(avg);
+          return {
+            name,
+            grade: level,
+            color: level >= 4 ? '#10b981' : level >= 2 ? '#f59e0b' : '#ef4444'
+          };
+        });
+      }
+  
+      // PERFORMANCE VIEW (Group by Term -> Exam)
+      const termGrouped = results.reduce((acc: any, r) => {
+        const termName = r.exam?.term?.name || 'Unknown';
+        const examName = r.exam?.name || 'Exam';
+        const key = `${termName}-${examName}`;
+        if (!acc[key]) {
+          acc[key] = { 
+            term: termName, 
+            exam: examName, 
+            date: new Date(r.exam?.date || 0),
+            scores: [] 
+          };
+        }
+        acc[key].scores.push(Number(r.marks || 0));
+        return acc;
+      }, {});
 
-    const getLevel = (m: number) => {
-      if (m >= 80) return 5;
-      if (m >= 70) return 4;
-      if (m >= 60) return 3;
-      if (m >= 50) return 2;
-      return 1;
-    };
+      const timeline = Object.values(termGrouped).sort((a: any, b: any) => a.date.getTime() - b.date.getTime());
 
-    if (viewMode === 'SUBJECTS') {
-      const subjectMap = new Map();
-      results.forEach(r => {
-        const name = r.subject?.name || 'Unknown';
-        if (!subjectMap.has(name)) subjectMap.set(name, []);
-        subjectMap.get(name).push(Number(r.marks || 0));
-      });
-      
-      return Array.from(subjectMap.entries()).map(([name, scores]) => {
-        const avg = scores.reduce((a:any,b:any)=>a+b,0) / scores.length;
+      return timeline.map((group: any) => {
+        const avg = group.scores.length ? group.scores.reduce((a:any,b:any)=>a+b,0) / group.scores.length : 0;
         const level = getLevel(avg);
+        const examShort = group.exam.length > 8 ? group.exam.substring(0, 5) + '..' : group.exam;
+
         return {
-          name,
+          name: examShort,
+          termLabel: group.term,
+          isFirstOfTerm: true,
           grade: level,
-          color: level >= 4 ? '#10b981' : level >= 2 ? '#f59e0b' : '#ef4444'
+          marks: avg.toFixed(1),
+          gradeLabel: markToGrade(avg),
+          color: avg > 0 ? (level >= 4 ? '#10b981' : level >= 2 ? '#f59e0b' : '#ef4444') : '#f4f4f5'
         };
       });
-    }
-
-    const examGrouping = results.reduce((acc: any[], r) => {
-      const examId = r.exam_id;
-      const existing = acc.find(e => e.id === examId);
-      if (existing) existing.scores.push(Number(r.marks || 0));
-      else acc.push({
-        id: examId,
-        name: r.exam?.name || 'Exam',
-        term: r.exam?.term?.name || 'T1',
-        date: new Date(r.exam?.date || 0),
-        scores: [Number(r.marks || 0)]
-      });
-      return acc;
-    }, []).sort((a,b) => a.date.getTime() - b.date.getTime());
-
-    // 🏛️ STABLE YEAR SKELETON (O, MT, ET for all 3 Terms)
-    const skeleton = [
-      { t: 'Term 1', e: 'O', label: 'Term 1', search: ['OPEN'] },
-      { t: 'Term 1', e: 'MT', search: ['MID'] },
-      { t: 'Term 1', e: 'ET', search: ['END'] },
-      { t: 'Term 2', e: 'O', label: 'Term 2', search: ['OPEN'] },
-      { t: 'Term 2', e: 'MT', search: ['MID'] },
-      { t: 'Term 2', e: 'ET', search: ['END'] },
-      { t: 'Term 3', e: 'O', label: 'Term 3', search: ['OPEN'] },
-      { t: 'Term 3', e: 'MT', search: ['MID'] },
-      { t: 'Term 3', e: 'ET', search: ['END'] }
-    ];
-
-    return skeleton.map((slot, idx) => {
-      const matches = results.filter(r => {
-        const tRaw = (r.exam?.term?.name || '').toUpperCase();
-        const eRaw = (r.exam?.name || '').toUpperCase();
-        
-        const isCorrectTerm = (slot.t === 'Term 1' && (tRaw.includes('1') || tRaw.includes('ONE') || tRaw.includes('FIRST'))) ||
-                             (slot.t === 'Term 2' && (tRaw.includes('2') || tRaw.includes('TWO') || tRaw.includes('SECOND'))) ||
-                             (slot.t === 'Term 3' && (tRaw.includes('3') || tRaw.includes('THREE') || tRaw.includes('THIRD')));
-        
-        const isCorrectExam = slot.search.some(s => eRaw.includes(s));
-        return isCorrectTerm && isCorrectExam;
-      });
-
-      const avg = matches.length ? matches.reduce((a,b)=>a+Number(b.marks||0),0)/matches.length : 0; // Default to 0 if missing
-      const level = getLevel(avg);
-
-      // Find previous term same exam for comparison
-      const prevTermIdx = idx - 3;
-      const prevData = prevTermIdx >= 0 ? skeleton[prevTermIdx] : null; 
-      // We'll calculate the actual marks comparison in the tooltip or here.
-      // For simplicity, let's just pass the raw data and the tooltip will handle the rest.
-
-      return {
-        name: slot.e,
-        termLabel: slot.label,
-        isFirstOfTerm: !!slot.label,
-        grade: level,
-        marks: avg.toFixed(1),
-        gradeLabel: markToGrade(avg),
-        color: avg > 0 ? (level >= 4 ? '#10b981' : level >= 2 ? '#f59e0b' : '#ef4444') : '#f4f4f5',
-        prevIndex: prevTermIdx
-      };
-    });
-  }, [results, viewMode]);
+    }, [results, viewMode]);
 
   const strugglingSubjects = useMemo(() => {
     const map = new Map();

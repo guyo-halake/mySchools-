@@ -142,28 +142,6 @@ export const api = {
     return (data || []) as Subject[];
   },
 
-  async getAppointmentsByTeacher(teacherId: string) {
-    if (!isUuid(teacherId)) return [];
-    const { data, error } = await supabase
-      .from('appointments')
-      .select('*, parent:profiles!appointments_parent_id_fkey(*), student:students(id, profile:profiles!students_id_fkey(*))')
-      .eq('teacher_id', teacherId)
-      .order('appointment_date', { ascending: true });
-    if (error) throw error;
-    return data;
-  },
-
-  async getStudentsByParentId(schoolId: string, parentId: string) {
-    if (!isUuid(schoolId) || !isUuid(parentId)) return [];
-    const { data, error } = await supabase
-      .from('students')
-      .select('*, profile:profiles!students_id_fkey(*), class:classes(*), stream:streams(*)')
-      .eq('school_id', schoolId)
-      .eq('parent_id', parentId);
-    if (error) throw error;
-    return data;
-  },
-
   async getExams(schoolId: string): Promise<Exam[]> {
     if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
@@ -723,16 +701,19 @@ export const api = {
   },
 
   // 8. ATTENDANCE & TEACHER DASHBOARD
-  async getTeacherStream(teacherId: string) {
-    if (!isUuid(teacherId)) return null;
-    const { data, error } = await supabase
-      .from('streams')
-      .select('*, class:classes!streams_class_id_fkey(*)')
-      .eq('class_teacher_id', teacherId)
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-    return data;
+  async getTeacherStreams(teacherId: string) {
+    try {
+      if (!isUuid(teacherId)) return [];
+      const { data, error } = await supabase
+        .from('streams')
+        .select('*, class:classes!streams_class_id_fkey(*)')
+        .eq('class_teacher_id', teacherId);
+      if (error) throw error;
+      return data || [];
+    } catch (e) {
+      console.warn('API getTeacherStreams error:', e);
+      return [];
+    }
   },
 
   async getStudentsByStream(streamId: string) {
@@ -743,6 +724,143 @@ export const api = {
       .eq('stream_id', streamId);
     if (error) throw error;
     return data || [];
+  },
+
+  async getStreamPerformanceTrend(streamId: string) {
+    if (!isUuid(streamId)) return [];
+    // 1. Get student IDs for this stream
+    const { data: students } = await supabase.from('students').select('id').eq('stream_id', streamId);
+    const ids = (students || []).map(s => s.id);
+    if (ids.length === 0) return [];
+
+    // 2. Fetch results for these students
+    const { data, error } = await supabase
+      .from('exam_results')
+      .select('marks, exam:exams!exam_results_exam_id_fkey(name, date)')
+      .in('student_id', ids)
+      .order('created_at', { ascending: true }); // Approximate timeline
+
+    if (error) throw error;
+
+    // 3. Aggregate by Exam Name
+    const map = new Map<string, { total: number, count: number }>();
+    (data || []).forEach((row: any) => {
+      const name = row.exam?.name || 'Unknown Exam';
+      const prev = map.get(name) || { total: 0, count: 0 };
+      map.set(name, { total: prev.total + (row.marks || 0), count: prev.count + 1 });
+    });
+
+    return Array.from(map.entries()).map(([name, stats]) => ({
+      name,
+      score: Math.round(stats.total / stats.count)
+    }));
+  },
+
+  async getStreamVsFormComparison(streamId: string) {
+    try {
+      if (!isUuid(streamId)) return [];
+      
+      // 1. Get class_id for this stream
+      const { data: currentStream } = await supabase.from('streams').select('class_id').eq('id', streamId).single();
+      if (!currentStream) return [];
+
+      // 2. Get all stream IDs in the same GRADE (class_id)
+      const { data: allStreams } = await supabase.from('streams').select('id').eq('class_id', currentStream.class_id);
+      const streamIds = (allStreams || []).map(s => s.id);
+      
+      // 3. Get all students in those streams
+      const { data: allGradeStudents } = await supabase.from('students').select('id, stream_id').in('stream_id', streamIds);
+      const gradeStudentIds = (allGradeStudents || []).map(s => s.id);
+      if (!gradeStudentIds.length) return [];
+
+      // 4. Fetch results
+      const { data: results, error } = await supabase
+        .from('exam_results')
+        .select('marks, student_id, exam:exams!exam_results_exam_id_fkey(name)')
+        .in('student_id', gradeStudentIds);
+
+      if (error) throw error;
+
+      // 5. Map students to whether they are in "My Stream"
+      const myStudentIds = new Set((allGradeStudents || []).filter(s => s.stream_id === streamId).map(s => s.id));
+
+      // 6. Aggregate by exam
+      const statsMap = new Map<string, { myTotal: number; myCount: number; gradeTotal: number; gradeCount: number }>();
+      (results || []).forEach(r => {
+        const examName = r.exam?.name || 'Unknown';
+        const stats = statsMap.get(examName) || { myTotal: 0, myCount: 0, gradeTotal: 0, gradeCount: 0 };
+        
+        if (myStudentIds.has(r.student_id)) {
+          stats.myTotal += (r.marks || 0);
+          stats.myCount += 1;
+        }
+        stats.gradeTotal += (r.marks || 0);
+        stats.gradeCount += 1;
+        
+        statsMap.set(examName, stats);
+      });
+
+      return Array.from(statsMap.entries()).map(([name, s]) => ({
+        name,
+        myClass: s.myCount ? Math.round(s.myTotal / s.myCount) : 0,
+        gradeAvg: s.gradeCount ? Math.round(s.gradeTotal / s.gradeCount) : 0
+      }));
+    } catch (err) {
+      console.warn('API getStreamVsFormComparison error (likely table missing):', err);
+      return [];
+    }
+  },
+
+  async getStreamSubjectBreakdown(streamId: string) {
+    if (!isUuid(streamId)) return [];
+    const { data: students } = await supabase.from('students').select('id').eq('stream_id', streamId);
+    const ids = (students || []).map(s => s.id);
+    if (!ids.length) return [];
+
+    const { data, error } = await supabase
+      .from('exam_results')
+      .select('marks, subject:subjects!exam_results_subject_id_fkey(name)')
+      .in('student_id', ids);
+    
+    if (error) throw error;
+
+    const map = new Map<string, { total: number; count: number }>();
+    (data || []).forEach(r => {
+      const name = r.subject?.name || 'Unknown';
+      const s = map.get(name) || { total: 0, count: 0 };
+      map.set(name, { total: s.total + (r.marks || 0), count: s.count + 1 });
+    });
+
+    return Array.from(map.entries()).map(([name, s]) => ({
+      name,
+      score: Math.round(s.total / s.count)
+    })).sort((a, b) => b.score - a.score);
+  },
+
+  async getStreamStudentRankings(streamId: string) {
+    if (!isUuid(streamId)) return [];
+    
+    const { data, error } = await supabase
+      .from('exam_results')
+      .select('marks, student:students!exam_results_student_id_fkey(adm_no, profile:profiles!students_id_fkey(full_name))')
+      .in('student_id', (await supabase.from('students').select('id').eq('stream_id', streamId)).data?.map(s => s.id) || [])
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const map = new Map<string, { total: number; count: number; name: string }>();
+    (data || []).forEach((r: any) => {
+      const adm = r.student?.adm_no || 'Unknown';
+      const name = r.student?.profile?.full_name?.split(' ')[0] || adm;
+      const s = map.get(adm) || { total: 0, count: 0, name };
+      map.set(adm, { total: s.total + (r.marks || 0), count: s.count + 1, name });
+    });
+
+    return Array.from(map.entries()).map(([adm, s]) => ({
+      name: s.name,
+      adm,
+      score: Math.round(s.total / s.count)
+    })).sort((a, b) => b.score - a.score);
   },
 
   async getAttendanceByStream(streamId: string, date: string) {
@@ -1200,5 +1318,272 @@ export const api = {
     }
 
     return data;
+  },
+
+  async getAppointmentsByTeacher(teacherId: string) {
+    if (!isUuid(teacherId)) return [];
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('*, parent:profiles(full_name, email, phone), student:students(profile:profiles(full_name))')
+      .eq('teacher_id', teacherId)
+      .order('appointment_date', { ascending: false });
+    if (error) {
+      return [];
+    }
+    return data || [];
+  },
+
+  async getTeacherStreams(teacherId: string) {
+    if (!isUuid(teacherId)) return [];
+    const { data, error } = await supabase
+      .from('streams')
+      .select('*, class:classes(*)')
+      .eq('class_teacher_id', teacherId);
+    if (error) {
+      console.warn("API getTeacherStreams error:", error);
+      return [];
+    }
+    return data || [];
+  },
+
+  async getStreamById(streamId: string) {
+    const { data, error } = await supabase
+      .from('streams')
+      .select('*, class:classes(*)')
+      .eq('id', streamId)
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async getStreamPerformanceTrend(streamId: string) {
+    try {
+      const { data: students } = await supabase.from('students').select('id').eq('stream_id', streamId);
+      const studentIds = (students || []).map(s => s.id);
+      if (studentIds.length === 0) return [];
+
+      const { data: results, error } = await supabase
+        .from('exam_results')
+        .select('marks, exam:exams!exam_results_exam_id_fkey(name, date)')
+        .in('student_id', studentIds);
+
+      if (error) throw error;
+
+      const grouped = (results || []).reduce((acc: any, curr: any) => {
+        const examName = curr.exam?.name || 'Unknown';
+        if (!acc[examName]) acc[examName] = { name: examName, total: 0, count: 0 };
+        acc[examName].total += curr.marks || 0;
+        acc[examName].count += 1;
+        return acc;
+      }, {});
+
+      return Object.values(grouped).map((g: any) => ({
+        name: g.name,
+        score: Math.round(g.total / (g.count || 1))
+      }));
+    } catch (err) {
+      console.error("Trend error:", err);
+      return [];
+    }
+  },
+
+  async getStreamVsFormComparison(streamId: string) {
+    try {
+      const { data: currentStream } = await supabase.from('streams').select('class_id').eq('id', streamId).single();
+      if (!currentStream) return [];
+
+      const { data: allFormStreams } = await supabase.from('streams').select('id').eq('class_id', currentStream.class_id);
+      const streamIds = (allFormStreams || []).map(s => s.id);
+
+      const { data: allGradeStudents } = await supabase.from('students').select('id, stream_id').in('stream_id', streamIds);
+      const gradeStudentIds = (allGradeStudents || []).map(s => s.id);
+      if (gradeStudentIds.length === 0) return [];
+
+      const { data: results, error } = await supabase
+        .from('exam_results')
+        .select('marks, student_id, exam:exams!exam_results_exam_id_fkey(name)')
+        .in('student_id', gradeStudentIds);
+
+      if (error) throw error;
+
+      const myStudentIds = new Set((allGradeStudents || []).filter(s => s.stream_id === streamId).map(s => s.id));
+      const exams = (results || []).reduce((acc: any, curr: any) => {
+        const name = curr.exam?.name || 'Unknown';
+        if (!acc[name]) acc[name] = { name, myTotal: 0, myCount: 0, gradeTotal: 0, gradeCount: 0 };
+        acc[name].gradeTotal += curr.marks || 0;
+        acc[name].gradeCount += 1;
+        if (myStudentIds.has(curr.student_id)) {
+          acc[name].myTotal += curr.marks || 0;
+          acc[name].myCount += 1;
+        }
+        return acc;
+      }, {});
+
+      return Object.values(exams).map((e: any) => ({
+        name: e.name,
+        myClass: Math.round(e.myTotal / (e.myCount || 1)),
+        gradeAvg: Math.round(e.gradeTotal / (e.gradeCount || 1))
+      }));
+    } catch (err) {
+      console.error("Comparison error:", err);
+      return [];
+    }
+  },
+
+  async getStreamSubjectBreakdown(streamId: string) {
+    try {
+      const { data: students } = await supabase.from('students').select('id').eq('stream_id', streamId);
+      const studentIds = (students || []).map(s => s.id);
+      if (studentIds.length === 0) return [];
+
+      const { data: results, error } = await supabase
+        .from('exam_results')
+        .select('marks, subject:subjects!exam_results_subject_id_fkey(name)')
+        .in('student_id', studentIds);
+
+      if (error) throw error;
+
+      const subjects = (results || []).reduce((acc: any, curr: any) => {
+        const name = curr.subject?.name || 'Unknown';
+        if (!acc[name]) acc[name] = { name, total: 0, count: 0 };
+        acc[name].total += curr.marks || 0;
+        acc[name].count += 1;
+        return acc;
+      }, {});
+
+      return Object.values(subjects).map((s: any) => ({
+        name: s.name,
+        score: Math.round(s.total / (s.count || 1))
+      })).sort((a: any, b: any) => b.score - a.score);
+    } catch (err) {
+      console.error("Subject error:", err);
+      return [];
+    }
+  },
+
+  async getStreamStudentRankings(streamId: string) {
+    try {
+      const { data: students } = await supabase.from('students')
+        .select('id, profile:profiles!students_id_fkey(full_name)')
+        .eq('stream_id', streamId);
+      if (!students) return [];
+      const studentIds = students.map(s => s.id);
+
+      const { data: results, error } = await supabase
+        .from('exam_results')
+        .select('marks, student_id')
+        .in('student_id', studentIds);
+
+      if (error) throw error;
+
+      const studentScores = (results || []).reduce((acc: any, curr: any) => {
+        if (!acc[curr.student_id]) acc[curr.student_id] = { total: 0, count: 0 };
+        acc[curr.student_id].total += curr.marks || 0;
+        acc[curr.student_id].count += 1;
+        return acc;
+      }, {});
+
+      return students.map(s => ({
+        name: s.profile?.full_name || 'Unknown',
+        score: studentScores[s.id] ? Math.round(studentScores[s.id].total / studentScores[s.id].count) : 0
+      })).sort((a, b) => b.score - a.score).slice(0, 10);
+    } catch (err) {
+      console.error("Rankings error:", err);
+      return [];
+    }
+  },
+
+  async updateStreamProfile(streamId: string, updates: any) {
+    const { data, error } = await supabase
+      .from('streams')
+      .update(updates)
+      .eq('id', streamId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async getExamGradeBreakdown(examId: string, streamId: string) {
+    const { data, error } = await supabase
+      .from('exam_results')
+      .select('marks')
+      .eq('exam_id', examId)
+      .eq('stream_id', streamId);
+    
+    if (error) throw error;
+    
+    const grades = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+    (data || []).forEach(r => {
+      const m = r.marks || 0;
+      if (m >= 80) grades.A++;
+      else if (m >= 65) grades.B++;
+      else if (m >= 50) grades.C++;
+      else if (m >= 35) grades.D++;
+      else grades.E++;
+    });
+    
+    return grades;
+  },
+
+  async getNotifications(userId: string, schoolId?: string) {
+    if (!isUuid(userId)) return [];
+    let query = supabase
+      .from('in_app_notifications')
+      .select('*')
+      .eq('user_id', userId);
+    
+    // Only filter by school if schoolId is explicitly provided AND the table records use it.
+    // If schoolId is passed, we check for messages matching that school or having NO school (global).
+    if (schoolId && isUuid(schoolId)) {
+      query = query.or(`school_id.eq.${schoolId},school_id.is.null`);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) {
+      console.warn("API getNotifications error:", error);
+      return [];
+    }
+    return data || [];
+  },
+
+  async markNotificationAsRead(id: string) {
+    if (!isUuid(id)) return;
+    const { error } = await supabase
+      .from('in_app_notifications')
+      .update({ is_read: true })
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  async getDisciplinarySchoolWide(schoolId: string) {
+    if (!isUuid(schoolId)) return [];
+    const { data, error } = await supabase
+      .from('disciplinary_records')
+      .select('*, student:students!disciplinary_records_student_id_fkey(profile:profiles!students_id_fkey(full_name))')
+      .eq('school_id', schoolId)
+      .order('incident_date', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getHealthSchoolWide(schoolId: string) {
+    if (!isUuid(schoolId)) return [];
+    const { data, error } = await supabase
+      .from('student_health')
+      .select('*, student:students!student_health_student_id_fkey(profile:profiles!students_id_fkey(full_name))')
+      .eq('school_id', schoolId);
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getStudentsByStream(streamId: string) {
+    if (!isUuid(streamId)) return [];
+    const { data, error } = await supabase
+      .from('students')
+      .select('*, profile:profiles!students_id_fkey(*)')
+      .eq('stream_id', streamId);
+    if (error) throw error;
+    return data || [];
   }
 };

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast, Toaster } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { ParentStudentDashboard } from './ParentStudentDashboard';
@@ -24,26 +25,22 @@ import {
   ChevronRight,
   MoreHorizontal,
   ShieldCheck,
-  Edit3
+  Edit3,
+  AlertCircle,
+  Clock,
+  RefreshCcw,
+  BarChart2
 } from 'lucide-react';
 import { formatCurrency } from '../utils/utils';
 import { Link } from 'react-router-dom';
 import { Badge, Button, Modal } from '../components/UI';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar 
+} from 'recharts';
 
 const getDisplayName = (value?: string | null, fallback = 'Student') => value || fallback;
 
-export const Dashboard: React.FC = () => {
-  const { user } = useAuth();
-  if (!user) return null;
 
-  return (
-    <div className="max-w-5xl mx-auto font-sans text-zinc-900 animate-in fade-in duration-500">
-      {user.role === 'ADMIN' && <div className="px-6 py-10"><PrincipalView user={user} /></div>}
-      {user.role === 'TEACHER' && <div className="px-6 py-10"><TeacherView user={user} /></div>}
-      {(user.role === 'PARENT' || user.role === 'STUDENT') && <ParentStudentDashboard user={user} />}
-    </div>
-  );
-};
 
 /* -------------------------------------------------------------------------- */
 /*                               PERSONAL PORTAL                              */
@@ -71,10 +68,10 @@ const PersonalPortal = ({ user }: any) => {
     const fetchPortalData = async () => {
       try {
         setLoading(true);
-        const visibleStudents = user.role === 'PARENT' 
+        const visibleStudents = user.role === 'PARENT'
           ? await api.getStudentsByParentId(user.school_id, user.id)
           : await api.getStudentByProfileId(user.school_id, user.id).then(s => s ? [s] : []);
-          
+
         setChildren(visibleStudents);
 
         const mainChild = visibleStudents[selectedChildIndex] || visibleStudents[0] || null;
@@ -300,11 +297,11 @@ const HomePortal = ({ env, setActiveTab, userName }: any) => {
         <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-[3rem] p-10 space-y-12 shadow-sm">
           {env.events && env.events.length > 0 ? (
             env.events.slice(0, 3).map((e: any) => (
-              <TimelineItem 
+              <TimelineItem
                 key={e.id}
-                time={new Date(e.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} 
-                title={e.title} 
-                type="Institutional" 
+                time={new Date(e.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                title={e.title}
+                type="Institutional"
               />
             ))
           ) : (
@@ -777,206 +774,6 @@ const ActivityRow = ({ label, activity, duration, status }: any) => (
   </div>
 );
 
-/* -------------------------------------------------------------------------- */
-/*                               SHARED COMPONENTS                            */
-/* -------------------------------------------------------------------------- */
-
-
-const InsightCard = ({ icon, title, desc, variant }: any) => {
-  const variants: any = {
-    emerald: 'bg-emerald-50/30 border-emerald-100 text-emerald-600',
-    rose: 'bg-rose-50/30 border-rose-100 text-rose-600',
-    indigo: 'bg-indigo-50/30 border-indigo-100 text-indigo-600',
-    amber: 'bg-amber-50/30 border-amber-100 text-amber-600',
-  };
-  return (
-    <div className="bg-white dark:bg-zinc-900 p-6 rounded-[2rem] border border-zinc-100 dark:border-zinc-800 shadow-sm flex gap-6 group hover:translate-y-[-4px] transition-all duration-500">
-      <div className={`shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner transition-transform group-hover:scale-110 duration-500 ${variants[variant]}`}>
-        {icon}
-      </div>
-      <div className="space-y-1">
-        <h4 className="text-xs font-black text-zinc-900 dark:text-white uppercase tracking-tight">{title}</h4>
-        <p className="text-[10px] font-medium text-zinc-500 leading-relaxed uppercase tracking-tighter">{desc}</p>
-      </div>
-    </div>
-  );
-};
-
-const ActionTile = ({ icon, label, onClick }: any) => (
-  <button
-    onClick={onClick}
-    className="bg-white dark:bg-zinc-900 p-5 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 shadow-sm flex flex-col items-center justify-center gap-4 group transition-all duration-500 hover:shadow-2xl hover:shadow-zinc-200 hover:border-zinc-300 active:scale-95"
-  >
-    <div className="w-14 h-14 rounded-3xl bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-center transition-all duration-500 group-hover:scale-110 group-hover:bg-zinc-100">
-      {React.cloneElement(icon, { size: 28, strokeWidth: 2.5 })}
-    </div>
-    <span className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400 group-hover:text-zinc-900 transition-colors">{label}</span>
-  </button>
-);
-
-const TimelineEntry = ({ time, title, category, color, isLive }: any) => (
-  <div className="flex gap-6 items-start relative px-1">
-    <div className={`shrink-0 w-2.5 h-2.5 rounded-full ${color} mt-1.5 relative z-10 border-2 border-white dark:border-zinc-900 ring-4 ring-zinc-50 dark:ring-zinc-800/20`} />
-    <div className="space-y-1">
-      <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest leading-none bg-zinc-50 dark:bg-zinc-800/50 px-2 py-1 rounded inline-block">{time}</p>
-      <div className="flex items-center gap-3">
-        <h4 className="text-sm font-black text-zinc-900 dark:text-white uppercase leading-none">{title}</h4>
-        {isLive && <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500 text-[8px] font-black text-white animate-pulse">LIVE NOW</span>}
-      </div>
-      <p className="text-[9px] text-blue-600 font-black uppercase tracking-widest">{category}</p>
-    </div>
-  </div>
-);
-
-const StatCard = ({ label, value, icon, highlight }: any) => (
-  <div className="bg-white dark:bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 shadow-sm relative overflow-hidden group">
-    <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] relative z-10">{label}</p>
-    <p className={`text-2xl font-black mt-2 relative z-10 tracking-tight ${highlight ? 'text-rose-600' : 'text-zinc-900 dark:text-white'}`}>{value}</p>
-    <div className="absolute bottom-[-10px] right-[-10px] opacity-10 group-hover:scale-110 transition-transform duration-700">
-      {React.cloneElement(icon, { size: 80, strokeWidth: 3 })}
-    </div>
-  </div>
-);
-
-const MaterialTile = ({ title, subject, type, due, color }: any) => (
-  <div className="bg-white dark:bg-zinc-900 p-8 rounded-[3rem] border border-zinc-100 dark:border-zinc-800 shadow-sm group hover:border-zinc-900 transition-all duration-500">
-    <div className={`w-12 h-12 rounded-2xl ${color} flex items-center justify-center text-white mb-6 shadow-2xl shadow-current/20 group-hover:scale-110 duration-500`}>
-      <BookOpen size={24} />
-    </div>
-    <h5 className="text-lg font-black leading-tight uppercase mb-2">{title}</h5>
-    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-6">{subject}</p>
-    <div className="flex items-center justify-between">
-      <span className={`text-[9px] font-black uppercase tracking-widest ${due.includes('DUE') || due.includes('HOUR') ? 'text-rose-500' : 'text-emerald-500'}`}>{due}</span>
-      <button className="text-[10px] font-black text-blue-600 uppercase hover:underline flex items-center gap-1">GO <ChevronRight size={14} /></button>
-    </div>
-  </div>
-);
-
-
-
-const MetricBox = ({ label, value, sub }: any) => (
-  <div className="bg-zinc-50 border border-zinc-100 p-8 rounded-[2.5rem] text-left group hover:bg-white hover:shadow-xl transition-all duration-700">
-    <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3 opacity-60">{label}</p>
-    <h4 className="text-2xl font-black leading-none uppercase tracking-tight text-zinc-900">{value}</h4>
-    <p className="text-[9px] font-black text-zinc-400 mt-3 uppercase tracking-widest opacity-40">{sub}</p>
-  </div>
-);
-
-const DigitalResource = ({ title, instructor, status, category, isLive, color }: any) => (
-  <div className="bg-white border border-zinc-100 rounded-[3rem] p-10 flex flex-col h-full text-left group hover:border-zinc-900 hover:shadow-2xl hover:shadow-zinc-200 transition-all duration-700 relative overflow-hidden">
-    <div className={`w-16 h-16 rounded-3xl ${color} flex items-center justify-center text-white mb-8 shadow-2xl shadow-current/20 group-hover:scale-110 duration-700`}>
-      <BookOpen size={32} />
-    </div>
-    <div className="flex-1 space-y-3 relative z-10">
-      <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">{category}</span>
-      <h4 className="text-xl font-black leading-tight uppercase tracking-tight group-hover:text-blue-600 transition-colors">
-        {title} {isLive && <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block ml-2 animate-pulse" />}
-      </h4>
-      {instructor && <p className="text-[11px] font-black text-zinc-500 uppercase tracking-widest">Authored by {instructor}</p>}
-    </div>
-    <div className="mt-12 flex items-center justify-between border-t border-zinc-50 pt-8 relative z-10">
-      <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{status}</span>
-      <button className="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:underline">Access</button>
-    </div>
-  </div>
-);
-
-const ActivityTile = ({ title, meta, duration, status }: any) => (
-  <div className="p-8 bg-white border border-zinc-100 rounded-[3rem] flex items-center justify-between hover:scale-105 hover:shadow-xl transition-all group">
-    <div className="text-left space-y-2">
-      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{meta}</p>
-      <p className="text-sm font-black text-zinc-900 uppercase leading-none tracking-tight group-hover:text-blue-600 transition-colors">{title}</p>
-    </div>
-    <div className="text-right">
-      <span className={`text-[9px] font-black uppercase tracking-widest px-4 py-1.5 rounded-xl ${duration ? 'bg-zinc-50 text-zinc-400' : 'bg-emerald-50 text-emerald-600'}`}>
-        {duration || status}
-      </span>
-    </div>
-  </div>
-);
-
-const EventCard = ({ ev }: any) => (
-  <div className="bg-white border border-zinc-100 rounded-[3rem] p-10 space-y-8 group hover:border-zinc-900 transition-all duration-700 shadow-sm relative overflow-hidden">
-    <div className="space-y-4 relative z-10">
-      <span className="text-[9px] font-black uppercase tracking-[0.3em] text-blue-600 bg-blue-50 px-4 py-2 rounded-2xl">{new Date(ev.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-      <h4 className="text-2xl font-black leading-tight uppercase group-hover:text-blue-600 transition-all tracking-tight">{ev.title}</h4>
-      <p className="text-xs font-medium text-zinc-500 leading-relaxed uppercase tracking-tighter opacity-80">{ev.description || "General institutional event. Participation is mandatory for relevant stakeholders."}</p>
-    </div>
-    <div className="flex items-center justify-between border-t border-zinc-50 pt-8 relative z-10">
-      <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Institutional Notice</p>
-      <div className="w-10 h-10 rounded-2xl bg-zinc-50 flex items-center justify-center text-zinc-300 group-hover:bg-zinc-900 group-hover:text-white transition-all duration-700">
-        <ArrowRight size={20} />
-      </div>
-    </div>
-    <div className="absolute top-0 right-0 w-64 h-64 bg-zinc-50 blur-[80px] rounded-full group-hover:bg-blue-500/5 duration-700" />
-  </div>
-);
-
-const VitalsMetric = ({ label, value }: any) => (
-  <div className="p-6 rounded-[2.5rem] bg-zinc-50/50 border border-zinc-50 text-left group hover:bg-white hover:shadow-xl transition-all duration-500">
-    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-2 opacity-60">{label}</p>
-    <p className={`text-[11px] font-black text-zinc-900 uppercase leading-relaxed tracking-tight group-hover:translate-x-1 transition-transform`}>{value}</p>
-  </div>
-);
-
-const StatBlock = ({ label, value, sub, highlight }: any) => (
-  <div className="text-left space-y-1">
-    <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 opacity-50">{label}</p>
-    <h4 className={`text-4xl font-black leading-none tracking-tighter ${highlight ? 'text-rose-500' : 'text-white'}`}>{value}</h4>
-    <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mt-2">{sub}</p>
-  </div>
-);
-
-const DesktopNavTab = ({ active, label, onClick }: any) => (
-  <button
-    onClick={onClick}
-    className={`px-8 py-4 text-[10px] font-black uppercase tracking-[0.3em] transition-all relative ${active ? 'text-zinc-950' : 'text-zinc-400 hover:text-zinc-600'}`}
-  >
-    {label}
-    {active && <div className="absolute bottom-0 left-8 right-8 h-1 bg-zinc-950 rounded-full" />}
-  </button>
-);
-
-const LearningMat = ({ title, teacher, type, count, isLive, action, color }: any) => (
-  <div className="bg-white border border-zinc-100 rounded-3xl p-6 flex flex-col h-full text-left">
-    <div className={`w-10 h-10 rounded-xl ${color} flex items-center justify-center text-white mb-6`}>
-      <BookOpen size={20} />
-    </div>
-    <div className="flex-1 space-y-1">
-      <h4 className="text-sm font-bold text-zinc-900 flex items-center gap-2">
-        {title} {isLive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
-      </h4>
-      <p className="text-[10px] text-zinc-500 font-medium">with {teacher}</p>
-    </div>
-    <div className="mt-8 flex items-center justify-between border-t border-zinc-50 pt-4">
-      <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">{type}</span>
-      <button className="text-[10px] font-black text-blue-600 uppercase hover:underline">{action}</button>
-    </div>
-  </div>
-);
-
-const StatItem = ({ label, value }: any) => (
-  <div className="bg-zinc-50 rounded-2xl p-6 text-left border border-zinc-100">
-    <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5">{label}</p>
-    <p className="text-sm font-black text-zinc-900 uppercase tracking-tight">{value}</p>
-  </div>
-);
-
-const ActivityRow = ({ label, activity, duration, status }: any) => (
-  <div className="p-4 bg-white border border-zinc-100 rounded-2xl flex items-center justify-between group">
-    <div className="text-left space-y-1">
-      <p className="text-[9px] font-bold text-zinc-400 uppercase">{label}</p>
-      <p className="text-[11px] font-black text-zinc-900 tracking-tight uppercase group-hover:text-blue-600 transition-colors">{activity}</p>
-    </div>
-    {duration && <span className="text-[9px] font-bold text-zinc-400 uppercase">{duration}</span>}
-    {status && <span className="text-[9px] font-bold text-emerald-600 uppercase">Success</span>}
-  </div>
-);
-
-/* -------------------------------------------------------------------------- */
-/*                               SHARED COMPONENTS                            */
-/* -------------------------------------------------------------------------- */
-
 
 const InsightCard = ({ icon, title, desc, variant }: any) => {
   const variants: any = {
@@ -1065,20 +862,52 @@ const VitalsBox = ({ label, value }: any) => (
   </div>
 );
 
-/* -------------------------------------------------------------------------- */
-/*                               TEACHER VIEW                                 */
-/* -------------------------------------------------------------------------- */
+
+const StatBox = ({ label, value }: any) => (
+  <div className="space-y-1">
+    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest leading-none">{label}</p>
+    <p className="text-3xl font-bold tracking-tight text-zinc-900">{value}</p>
+  </div>
+);
+
+const SimpleButton = ({ to, label, icon }: any) => (
+  <Link
+    to={to}
+    className="inline-flex items-center gap-2 px-4 py-2 border border-zinc-200 rounded-lg text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors shadow-sm"
+  >
+    <span className="text-zinc-400">{icon}</span>
+    <span>{label}</span>
+  </Link>
+);
+
+const InputRow = ({ label, value, onChange, placeholder, type = "number" }: any) => (
+  <div className="space-y-1.5">
+    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest px-1">{label}</label>
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="w-full h-11 px-4 bg-zinc-50 border border-zinc-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all"
+    />
+  </div>
+);
+
 const TeacherView = ({ user }: any) => {
   const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [terms, setTerms] = useState<any[]>([]);
-  const [exams, setExams] = useState<any[]>([]);
-  const [showTargetModal, setShowTargetModal] = useState(false);
-  const [meanInput, setMeanInput] = useState('');
-  const [targetInput, setTargetInput] = useState('');
   const [targetTermId, setTargetTermId] = useState('');
   const [targetExamId, setTargetExamId] = useState('');
   const [savingTarget, setSavingTarget] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [terms, setTerms] = useState<any[]>([]);
+  const [exams, setExams] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [showTargetModal, setShowTargetModal] = useState(false);
+  const [gradeBreakdown, setGradeBreakdown] = useState<any>(null);
+  const [showGradeModal, setShowGradeModal] = useState(false);
+  const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
+  const [meanInput, setMeanInput] = useState('');
+  const [targetInput, setTargetInput] = useState('');
 
   const gradeFromScore = (value?: number | null) => {
     if (value == null || Number.isNaN(value)) return '-';
@@ -1098,39 +927,113 @@ const TeacherView = ({ user }: any) => {
   const parseScore = (value: string) => {
     if (!value.trim()) return null;
     const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) return null;
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+      throw new Error('Scores must be between 0 and 100.');
+    }
     return parsed;
   };
 
+  const [allStreams, setAllStreams] = useState<any[]>([]);
+  const [selectedStreamId, setSelectedStreamId] = useState<string | null>(localStorage.getItem('selectedStreamId'));
+  
+  // Persist class selection
   useEffect(() => {
-    const fetchTeacherData = async () => {
+    if (selectedStreamId) {
+      localStorage.setItem('selectedStreamId', selectedStreamId);
+    }
+  }, [selectedStreamId]);
+
+  const [performanceTrend, setPerformanceTrend] = useState<any[]>([]);
+  const [comparisonData, setComparisonData] = useState<any[]>([]);
+  const [subjectData, setSubjectData] = useState<any[]>([]);
+  const [rankingData, setRankingData] = useState<any[]>([]);
+  const [activeGraphTab, setActiveGraphTab] = useState<'trends' | 'comparison' | 'subjects' | 'rankings'>('trends');
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  };
+
+  const capitalizedName = user.username || user.full_name?.split(' ')[0] || 'User';
+  const mainMean = formatScoreGrade(data?.stream?.main_mean_score);
+  const targetMean = formatScoreGrade(data?.stream?.target_mean_score);
+
+  // 1. Core Data Hydration (Institutional Constants)
+  const hydrate = async () => {
+    setIsInitialLoading(true);
+    try {
+      const [streamRows, termRows, examRows, apps, notifs] = await Promise.all([
+        api.getTeacherStreams(user.id),
+        user.school_id ? api.getTerms(user.school_id) : Promise.resolve([]),
+        user.school_id ? api.getExams(user.school_id) : Promise.resolve([]),
+        api.getAppointmentsByTeacher(user.id),
+        api.getNotifications(user.id)
+      ]);
+
+      setAllStreams(streamRows);
+      setTerms(termRows || []);
+      setExams(examRows || []);
+      setNotifications(notifs || []);
+      setData(prev => ({ ...prev, appointments: apps || [] }));
+
+      if (streamRows.length > 0) {
+        const savedStreamId = localStorage.getItem('teacher_dashboard_stream_id');
+        const defaultStream = streamRows.find(s => s.id === savedStreamId) || streamRows[0];
+        setSelectedStreamId(defaultStream.id);
+      }
+    } catch (err) {
+      console.error("Hydration Error:", err);
+    } finally {
+      setIsInitialLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    hydrate();
+  }, [user.id, user.school_id]);
+
+  const refreshDashboard = () => hydrate();
+
+  // 2. Class Selection Differential (Performance Hub)
+  useEffect(() => {
+    if (!selectedStreamId) return;
+    localStorage.setItem('teacher_dashboard_stream_id', selectedStreamId);
+    
+    const syncClassMetadata = async () => {
       try {
-        const [stream, termRows, examRows, appointments] = await Promise.all([
-          api.getTeacherStream(user.id),
-          user?.school_id ? api.getTerms(user.school_id) : Promise.resolve([]),
-          user?.school_id ? api.getExams(user.school_id) : Promise.resolve([]),
-          api.getAppointmentsByTeacher(user.id)
+        const stream = allStreams.find(s => s.id === selectedStreamId);
+        if (!stream) return;
+
+        const [students, trend, comp, subjects, rankings] = await Promise.all([
+          api.getStudentsByStream(selectedStreamId),
+          api.getStreamPerformanceTrend(selectedStreamId),
+          api.getStreamVsFormComparison(selectedStreamId),
+          api.getStreamSubjectBreakdown(selectedStreamId),
+          api.getStreamStudentRankings(selectedStreamId)
         ]);
 
-        setTerms(termRows || []);
-        setExams(examRows || []);
-        if (stream) {
-          const [students] = await Promise.all([
-            api.getStudentsByStream(stream.id)
-          ]);
-          setData({ stream, students, appointments: appointments || [] });
-          setMeanInput(stream.main_mean_score == null ? '' : String(stream.main_mean_score));
-          setTargetInput(stream.target_mean_score == null ? '' : String(stream.target_mean_score));
-          setTargetTermId(stream.target_term_id || '');
-          setTargetExamId(stream.target_exam_id || '');
-        } else {
-          setData({ stream: null, students: [], appointments: appointments || [] });
-        }
-      } catch (err) { console.error(err); }
-      finally { setLoading(false); }
+        setData(prev => ({
+          ...prev,
+          stream,
+          students
+        }));
+
+        setPerformanceTrend(trend || []);
+        setComparisonData(comp || []);
+        setSubjectData(subjects || []);
+        setRankingData(rankings || []);
+
+        setMeanInput(stream.main_mean_score?.toString() || '');
+        setTargetInput(stream.target_mean_score?.toString() || '');
+        setTargetTermId(stream.target_term_id || '');
+        setTargetExamId(stream.target_exam_id || '');
+      } catch (err) {
+        console.error("Class Sync Error:", err);
+      }
     };
-    fetchTeacherData();
-  }, [user.id, user.school_id]);
+    syncClassMetadata();
+  }, [selectedStreamId, allStreams]);
 
   const saveTargetSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1149,134 +1052,354 @@ const TeacherView = ({ user }: any) => {
     finally { setSavingTarget(false); }
   };
 
-  if (loading) return <div className="py-20 text-zinc-400 font-bold">Connecting to academic records...</div>;
-  if (!data) return <div className="py-20 text-red-500 font-bold">Failed to load academic data.</div>;
+  const handlePointClick = async (point: any) => {
+    if (!point || !point.activePayload || !point.activePayload[0]) return;
+    const examName = point.activePayload[0].payload.name;
+    const exam = exams.find(e => e.name === examName);
+    if (exam && selectedStreamId) {
+      setSelectedPointId(examName);
+      try {
+        const breakdown = await api.getExamGradeBreakdown(exam.id, selectedStreamId);
+        setGradeBreakdown(breakdown);
+        setShowGradeModal(true);
+      } catch (err) {
+        toast.error("Failed to load grade breakdown");
+      }
+    }
+  };
 
-  const streamLabel = [data.stream?.class?.name, data.stream?.name].filter(Boolean).join(' ');
-  const mainMean = formatScoreGrade(data.stream?.main_mean_score);
-  const targetMean = formatScoreGrade(data.stream?.target_mean_score);
+  const updateAppStatus = async (appId: string, status: string) => {
+    try {
+      await api.updateAppointmentStatus(appId, status);
+      toast.success(`Appointment ${status}`);
+      // Refresh apps
+      const apps = await api.getAppointmentsByTeacher(user.id);
+      setData((prev: any) => ({ ...prev, appointments: apps }));
+    } catch (err) {
+      toast.error("Update failed");
+    }
+  };
+
+  // If no streams are assigned at all
+  if (!isInitialLoading && allStreams.length === 0) {
+    return (
+      <div className="py-20 flex flex-col items-center justify-center text-zinc-400 gap-4">
+        <Activity size={48} strokeWidth={1} />
+        <div className="text-center">
+          <p className="text-sm font-bold uppercase tracking-widest">No Assigned Streams Found</p>
+          <p className="text-[10px] mt-2 opacity-60">Please contact the admin to be assigned as a Class Teacher.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data || isInitialLoading) {
+     return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <div className="w-8 h-8 border-4 border-zinc-900 border-t-transparent rounded-full animate-spin" />
+        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Preparing your dashboard...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-12 animate-in fade-in duration-700">
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-             <div className="w-12 h-12 rounded-2xl bg-zinc-900 dark:bg-white flex items-center justify-center text-white dark:text-zinc-900 shadow-2xl">
-                <Users size={24} />
-             </div>
-             <div>
-                <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white font-sora">Teacher Dashboard</h1>
-                <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.3em] mt-1">{streamLabel || 'Assigned Stream'}</p>
-             </div>
+    <div className="space-y-10 animate-in fade-in duration-500">
+      {/* 0. Context Switcher (Top Bar) */}
+      <div className="flex items-center justify-between">
+        <div className="relative group">
+          <select 
+            value={selectedStreamId || ''} 
+            onChange={(e) => setSelectedStreamId(e.target.value)}
+            className="appearance-none bg-zinc-50 border border-zinc-100 rounded-xl px-4 py-2 pr-10 text-[10px] font-black uppercase tracking-widest text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all cursor-pointer shadow-sm hover:shadow-md hover:translate-y-[-1px]"
+          >
+            <option value="" disabled>Select Class</option>
+            {allStreams.map(s => (
+              <option key={s.id} value={s.id}>
+                {s.class?.name} {s.name}
+              </option>
+            ))}
+          </select>
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400">
+            <ChevronRight size={14} className="rotate-90" />
           </div>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <SimpleButton to="/results-management" label="Record Marks" icon={<Target size={14} />} />
-          <SimpleButton to="/attendance" label="Mark Attendance" icon={<CheckCircle size={14} />} />
-          <button onClick={() => setShowTargetModal(true)} className="flex items-center gap-2 px-6 h-12 bg-zinc-50 dark:bg-zinc-900 text-[10px] font-black uppercase tracking-widest text-zinc-600 dark:text-zinc-400 rounded-xl border border-zinc-100 dark:border-zinc-800 hover:bg-zinc-900 hover:text-white transition-all">
-            <Edit3 size={14} /> Update Targets
+
+        <div className="flex items-center gap-4">
+           <button 
+              onClick={refreshDashboard}
+              className="p-2 bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all shadow-sm hover:shadow-md"
+              title="Refresh Dashboard"
+           >
+              <RefreshCcw size={14} className={isInitialLoading ? 'animate-spin' : ''} />
+           </button>
+           <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Live Analytics</span>
+           </div>
+        </div>
+      </div>
+
+      {/* 1. Normal Greetings */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-950 capitalize">{getGreeting()}, {capitalizedName}</h1>
+          <p className="text-zinc-500 font-medium">Teacher Dashboard • {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+          {data?.stream && (
+            <div className="mt-4 flex items-center gap-2">
+              <span className="px-2.5 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-md text-[10px] font-bold uppercase tracking-wider uppercase">
+                {data.stream.class?.name} {data.stream.name} Lead
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <SimpleButton to="/results-management" label="Record Results" icon={<Target size={14} />} />
+          <SimpleButton to="/my-students" label="My Students" icon={<Users size={14} />} />
+          <SimpleButton to="/my-class" label="Classroom" icon={<BookOpen size={14} />} />
+        </div>
+      </div>
+
+      {/* 2. Key Metrics */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
+        <StatBox label="My Students" value={data.students?.length || 0} />
+        <div className="space-y-1 relative group">
+          <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest leading-none">Class Mean Score</p>
+          <p className="text-2xl font-bold tracking-tight text-zinc-900">{mainMean}</p>
+          <button
+            onClick={() => setShowTargetModal(true)}
+            className="text-[9px] font-bold text-zinc-400 uppercase hover:text-zinc-900 transition-colors"
+          >
+            Edit Mean & Target
           </button>
         </div>
+        <StatBox label="Target Mean" value={targetMean} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] p-10 shadow-sm relative overflow-hidden">
-           <div className="flex items-center justify-between mb-10">
-              <div>
-                <h3 className="text-sm font-black text-zinc-900 dark:text-white uppercase tracking-widest font-sora">Class Performance</h3>
-                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mt-1">Mean Score Progression</p>
-              </div>
-              <div className="text-right">
-                 <p className="text-3xl font-black text-zinc-900 dark:text-white font-sora">{mainMean}</p>
-                 <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest italic">Target: {targetMean}</p>
+      {/* 3. Performance Tests Hub */}
+      <div className="bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl p-8 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-900 dark:text-white">Performance Tests</h2>
+            <p className="text-[10px] text-zinc-400 font-medium uppercase mt-1">Classroom Analytics & Benchmarking</p>
+          </div>
+          
+          <div className="flex p-1 bg-zinc-50 dark:bg-zinc-900 rounded-lg">
+             {(['trends', 'comparison', 'subjects', 'rankings'] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setActiveGraphTab(t)}
+                  className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest transition-all ${
+                    activeGraphTab === t 
+                      ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm" 
+                      : "text-zinc-400 hover:text-zinc-600"
+                  }`}
+                >
+                  {t}
+                </button>
+             ))}
+          </div>
+        </div>
+
+        <div className={`${activeGraphTab === 'trends' && performanceTrend.length === 0 ? 'h-[150px]' : 'h-[350px]'} w-full transition-all duration-500`}>
+           <ResponsiveContainer width="100%" height="100%">
+             {activeGraphTab === 'trends' ? (
+               performanceTrend.length > 0 ? (
+                 <AreaChart data={performanceTrend} onClick={handlePointClick}>
+                   <defs>
+                     <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
+                       <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
+                       <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                     </linearGradient>
+                   </defs>
+                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} dy={10} />
+                   <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} dx={-10} />
+                   <Tooltip 
+                     cursor={{ stroke: '#3b82f6', strokeWidth: 1 }}
+                     content={({ active, payload }: any) => {
+                       if (active && payload && payload.length) {
+                         return (
+                           <div className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800 shadow-xl scale-110 transition-transform">
+                             <p className="text-[10px] font-black uppercase text-zinc-400 mb-1">{payload[0].payload.name}</p>
+                             <p className="text-lg font-black text-zinc-900 dark:text-white">{payload[0].value}%</p>
+                             <p className="text-[9px] text-zinc-400 font-bold uppercase mt-2">Click to view grade breakdown</p>
+                           </div>
+                         );
+                       }
+                       return null;
+                     }}
+                   />
+                   <Area 
+                     type="monotone" 
+                     dataKey="score" 
+                     stroke="#3b82f6" 
+                     strokeWidth={3} 
+                     fillOpacity={1} 
+                     fill="url(#colorScore)" 
+                     activeDot={{ r: 6, stroke: '#fff', strokeWidth: 2 }}
+                   />
+                 </AreaChart>
+               ) : (
+                 <div className="h-full flex items-center justify-center text-zinc-300 flex-col gap-2">
+                    <Activity size={32} strokeWidth={1} />
+                    <p className="text-[10px] font-bold uppercase tracking-widest">No historical data available</p>
+                 </div>
+               )
+             ) : activeGraphTab === 'comparison' ? (
+                <LineChart data={comparisonData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} dy={10} />
+                  <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} dx={-10} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="myClass" name="My Class" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="gradeAvg" name="Grade Average" stroke="#94a3b8" strokeDasharray="5 5" strokeWidth={2} />
+               </LineChart>
+             ) : activeGraphTab === 'subjects' ? (
+                <BarChart data={subjectData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} dy={10} />
+                  <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} dx={-10} />
+                  <Tooltip cursor={{ fill: '#f8fafc' }} />
+                  <Bar dataKey="score" name="Mean Score" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
+                </BarChart>
+             ) : (
+                <BarChart data={rankingData} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f4f4f5" />
+                  <XAxis type="number" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} />
+                  <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} width={80} />
+                  <Tooltip />
+                  <Bar dataKey="score" name="Overall Mean" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                </BarChart>
+             )}
+           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* 4. Appointments & Feed */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
+        <div className="lg:col-span-8 space-y-8">
+           <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Calendar size={14} className="text-zinc-400" />
+                <h2 className="text-sm font-semibold">Teacher Appointments</h2>
               </div>
            </div>
-           <div className="h-[250px] flex items-end justify-between gap-2 px-2">
-              {[65, 78, 62, 85, 74, 90, 82].map((v, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-4 group">
-                  <div className="w-full bg-zinc-50 dark:bg-zinc-900 rounded-t-2xl relative overflow-hidden" style={{ height: `${v}%` }}>
-                    <div className="absolute inset-0 bg-gradient-to-t from-zinc-900/10 dark:from-white/10 to-transparent group-hover:from-emerald-500/20 transition-all" />
+           <div className="grid grid-cols-1 gap-4">
+              {(data.appointments || []).length > 0 ? (data.appointments || []).map((app: any) => (
+                <div key={app.id} className="p-6 bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-6 hover:shadow-md transition-all group">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black ${app.status === 'approved' ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-50 text-zinc-400'}`}>
+                      {app.parent?.full_name?.[0]}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-zinc-900 dark:text-white">{app.parent?.full_name}</h4>
+                        {app.status === 'approved' && <Badge label="Approved" variant="emerald" />}
+                        {app.status === 'holding' && <Badge label="On Hold" variant="warning" />}
+                      </div>
+                      <p className="text-[10px] text-zinc-400 font-medium uppercase mt-0.5">{app.reason}</p>
+                      <div className="flex gap-4 mt-2 text-[10px] text-zinc-500">
+                        <span className="flex items-center gap-1.5"><Clock size={10} /> {app.appointment_time}</span>
+                        <span className="flex items-center gap-1.5"><Calendar size={10} /> {new Date(app.appointment_date).toLocaleDateString()}</span>
+                        <span className="flex items-center gap-1.5"><Bell size={10} /> {app.parent?.phone || app.parent?.email}</span>
+                      </div>
+                    </div>
                   </div>
-                  <span className="text-[8px] font-black text-zinc-400 uppercase">Exam {i+1}</span>
-                </div>
-              ))}
-           </div>
-        </div>
 
-        <div className="bg-zinc-900 dark:bg-zinc-900/50 rounded-[2.5rem] p-10 flex flex-col justify-between relative overflow-hidden shadow-2xl">
-           <div className="relative z-10">
-              <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.4em] mb-8 text-zinc-500">Daily Attendance</h3>
-              <div className="flex items-center gap-6">
-                 <div className="w-24 h-24 rounded-full border-[6px] border-zinc-800 flex items-center justify-center relative">
-                    <div className="absolute inset-0 rounded-full border-[6px] border-emerald-500 border-t-transparent -rotate-45" />
-                    <span className="text-xl font-black text-white font-sora">95%</span>
-                 </div>
-                 <div>
-                    <p className="text-2xl font-black text-white font-sora">38 / 40</p>
-                    <p className="text-[10px] font-bold text-zinc-500 uppercase mt-1">Present Today</p>
-                 </div>
-              </div>
-           </div>
-           <div className="mt-10">
-              <Link to="/attendance" className="w-full h-12 bg-white text-zinc-900 rounded-xl flex items-center justify-center text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all">Submit Registry</Link>
-           </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-        <div className="lg:col-span-4 space-y-8">
-           <h3 className="text-[10px] font-black text-zinc-900 dark:text-white uppercase tracking-[0.4em] px-2">Official Engagements</h3>
-           <div className="space-y-3">
-              {data.appointments?.length > 0 ? data.appointments.map((app: any) => (
-                <div key={app.id} className="p-6 bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-3xl">
-                   <p className="text-[11px] font-black uppercase tracking-tight">{app.parent?.full_name}</p>
-                   <p className="text-[9px] font-bold text-zinc-400 uppercase mb-4">Parent of {app.student?.profile?.full_name}</p>
-                   <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-xl mb-4 text-[10px] text-zinc-500 leading-relaxed italic">"{app.reason}"</div>
-                   <div className="flex justify-between items-center text-[10px] font-black uppercase">
-                      <span>{app.appointment_time}</span>
-                      <span className="text-emerald-500">{new Date(app.appointment_date).toLocaleDateString()}</span>
-                   </div>
+                  <div className="flex items-center gap-2">
+                     <button 
+                        onClick={() => updateAppStatus(app.id, 'approved')}
+                        className="px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-sm"
+                     >
+                       Approve
+                     </button>
+                     <button 
+                        onClick={() => updateAppStatus(app.id, 'holding')}
+                        className="px-4 py-2 bg-zinc-50 dark:bg-zinc-900 text-zinc-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:text-zinc-600 transition-all border border-zinc-100 dark:border-zinc-800"
+                     >
+                       Hold
+                     </button>
+                     <Link 
+                        to={`/chat?parent=${app.parent_id}`}
+                        className="p-2.5 bg-zinc-50 dark:bg-zinc-900 text-zinc-400 rounded-xl border border-zinc-100 dark:border-zinc-800 hover:text-zinc-900 dark:hover:text-white transition-all"
+                     >
+                       <MessageSquare size={16} />
+                     </Link>
+                  </div>
                 </div>
               )) : (
-                <div className="py-12 text-center bg-zinc-50 dark:bg-zinc-900/50 rounded-[2.5rem] border border-dashed border-zinc-200 dark:border-zinc-800">
-                   <p className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">No requests pending</p>
+                <div className="py-12 text-center border-2 border-dashed border-zinc-50 rounded-3xl">
+                   <Calendar size={32} className="mx-auto text-zinc-200 mb-2" />
+                  <p className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">No upcoming records</p>
                 </div>
               )}
            </div>
         </div>
 
-        <div className="lg:col-span-8 space-y-8">
-           <h3 className="text-[10px] font-black text-zinc-900 dark:text-white uppercase tracking-[0.4em] px-2">Primary Registry</h3>
-           <div className="bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] overflow-hidden shadow-sm divide-y divide-zinc-50 dark:divide-zinc-900">
-              {data.students.slice(0, 8).map((s: any) => (
-                <div key={s.id} className="p-6 flex items-center justify-between group hover:bg-zinc-50 dark:hover:bg-zinc-900/40 transition-all">
-                  <div className="flex items-center gap-5">
-                    <div className="w-12 h-12 rounded-2xl bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center text-[13px] font-black text-zinc-400 group-hover:bg-zinc-900 group-hover:text-white transition-all">{s.profile?.full_name?.[0]}</div>
-                    <div>
-                      <p className="text-[13px] font-black text-zinc-900 dark:text-white uppercase">{s.profile?.full_name}</p>
-                      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">ADM: {s.adm_no}</p>
-                    </div>
-                  </div>
-                  <ChevronRight size={16} className="text-zinc-300 group-hover:text-zinc-900" />
+        <div className="lg:col-span-4 space-y-8">
+           <div className="flex items-center gap-2 mb-4">
+              <Bell size={14} className="text-zinc-400" />
+              <h2 className="text-sm font-semibold">Notifications</h2>
+           </div>
+           <div className="space-y-3">
+              {notifications.length > 0 ? notifications.slice(0, 5).map((notif: any) => (
+                <div key={notif.id} className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800 space-y-1 group hover:border-zinc-200 transition-all">
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest flex justify-between">
+                    {notif.type || 'Alert'}
+                    <span className="opacity-0 group-hover:opacity-100 transition-opacity">Just Now</span>
+                  </p>
+                  <p className="text-xs font-semibold text-zinc-900 dark:text-white">{notif.title}</p>
+                  <p className="text-[10px] font-medium text-zinc-500 leading-relaxed line-clamp-2">{notif.message}</p>
                 </div>
-              ))}
+              )) : (
+                <div className="py-8 text-center bg-zinc-50/50 rounded-2xl border border-dashed border-zinc-100">
+                  <p className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">No new notifications</p>
+                </div>
+              )}
            </div>
         </div>
       </div>
 
-      <Modal isOpen={showTargetModal} onClose={() => setShowTargetModal(false)} title="Edit Mean & Target">
-        <form onSubmit={saveTargetSettings} className="space-y-6 p-4">
-          <InputRow label="Current Mean (%)" value={meanInput} onChange={setMeanInput} />
-          <InputRow label="Target Mean (%)" value={targetInput} onChange={setTargetInput} />
-          <div className="pt-4 flex gap-2">
-            <Button type="button" variant="outline" className="flex-1" onClick={() => setShowTargetModal(false)}>Cancel</Button>
-            <Button type="submit" className="flex-1" disabled={savingTarget}>{savingTarget ? 'Saving...' : 'Save Settings'}</Button>
+      <Modal isOpen={showGradeModal} onClose={() => setShowGradeModal(false)} title={`Grade Breakdown: ${selectedPointId}`}>
+        <div className="p-6 space-y-6">
+          <div className="grid grid-cols-5 gap-4">
+            {gradeBreakdown && Object.entries(gradeBreakdown).map(([grade, count]: any) => (
+              <div key={grade} className="bg-zinc-50 dark:bg-zinc-900 p-4 rounded-2xl text-center border border-zinc-100 dark:border-zinc-800">
+                <p className="text-2xl font-black text-zinc-900 dark:text-white">{count}</p>
+                <p className="text-[10px] font-black text-zinc-400 uppercase mt-1">{grade}</p>
+              </div>
+            ))}
+          </div>
+          <div className="bg-zinc-50 dark:bg-zinc-900 p-4 rounded-xl border border-zinc-100 dark:border-zinc-800">
+            <p className="text-[11px] font-medium text-zinc-500 leading-relaxed text-center">
+              This breakdown represents the performance distribution of all students in {data.stream?.name} for this specific assessment.
+            </p>
+          </div>
+          <Button onClick={() => setShowGradeModal(false)} fullWidth>Close Details</Button>
+        </div>
+      </Modal>
+
+      <Modal isOpen={showTargetModal} onClose={() => setShowTargetModal(false)} title="Class Target Settings">
+        <form onSubmit={saveTargetSettings} className="space-y-4 p-2">
+          <InputRow label="Current Mean Score (%)" value={meanInput} onChange={setMeanInput} />
+          <InputRow label="Target Mean Score (%)" value={targetInput} onChange={setTargetInput} />
+          <div className="pt-4 grid grid-cols-2 gap-3">
+            <Button type="button" variant="outline" onClick={() => setShowTargetModal(false)}>Cancel</Button>
+            <Button type="submit" disabled={savingTarget}>{savingTarget ? 'Saving...' : 'Save Changes'}</Button>
           </div>
         </form>
       </Modal>
     </div>
   );
 };
+
+const AlertItem = ({ type, text, color = "text-zinc-600" }: any) => (
+  <div className="p-4 rounded-lg bg-zinc-50 border border-zinc-100 space-y-1">
+    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{type}</p>
+    <p className={`text-sm font-medium leading-relaxed ${color}`}>{text}</p>
+  </div>
+);
+
 
 /* -------------------------------------------------------------------------- */
 /*                               PRINCIPAL VIEW                               */
@@ -1304,68 +1427,55 @@ const PrincipalView = ({ user }: any) => {
     fetchData();
   }, [user.school_id]);
 
-  if (loading || !data) return <div className="py-20 text-zinc-400 font-bold">Loading school summary...</div>;
+  if (loading || !data) return <div className="py-20 text-zinc-400">Loading school summary...</div>;
 
   const feesCollected = data.fees.reduce((acc: number, f: any) => acc + (f.amount_paid || 0), 0);
 
   return (
-    <div className="space-y-12 animate-in fade-in duration-700">
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-             <div className="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-white shadow-2xl">
-                <LayoutDashboard size={24} />
-             </div>
-             <div>
-                <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white font-sora">Institutional Overview</h1>
-                <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.3em] mt-1">Principal Console</p>
-             </div>
-          </div>
-        </div>
-        <div className="flex gap-3">
-          <SimpleButton to="/admin/finances" label="Financial Portal" icon={<CreditCard size={14} />} />
-        </div>
+    <div className="space-y-12">
+      <div className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-950">Overview</h1>
+        <p className="text-zinc-500 font-medium">Institutional report for {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-8">
         <StatBox label="Total Students" value={data.students.length} />
         <StatBox label="Fees Collected" value={formatCurrency(feesCollected)} />
-        <StatBox label="Class Average" value="74%" />
-        <StatBox label="Faculty" value={data.teachers.length} />
+        <StatBox label="School Mean" value="74%" />
+        <StatBox label="Staff Count" value={data.teachers.length} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-        <div className="lg:col-span-8 space-y-10">
-           <div className="bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] p-10">
-              <h3 className="text-sm font-black text-zinc-900 dark:text-white uppercase tracking-widest mb-10">Academic Performance Grade Distribution</h3>
-              <div className="grid grid-cols-5 gap-6">
-                {['A', 'B', 'C', 'D', 'E'].map(g => (
-                  <div key={g} className="text-center group">
-                    <p className="text-3xl font-black text-zinc-900 dark:text-white group-hover:scale-110 transition-transform">{g}</p>
-                    <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mt-2">{Math.floor(Math.random() * 50)} Students</p>
-                  </div>
-                ))}
-              </div>
-           </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
+        <div className="lg:col-span-7 space-y-10">
+          <section className="space-y-4">
+            <h2 className="text-sm font-semibold border-b border-zinc-100 pb-2">Academic Performance</h2>
+            <div className="grid grid-cols-5 gap-4">
+              {['A', 'B', 'C', 'D', 'E'].map(g => (
+                <div key={g} className="space-y-0.5">
+                  <p className="text-xl font-bold">{g}</p>
+                  <p className="text-[10px] text-zinc-400 font-bold uppercase">{Math.floor(Math.random() * 50)} Students</p>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
-
-        <div className="lg:col-span-4 space-y-8">
-          <h3 className="text-[10px] font-black text-zinc-900 dark:text-white uppercase tracking-[0.4em] px-2 flex items-center gap-2">
+        <div className="lg:col-span-5 space-y-8">
+          <h2 className="text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-3 text-zinc-900 dark:text-white">
             <Activity size={14} className="text-emerald-500" /> Institutional Activity
-          </h3>
+          </h2>
           <div className="space-y-3">
-            {[...data.events, ...data.discipline].slice(0, 4).map((item, i) => (
-              <div key={i} className="p-5 bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-3xl shadow-sm">
-                <div className="flex justify-between items-start mb-3">
-                  <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-500">
+            {[...(data?.events || []), ...(data?.discipline || [])].slice(0, 5).map((item: any, i: number) => (
+              <div key={i} className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800 transition-all">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-500">
                     {item.incident_title ? 'Discipline' : 'Event'}
                   </span>
                   <p className="text-[8px] font-bold text-zinc-400 uppercase">{item.date || item.incident_date}</p>
                 </div>
-                <h4 className="text-[11px] font-black text-zinc-900 dark:text-white uppercase leading-tight mb-2">
+                <h4 className="text-[11px] font-black text-zinc-900 dark:text-white uppercase leading-tight mb-1">
                   {item.title || item.incident_title}
                 </h4>
-                <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-2">
+                <p className="text-[10px] text-zinc-500 leading-relaxed font-medium line-clamp-2">
                   {item.description || "Official school record logged for history."}
                 </p>
               </div>
@@ -1377,30 +1487,25 @@ const PrincipalView = ({ user }: any) => {
   );
 };
 
+
 /* -------------------------------------------------------------------------- */
 /*                               SHARED COMPONENTS                            */
 /* -------------------------------------------------------------------------- */
 
-const StatBox = ({ label, value }: any) => (
-  <div className="bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 p-8 rounded-[2rem] shadow-sm">
-    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em] mb-1">{label}</p>
-    <p className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white">{value}</p>
-  </div>
-);
 
-const SimpleButton = ({ to, label, icon }: any) => (
-  <Link
-    to={to}
-    className="h-12 px-6 flex items-center gap-3 bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-600 dark:text-zinc-400 hover:bg-zinc-900 hover:text-white transition-all shadow-sm"
-  >
-    {icon}
-    <span>{label}</span>
-  </Link>
-);
+/* -------------------------------------------------------------------------- */
+/*                                MAIN ENTRY POINT                             */
+/* -------------------------------------------------------------------------- */
+export const Dashboard: React.FC = () => {
+  const { user } = useAuth();
+  if (!user) return null;
 
-const InputRow = ({ label, value, onChange }: any) => (
-  <div className="space-y-2">
-    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-1">{label}</label>
-    <input type="number" step="0.1" value={value} onChange={(e) => onChange(e.target.value)} className="w-full h-14 bg-zinc-50 dark:bg-zinc-900 border-none rounded-2xl px-6 text-sm font-bold" />
-  </div>
-);
+  return (
+    <div className="max-w-7xl mx-auto font-sans text-zinc-900 animate-in fade-in duration-500">
+      <Toaster position="top-right" />
+      {user.role === 'ADMIN' && <div className="px-6 py-10"><PrincipalView user={user} /></div>}
+      {user.role === 'TEACHER' && <div className="px-6 py-10"><TeacherView user={user} /></div>}
+      {(user.role === 'PARENT' || user.role === 'STUDENT') && <ParentStudentDashboard user={user} />}
+    </div>
+  );
+};

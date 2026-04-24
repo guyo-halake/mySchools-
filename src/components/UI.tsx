@@ -31,8 +31,9 @@ export const Button: React.FC<{
   className?: string;
   type?: 'button' | 'submit';
   disabled?: boolean;
+  loading?: boolean;
   title?: string;
-}> = ({ children, variant = 'primary', onClick, className, type = 'button', disabled, title }) => {
+}> = ({ children, variant = 'primary', onClick, className, type = 'button', disabled, loading, title }) => {
   const variants = {
     primary: "bg-zinc-900 text-white hover:bg-black dark:bg-zinc-100 dark:text-black dark:hover:bg-white",
     secondary: "bg-gray-100 text-gray-900 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700",
@@ -45,7 +46,7 @@ export const Button: React.FC<{
     <button
       type={type}
       onClick={onClick}
-      disabled={disabled}
+      disabled={disabled || loading}
       title={title}
       className={cn(
         "px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-1.5",
@@ -53,6 +54,9 @@ export const Button: React.FC<{
         className
       )}
     >
+      {loading && (
+        <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+      )}
       {children}
     </button>
   );
