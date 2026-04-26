@@ -91,7 +91,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         announcements,
         events,
         schoolInfo,
-        parents
+        parents,
+        classes
       ] = await Promise.all([
         api.getStudents(user.school_id),
         api.getTeachers(user.school_id),
@@ -101,7 +102,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         api.getAnnouncements(user.school_id),
         api.getEvents(user.school_id),
         api.getSchool(user.school_id),
-        api.getParents(user.school_id)
+        api.getParents(user.school_id),
+        api.getClasses(user.school_id)
       ]);
 
       setData(prev => ({
@@ -114,6 +116,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         announcements,
         events,
         parents,
+        classes,
         schoolInfo: schoolInfo || prev.schoolInfo
       }));
     } catch (error) {

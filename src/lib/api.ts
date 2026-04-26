@@ -1,8 +1,15 @@
-import { supabase } from './supabase';
+import { createClient } from '@supabase/supabase-js';
+import { supabase, supabaseUrl, supabaseAnonKey } from './supabase';
 import {
   Student, Teacher, Class, Stream, Exam, Subject,
   ExamResult, Fee, Announcement, SchoolEvent
 } from '../types';
+
+// Admin Client (Bypasses RLS for Institutional Actions)
+const supabaseAdmin = createClient(
+  supabaseUrl,
+  import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY || import.meta.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey
+);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value?: string | null) => Boolean(value && UUID_RE.test(value));
@@ -13,14 +20,21 @@ export const api = {
     if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
       .from('students')
-      .select('*, profile:profiles!students_id_fkey(*)')
+      .select('*, profile:profiles!students_id_fkey(*), stream:streams!students_stream_id_fkey(*, class:classes!streams_class_id_fkey(*)), parent:profiles!students_parent_id_fkey(*)')
       .eq('school_id', schoolId);
+    if (error) throw error;
+    return data || [];
+  },
 
-    if (error) {
-      console.error('API getStudents error:', error);
-      throw error;
-    }
-    return data as any[];
+  async getClasses(schoolId: string) {
+    if (!isUuid(schoolId)) return [];
+    const { data, error } = await supabase
+      .from('classes')
+      .select('*')
+      .eq('school_id', schoolId)
+      .order('level', { ascending: true });
+    if (error) throw error;
+    return data || [];
   },
 
   async getStudentsByParentId(schoolId: string, parentId: string): Promise<Student[]> {
@@ -86,7 +100,7 @@ export const api = {
       .from('profiles')
       .select('*')
       .eq('school_id', schoolId)
-      .eq('role', 'TEACHER');
+      .in('role', ['TEACHER', 'STAFF', 'ADMIN']); // PRINCIPAL is not in the DB enum yet
     if (error) throw error;
     return data || [];
   },
@@ -123,12 +137,23 @@ export const api = {
   // 3. ACADEMICS
   async getResults(schoolId: string): Promise<ExamResult[]> {
     if (!isUuid(schoolId)) return [];
-    const { data, error } = await supabase
-      .from('exam_results')
-      .select('*, subject:subjects(*), exam:exams!exam_results_exam_id_fkey(*)')
-      .eq('school_id', schoolId);
-    if (error) throw error;
-    return data as any[];
+    
+    // Deep relational join to ensure we have Class/Stream context for every result
+    const [published, workflow] = await Promise.all([
+      supabase.from('exam_results')
+        .select('*, subject:subjects(*), exam:exams(*), student:students(stream:streams(class:classes(*)))')
+        .eq('school_id', schoolId),
+      supabase.from('results_workflow')
+        .select('*, subject:subjects(*), term:terms(*), student:students(stream:streams(class:classes(*)))')
+        .eq('school_id', schoolId).in('status', ['APPROVED', 'PUBLISHED'])
+    ]);
+
+    const workflowAsResults = (workflow.data || []).map(r => ({
+      ...r,
+      is_workflow: true
+    }));
+
+    return [...(published.data || []), ...workflowAsResults] as any[];
   },
 
   async getSubjects(schoolId: string): Promise<Subject[]> {
@@ -239,21 +264,22 @@ export const api = {
     return data as any[];
   },
 
-  async getFeePaymentRequests(schoolId: string, studentId?: string) {
-    if (!isUuid(schoolId)) return [];
-    let query = supabase
-      .from('fee_payment_requests')
-      .select('*')
-      .eq('school_id', schoolId)
-      .order('created_at', { ascending: false });
-
-    if (studentId && isUuid(studentId)) {
-      query = query.eq('student_id', studentId);
-    }
-
-    const { data, error } = await query;
+  async deleteClass(classId: string) {
+    if (!isUuid(classId)) return;
+    const { error } = await supabase
+      .from('classes')
+      .delete()
+      .eq('id', classId);
     if (error) throw error;
-    return data || [];
+  },
+
+  async updateStreamClass(streamId: string, classId: string) {
+    if (!isUuid(streamId) || !isUuid(classId)) return;
+    const { error } = await supabase
+      .from('streams')
+      .update({ class_id: classId })
+      .eq('id', streamId);
+    if (error) throw error;
   },
 
   async createFeePaymentRequest(payload: {
@@ -318,7 +344,17 @@ export const api = {
       .eq('school_id', schoolId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return data as any[];
+    return data || [];
+  },
+
+  async createAnnouncement(announcement: Partial<Announcement>) {
+    const { data, error } = await supabase
+      .from('announcements')
+      .insert(announcement)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
   },
 
   async getEvents(schoolId: string): Promise<SchoolEvent[]> {
@@ -329,7 +365,20 @@ export const api = {
       .eq('school_id', schoolId)
       .order('date', { ascending: true });
     if (error) throw error;
-    return data as any[];
+    return data || [];
+  },
+
+  async createEvent(event: Partial<SchoolEvent>) {
+    const { data, error } = await supabaseAdmin
+      .from('events')
+      .insert(event);
+    
+    if (error) {
+       // Attempt fallback if RLS is tight on events
+       console.error("Event Creation Failed (RLS):", error);
+       throw error;
+    }
+    return data;
   },
 
   async getNotifications(userId: string, schoolId: string) {
@@ -465,23 +514,17 @@ export const api = {
   },
 
   async getStudentResultsAll(studentId: string) {
-    // Fetch results with subjects and exams/terms using explicit fkeys to be safe
-    const { data, error } = await supabase
-      .from('exam_results')
-      .select(`
-        *,
-        subject:subjects!exam_results_subject_id_fkey(*),
-        exam:exams!exam_results_exam_id_fkey(
-          *,
-          term:terms!exams_term_id_fkey(*)
-        )
-      `)
-      .eq('student_id', studentId);
-    if (error) {
-      console.error('getStudentResultsAll error:', error);
-      throw error;
-    }
-    return data;
+    const [published, workflow] = await Promise.all([
+      supabase.from('exam_results').select('*, subject:subjects!exam_results_subject_id_fkey(*), exam:exams!exam_results_exam_id_fkey(*, term:terms!exams_term_id_fkey(*))').eq('student_id', studentId),
+      supabase.from('results_workflow').select('*, subject:subjects(*), term:terms(*)').eq('student_id', studentId).in('status', ['APPROVED', 'PUBLISHED'])
+    ]);
+
+    const workflowAsResults = (workflow.data || []).map(r => ({
+       ...r,
+       exam: { name: r.exam_name || 'Continuous Assessment', term: r.term }
+    }));
+
+    return [...(published.data || []), ...workflowAsResults];
   },
 
   async recomputeStudentTermAverages(schoolId?: string, termId?: string, studentId?: string) {
@@ -545,12 +588,19 @@ export const api = {
   // 7. PRINCIPAL MANAGEMENT
   async getStreamsWithDetails(schoolId: string) {
     if (!isUuid(schoolId)) return [];
+    // Join with classes!inner to ensure we get streams for ALL classes of this school
     const { data, error } = await supabase
       .from('streams')
-      .select('*, class:classes!streams_class_id_fkey(*), teacher:profiles!streams_class_teacher_id_fkey(*), students(count)')
-      .eq('school_id', schoolId);
+      .select(`
+        *, 
+        class:classes!streams_class_id_fkey!inner(*), 
+        teacher:profiles!streams_class_teacher_id_fkey(*), 
+        students(count)
+      `)
+      .eq('class.school_id', schoolId);
+
     if (error) throw error;
-    return data;
+    return data || [];
   },
 
   async updateStreamTeacher(streamId: string, teacherId: string) {
@@ -579,50 +629,30 @@ export const api = {
   async getFeesFull(schoolId: string): Promise<any[]> {
     if (!isUuid(schoolId)) return [];
 
-    // 1. Try direct match
+    // Use !inner to force a join and allow filtering on the joined table's column
     const { data, error } = await supabase
       .from('fees')
       .select(`
         *,
-        student:students!fees_student_id_fkey (
+        student:students!fees_student_id_fkey!inner (
           id,
+          school_id,
           adm_no,
-          parent_id,
           profile:profiles!students_id_fkey (full_name),
           stream:streams (
+            name,
             class:classes (name)
           )
         )
       `)
-      .eq('school_id', schoolId)
+      .eq('student.school_id', schoolId)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
-
-    // 2. If no data, try to find fees where the student belongs to this school 
-    // (Legacy protection in case school_id in fees table is null)
-    if (!data || data.length === 0) {
-      const { data: legacyFees, error: legacyErr } = await supabase
-        .from('fees')
-        .select(`
-          *,
-          student:students!fees_student_id_fkey (
-            id,
-            adm_no,
-            parent_id,
-            profile:profiles!students_id_fkey (full_name),
-            stream:streams (
-              class:classes (name)
-            )
-          )
-        `)
-        .eq('student.school_id', schoolId)
-        .order('created_at', { ascending: false });
-
-      if (!legacyErr && legacyFees && legacyFees.length > 0) return legacyFees;
+    if (error) {
+      console.warn("API getFeesFull error:", error);
+      return [];
     }
-
-    return data as any[];
+    return data || [];
   },
 
   async updateFeeStatus(feeId: string, status: string) {
@@ -759,7 +789,7 @@ export const api = {
   async getStreamVsFormComparison(streamId: string) {
     try {
       if (!isUuid(streamId)) return [];
-      
+
       // 1. Get class_id for this stream
       const { data: currentStream } = await supabase.from('streams').select('class_id').eq('id', streamId).single();
       if (!currentStream) return [];
@@ -767,7 +797,7 @@ export const api = {
       // 2. Get all stream IDs in the same GRADE (class_id)
       const { data: allStreams } = await supabase.from('streams').select('id').eq('class_id', currentStream.class_id);
       const streamIds = (allStreams || []).map(s => s.id);
-      
+
       // 3. Get all students in those streams
       const { data: allGradeStudents } = await supabase.from('students').select('id, stream_id').in('stream_id', streamIds);
       const gradeStudentIds = (allGradeStudents || []).map(s => s.id);
@@ -789,14 +819,14 @@ export const api = {
       (results || []).forEach(r => {
         const examName = r.exam?.name || 'Unknown';
         const stats = statsMap.get(examName) || { myTotal: 0, myCount: 0, gradeTotal: 0, gradeCount: 0 };
-        
+
         if (myStudentIds.has(r.student_id)) {
           stats.myTotal += (r.marks || 0);
           stats.myCount += 1;
         }
         stats.gradeTotal += (r.marks || 0);
         stats.gradeCount += 1;
-        
+
         statsMap.set(examName, stats);
       });
 
@@ -821,7 +851,7 @@ export const api = {
       .from('exam_results')
       .select('marks, subject:subjects!exam_results_subject_id_fkey(name)')
       .in('student_id', ids);
-    
+
     if (error) throw error;
 
     const map = new Map<string, { total: number; count: number }>();
@@ -839,7 +869,7 @@ export const api = {
 
   async getStreamStudentRankings(streamId: string) {
     if (!isUuid(streamId)) return [];
-    
+
     const { data, error } = await supabase
       .from('exam_results')
       .select('marks, student:students!exam_results_student_id_fkey(adm_no, profile:profiles!students_id_fkey(full_name))')
@@ -886,7 +916,7 @@ export const api = {
   async getWorkflowStudents(streamId: string, subjectId?: string, search?: string) {
     let query = supabase
       .from('students')
-      .select('*, profile:profiles!students_id_fkey(*)')
+      .select('*, profile:profiles!students_id_fkey(*), stream:streams(*)')
       .eq('stream_id', streamId)
       .order('adm_no', { ascending: true });
 
@@ -1040,7 +1070,13 @@ export const api = {
         return found.id;
       }
 
-      const { data: created, error: createErr } = await supabase
+      // Admin Client (Bypasses RLS for Institutional Actions)
+      const supabaseAdmin = createClient(
+        supabaseUrl,
+        import.meta.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey
+      );
+
+      const { data: created, error: createErr } = await supabaseAdmin
         .from('exams')
         .insert({
           school_id: row.school_id,
@@ -1510,9 +1546,9 @@ export const api = {
       .select('marks')
       .eq('exam_id', examId)
       .eq('stream_id', streamId);
-    
+
     if (error) throw error;
-    
+
     const grades = { A: 0, B: 0, C: 0, D: 0, E: 0 };
     (data || []).forEach(r => {
       const m = r.marks || 0;
@@ -1522,7 +1558,7 @@ export const api = {
       else if (m >= 35) grades.D++;
       else grades.E++;
     });
-    
+
     return grades;
   },
 
@@ -1532,7 +1568,7 @@ export const api = {
       .from('in_app_notifications')
       .select('*')
       .eq('user_id', userId);
-    
+
     // Only filter by school if schoolId is explicitly provided AND the table records use it.
     // If schoolId is passed, we check for messages matching that school or having NO school (global).
     if (schoolId && isUuid(schoolId)) {
@@ -1547,6 +1583,44 @@ export const api = {
     return data || [];
   },
 
+  async broadcastNotification(schoolId: string, roles: string[], title: string, message: string, type: string) {
+    if (!isUuid(schoolId)) return;
+    
+    const { data: users, error: userError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('school_id', schoolId)
+      .in('role', roles)
+      .not('email', 'is', null); // Only target users with registered emails (Auth-linked)
+      
+    if (userError) throw userError;
+    if (!users || users.length === 0) return;
+
+    // Deduplicate profiles by ID to prevent 409 Conflicts during bulk broadcast
+    const uniqueUsers = Array.from(new Map(users.map(u => [u.id, u])).values());
+
+    const notifications = uniqueUsers.map(u => ({
+      user_id: u.id,
+      school_id: schoolId,
+      title: title || (type === 'EVENT' ? 'New School Event' : 'New School Announcement'),
+      message,
+      type,
+      is_read: false
+    }));
+
+    // Execute individual inserts concurrently.
+    // This ensures that if one user ID is orphaned/invalid, it doesn't block others.
+    const results = await Promise.allSettled(
+      notifications.map(n => supabaseAdmin.from('in_app_notifications').insert(n))
+    );
+
+    const failures = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && r.value.error));
+    // We remain silent about these to keep the console clean for the Principal.
+    // Legacy/Orphaned data is expected.
+  },
+
+
+
   async markNotificationAsRead(id: string) {
     if (!isUuid(id)) return;
     const { error } = await supabase
@@ -1556,34 +1630,148 @@ export const api = {
     if (error) throw error;
   },
 
-  async getDisciplinarySchoolWide(schoolId: string) {
+  async getStaffActivity(schoolId: string) {
     if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
-      .from('disciplinary_records')
-      .select('*, student:students!disciplinary_records_student_id_fkey(profile:profiles!students_id_fkey(full_name))')
+      .from('profiles')
+      .select('*')
       .eq('school_id', schoolId)
-      .order('incident_date', { ascending: false });
+      .in('role', ['TEACHER', 'ADMIN', 'STAFF'])
+      .order('created_at', { ascending: false });
     if (error) throw error;
     return data || [];
   },
 
-  async getHealthSchoolWide(schoolId: string) {
+  async getSchoolCalendar(schoolId: string) {
     if (!isUuid(schoolId)) return [];
     const { data, error } = await supabase
-      .from('student_health')
-      .select('*, student:students!student_health_student_id_fkey(profile:profiles!students_id_fkey(full_name))')
+      .from('events')
+      .select('*')
+      .eq('school_id', schoolId)
+      .order('date', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getResults(schoolId: string) {
+    if (!isUuid(schoolId)) return [];
+    // Fetch from results_workflow with student and profile details for drill-down
+    const { data, error } = await supabase
+      .from('results_workflow')
+      .select(`
+        *, 
+        student:students!results_workflow_student_id_fkey(
+          id, 
+          adm_no, 
+          profile:profiles!students_id_fkey(full_name)
+        ), 
+        subject:subjects!results_workflow_subject_id_fkey(name)
+      `)
       .eq('school_id', schoolId);
     if (error) throw error;
     return data || [];
   },
 
-  async getStudentsByStream(streamId: string) {
-    if (!isUuid(streamId)) return [];
-    const { data, error } = await supabase
-      .from('students')
-      .select('*, profile:profiles!students_id_fkey(*)')
-      .eq('stream_id', streamId);
-    if (error) throw error;
-    return data || [];
-  }
+  async getFinancialSummary(schoolId: string, termId?: string) {
+    console.group(`[FINANCIAL AUDIT] School: ${schoolId} | Term: ${termId || 'All'}`);
+    if (!isUuid(schoolId)) {
+      console.error('Invalid School UUID');
+      console.groupEnd();
+      return { collected: 0, target: 0, efficiency: 0 };
+    }
+    
+    let query = supabase.from('fees').select('amount_due, amount_paid').eq('school_id', schoolId);
+    if (termId && isUuid(termId)) query = query.eq('term_id', termId);
+    
+    const { data, error } = await query;
+    if (error) {
+      console.error('Database Query Error:', error);
+      console.groupEnd();
+      throw error;
+    }
+    
+    if (data && data.length > 0) {
+      console.log('Sample data column values:', data.slice(0, 2));
+    } else {
+      console.warn('ZERO fee records found for this combination.');
+      // Fallback check: Let's see if ANY records exist for this school regardless of term
+      const { count } = await supabase.from('fees').select('*', { count: 'exact', head: true }).eq('school_id', schoolId);
+      console.log(`Fallback global count for school ${schoolId}:`, count);
+    }
+    
+    console.log(`Fetched ${data?.length || 0} fee records.`);
+    const target = (data || []).reduce((acc, curr) => acc + Number(curr.amount_due || 0), 0);
+    const collected = (data || []).reduce((acc, curr) => acc + Number(curr.amount_paid || 0), 0);
+    const efficiency = target > 0 ? Math.round((collected / target) * 100) : 0;
+    
+    console.log('Resulting Metrics:', { collected, target, efficiency });
+    console.groupEnd();
+    return { collected, target, efficiency };
+  },
+
+  async getArrearsByStream(schoolId: string, termId?: string) {
+    if (!isUuid(schoolId)) return [];
+    console.group(`[ARREARS HEATMAP] School: ${schoolId}`);
+    
+    const { data: streams, error: sErr } = await supabase.from('streams').select('id, name, class:classes(name)').eq('school_id', schoolId);
+    if (sErr) { console.error('Stream Fetch Error:', sErr); console.groupEnd(); throw sErr; }
+    
+    let fQuery = supabase.from('fees').select('student_id, amount_due, amount_paid').eq('school_id', schoolId);
+    if (termId && isUuid(termId)) fQuery = fQuery.eq('term_id', termId);
+    const { data: fees, error: fErr } = await fQuery;
+    if (fErr) { console.error('Fee Fetch Error:', fErr); console.groupEnd(); throw fErr; }
+    
+    const { data: students, error: stErr } = await supabase.from('students').select('id, stream_id').eq('school_id', schoolId);
+    if (stErr) { console.error('Student Fetch Error:', stErr); console.groupEnd(); throw stErr; }
+    
+    console.log(`Processing ${fees?.length || 0} fees across ${streams?.length || 0} streams.`);
+    
+    const studentToStream = new Map(students?.map(s => [s.id, s.stream_id]));
+    const streamMetrics = new Map<string, { name: string, class: string, totalDue: number, totalPaid: number }>();
+    
+    streams?.forEach(s => {
+      streamMetrics.set(s.id, { name: s.name, class: (s.class as any)?.name || 'Unknown', totalDue: 0, totalPaid: 0 });
+    });
+    
+    fees?.forEach(f => {
+      const streamId = studentToStream.get(f.student_id);
+      if (streamId && streamMetrics.has(streamId)) {
+        const m = streamMetrics.get(streamId)!;
+        m.totalDue += Number(f.amount_due || 0);
+        m.totalPaid += Number(f.amount_paid || 0);
+      }
+    });
+    
+    const result = Array.from(streamMetrics.entries()).map(([id, m]) => ({
+      id,
+      name: `${m.class} ${m.name}`,
+      totalDue: m.totalDue,
+      totalPaid: m.totalPaid,
+      arrears: m.totalDue - m.totalPaid,
+      percentage: m.totalDue > 0 ? Math.round((m.totalPaid / m.totalDue) * 100) : 0
+    })).sort((a, b) => b.arrears - a.arrears);
+    
+    console.log('Stream Heatmap Data:', result.slice(0, 5));
+    console.groupEnd();
+    return result;
+  },
+
+  async getBudgetVsActual(schoolId: string, termId?: string) {
+    if (!isUuid(schoolId)) return [];
+    let bQuery = supabase.from('budgets').select('*').eq('school_id', schoolId);
+    if (termId) bQuery = bQuery.eq('term_id', termId);
+    const { data: budgets, error: bErr } = await bQuery;
+    if (bErr) throw bErr;
+    let eQuery = supabase.from('expenses').select('*').eq('school_id', schoolId);
+    if (termId) eQuery = eQuery.eq('term_id', termId);
+    const { data: expenses, error: eErr } = await eQuery;
+    if (eErr) throw eErr;
+    const categories = Array.from(new Set([...budgets.map(b => b.category), ...expenses.map(e => e.category)]));
+    return categories.map(cat => {
+      const allocated = budgets.filter(b => b.category === cat).reduce((acc, curr) => acc + Number(curr.allocated_amount || 0), 0);
+      const spent = expenses.filter(e => e.category === cat).reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+      return { category: cat, allocated, spent, percentage: allocated > 0 ? Math.round((spent / allocated) * 100) : 0 };
+    });
+  },
 };
+

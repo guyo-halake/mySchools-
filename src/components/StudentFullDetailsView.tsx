@@ -11,6 +11,7 @@ import { cn } from '../utils/utils';
 import { generateResultPDF } from '../utils/pdf';
 import { api } from '../lib/api';
 import { useApp } from '../context/AppContext';
+import { formatCurrency } from '../utils/utils';
 
 interface StudentFullDetailsViewProps {
   student: any;
@@ -134,21 +135,21 @@ export const StudentFullDetailsView: React.FC<StudentFullDetailsViewProps> = ({ 
                <div className="relative">
                   <button 
                      onClick={() => setDownloadMenu(!downloadMenu)}
-                     className="group flex items-center gap-3 px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-[10px] font-black uppercase tracking-widest transition-all transform hover:scale-105 active:scale-95 shadow-2xl shadow-emerald-200 dark:shadow-none"
+                     className="flex items-center gap-2 text-zinc-400 hover:text-zinc-900 text-[10px] font-black uppercase tracking-widest transition-colors"
                    >
-                     <Download size={14} className="group-hover:translate-y-0.5 transition-transform" /> 
-                     Download Report
+                     <Download size={14} /> 
+                     Download Results
                      <ChevronDown size={12} className={cn("transition-transform duration-300", downloadMenu && "rotate-180")} />
-                   </button>
+                  </button>
 
                    {downloadMenu && (
                       <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden z-[100] animate-in slide-in-from-top-2 duration-300">
                          {[
                             { id: 'ALL', label: 'All Results' },
-                            { id: 1, label: 'Form 1 Only' },
-                            { id: 2, label: 'Form 2 Only' },
-                            { id: 3, label: 'Form 3 Only' },
-                            { id: 4, label: 'Form 4 Only' }
+                            { id: 1, label: 'Form 1' },
+                            { id: 2, label: 'Form 2' },
+                            { id: 3, label: 'Form 3' },
+                            { id: 4, label: 'Form 4' }
                          ].map(opt => (
                             <button 
                                key={opt.id}
@@ -166,29 +167,47 @@ export const StudentFullDetailsView: React.FC<StudentFullDetailsViewProps> = ({ 
                </div>
             </div>
 
-            {/* Quick Stats Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-left border-b border-zinc-50 dark:border-zinc-900 pb-10">
-               <div>
-                  <p className="text-[8px] font-black uppercase text-zinc-400 tracking-widest mb-1">Class Teacher</p>
-                  <p className="text-[11px] font-black text-zinc-800 dark:text-zinc-200">{student.stream?.teacher?.full_name || 'Not Assigned'}</p>
-               </div>
-               <div>
-                  <p className="text-[8px] font-black uppercase text-zinc-400 tracking-widest mb-1">Account Balance</p>
-                  <p className="text-[11px] font-black text-amber-600">Ksh 5,000.00 DR</p>
-               </div>
-               <div>
-                  <p className="text-[8px] font-black uppercase text-zinc-400 tracking-widest mb-1">Current Mean</p>
-                  <p className="text-[11px] font-black text-zinc-800 dark:text-zinc-200">
-                    {studentDetails.results.length > 0 
-                      ? (studentDetails.results.reduce((acc, r) => acc + Number(r.marks || 0), 0) / studentDetails.results.length).toFixed(1) 
-                      : 'N/A'
-                    }
-                  </p>
-               </div>
-               <div>
-                  <p className="text-[8px] font-black uppercase text-zinc-400 tracking-widest mb-1">Rank</p>
-                  <p className="text-[11px] font-black text-zinc-800 dark:text-zinc-200">Pending</p>
-               </div>
+            {/* Ultra-Minimalist Stats Row */}
+            <div className="flex flex-wrap gap-x-12 gap-y-6 pb-12 border-b border-zinc-50 dark:border-zinc-900">
+               {(() => {
+                  const totalDue = studentDetails.fees.reduce((acc, f) => acc + (f.amount_due || 0), 0);
+                  const totalPaid = studentDetails.fees.reduce((acc, f) => acc + (f.amount_paid || 0), 0);
+                  const balance = totalDue - totalPaid;
+                  
+                  const avg = studentDetails.results.length > 0 
+                     ? (studentDetails.results.reduce((acc, r) => acc + Number(r.marks || 0), 0) / studentDetails.results.length).toFixed(1) 
+                     : '0.0';
+
+                  return (
+                     <>
+                        <div className="space-y-1">
+                           <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Mean Mark</p>
+                           <p className="text-sm font-black text-zinc-900 dark:text-zinc-100">{avg}%</p>
+                        </div>
+
+                        <div className="space-y-1">
+                           <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Fees Balance</p>
+                           <p className={cn("text-sm font-black", balance > 0 ? "text-amber-600" : "text-emerald-600")}>
+                                {formatCurrency(Math.abs(balance))} {balance > 0 ? 'DR' : 'CR'}
+                           </p>
+                        </div>
+
+                        <div className="space-y-1">
+                           <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Class Teacher</p>
+                           <p className="text-sm font-black text-zinc-800 dark:text-zinc-200 uppercase tracking-tighter">
+                                {student.stream?.teacher?.full_name || 'NONE'}
+                           </p>
+                        </div>
+
+                        <div className="space-y-1">
+                           <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Discipline</p>
+                           <p className={cn("text-sm font-black uppercase tracking-tighter", studentDetails.discipline.length > 0 ? "text-amber-600" : "text-zinc-900 dark:text-zinc-100")}>
+                                {studentDetails.discipline.length > 0 ? `${studentDetails.discipline.length} Records` : 'CLEAN'}
+                           </p>
+                        </div>
+                     </>
+                  );
+               })()}
             </div>
             
             {/* Sections Content */}

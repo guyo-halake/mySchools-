@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { api } from '../lib/api';
 import { 
@@ -10,13 +11,27 @@ import {
 } from 'lucide-react';
 import { Button, Card, Badge } from '../components/UI';
 import { StudentFullDetailsView } from '../components/StudentFullDetailsView';
-import { cn } from '../utils/utils';
+import { cn, formatCurrency } from '../utils/utils';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 export const UserDirectory: React.FC = () => {
-  const { students, teachers, schoolInfo, streams, results } = useApp();
-  const [activeTab, setActiveTab] = useState<'STUDENT' | 'TEACHER'>('STUDENT');
+  const { students, teachers, schoolInfo, streams, results, fees, classes } = useApp();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<'STUDENT' | 'TEACHER'>(
+    location.pathname.includes('teacher') ? 'TEACHER' : 'STUDENT'
+  );
+
+  useEffect(() => {
+    if (location.pathname.includes('teacher')) setActiveTab('TEACHER');
+    else if (location.pathname.includes('student')) setActiveTab('STUDENT');
+  }, [location.pathname]);
+
+  const handleTabChange = (tab: 'STUDENT' | 'TEACHER') => {
+    setActiveTab(tab);
+    navigate(tab === 'TEACHER' ? '/teachers' : '/students', { replace: true });
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPerson, setSelectedPerson] = useState<any>(null);
   const [viewMode, setViewMode] = useState<'LIST' | 'DETAILS'>('LIST');
@@ -24,27 +39,88 @@ export const UserDirectory: React.FC = () => {
   const [transcriptForm, setTranscriptForm] = useState<number>(4);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  
+  // Advanced Filter States
+  const [streamFilter, setStreamFilter] = useState<string>('ALL');
+  const [financialFilter, setFinancialFilter] = useState<'ALL' | 'PAID' | 'ARREARS'>('ALL');
+  const [genderFilter, setGenderFilter] = useState<'ALL' | 'MALE' | 'FEMALE'>('ALL');
+  // const [performanceFilter, setPerformanceFilter] = useState<'ALL' | 'TOP_20' | 'BOTTOM_20'>('ALL');
+
+  // Academic Analysis: Group results by student and calculate averages
+  // const studentPerformance = useMemo(() => {
+  //   const stats: Record<string, { total: number; count: number }> = {};
+  //   results.forEach(r => {
+  //     // Robust ID extraction: handles string ID, nested object ID, or joined profile ID
+  //     let sid = "";
+  //     if (typeof r.student_id === 'string') sid = r.student_id;
+  //     else if (r.student_id && typeof r.student_id === 'object') sid = (r.student_id as any).id;
+  //     else if (r.student && typeof r.student === 'object') sid = (r.student as any).id;
+  //     
+  //     if (!sid) return;
+  //     if (!stats[sid]) stats[sid] = { total: 0, count: 0 };
+  //     stats[sid].total += Number(r.marks || 0);
+  //     stats[sid].count += 1;
+  //   });
+  //   
+  //   const averages: Record<string, number> = {};
+  //   Object.keys(stats).forEach(sid => {
+  //     if (stats[sid].count > 0) {
+  //       averages[sid] = stats[sid].total / stats[sid].count;
+  //     }
+  //   });
+  //   return averages;
+  // }, [results]);
 
   // Removed redundant fetchData logic as it is now handled by StudentFullDetailsView
 
-  // Search Logic
+  // Search & Advanced Filter Logic
   const filteredData = useMemo(() => {
-    return activeTab === 'STUDENT' 
-      ? students.filter(s => (s.profile?.full_name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (s.adm_no || '').includes(searchQuery))
-      : teachers.filter(t => (t.full_name || '').toLowerCase().includes(searchQuery.toLowerCase()));
-  }, [activeTab, students, teachers, searchQuery]);
+    if (activeTab === 'TEACHER') {
+      return teachers.filter(t => (t.full_name || '').toLowerCase().includes(searchQuery.toLowerCase()));
+    }
 
-  const generateResultPDF = (student: any) => {
-    const doc = new jsPDF();
-    doc.setFontSize(14); doc.text(schoolInfo?.name || "SCHOOL NAME", 105, 20, { align: 'center' });
-    doc.setFontSize(10); doc.text(`TRANSCRIPT: ${student.profile?.full_name}`, 105, 30, { align: 'center' });
-    autoTable(doc, {
-      startY: 40,
-      head: [['Subject', 'T1 MID', 'T1 END', 'T2 MID', 'T2 END', 'T3 MID', 'T3 END']],
-      body: studentDetails.subjects.map(s => [s.subject?.name || 'Subject', '-', '-', '-', '-', '-', '-']),
+    return students.filter(s => {
+      // Basic Search
+      const searchMatch = (s.profile?.full_name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (s.adm_no || '').includes(searchQuery);
+      if (!searchMatch) return false;
+
+      // Stream/Grade Filter
+      if (streamFilter !== 'ALL' && s.stream_id !== streamFilter) return false;
+
+      // Gender Filter
+      // (Assuming gender might be in profile or we add it) - for now placeholder
+      // if (genderFilter !== 'ALL' && s.profile?.gender !== genderFilter) return false;
+
+      // Financial Filter
+      if (financialFilter !== 'ALL') {
+        const studentFees = fees.filter(f => f.student_id === s.id);
+        const totalDue = studentFees.reduce((acc, f) => acc + (f.amount_due || 0), 0);
+        const totalPaid = studentFees.reduce((acc, f) => acc + (f.amount_paid || 0), 0);
+        const hasArrears = totalPaid < totalDue;
+
+        if (financialFilter === 'PAID' && hasArrears) return false;
+        if (financialFilter === 'ARREARS' && !hasArrears) return false;
+      }
+
+      return true;
     });
-    doc.save(`${student.profile?.full_name}_Transcript.pdf`);
-  };
+
+    // Academic Ranking Filter (Applied after basic filters)
+    // if (performanceFilter === 'ALL' || activeTab === 'TEACHER') return afterBasics;
+
+    // const ranked = [...afterBasics]
+    //   .filter(s => studentPerformance[s.id] !== undefined)
+    //   .sort((a, b) => {
+    //     const avgA = studentPerformance[a.id] || 0;
+    //     const avgB = studentPerformance[b.id] || 0;
+    //     return performanceFilter === 'TOP_20' ? avgB - avgA : avgA - avgB;
+    //   });
+
+    // return ranked.slice(0, 20);
+    return afterBasics;
+  }, [activeTab, students, teachers, searchQuery, streamFilter, financialFilter, fees]);
+
+  // local generateResultPDF removed in favor of utilities/pdf.ts to avoid conflict
 
   return viewMode === 'DETAILS' ? <StudentFullDetailsView student={selectedPerson} onClose={() => setViewMode('LIST')} /> : (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -74,14 +150,77 @@ export const UserDirectory: React.FC = () => {
       </div>
 
       <div className="flex items-center gap-8 border-b border-zinc-100">
-        <button onClick={() => setActiveTab('STUDENT')} className={cn("pb-3 text-[10px] font-black uppercase tracking-widest relative", activeTab === 'STUDENT' ? "text-zinc-900" : "text-zinc-400")}>
+        <button onClick={() => handleTabChange('STUDENT')} className={cn("pb-3 text-[10px] font-black uppercase tracking-widest relative", activeTab === 'STUDENT' ? "text-zinc-900" : "text-zinc-400")}>
           Students ({students.length})
           {activeTab === 'STUDENT' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-900" />}
         </button>
-        <button onClick={() => setActiveTab('TEACHER')} className={cn("pb-3 text-[10px] font-black uppercase tracking-widest relative", activeTab === 'TEACHER' ? "text-zinc-900" : "text-zinc-400")}>
+        <button onClick={() => handleTabChange('TEACHER')} className={cn("pb-3 text-[10px] font-black uppercase tracking-widest relative", activeTab === 'TEACHER' ? "text-zinc-900" : "text-zinc-400")}>
           Teachers ({teachers.length})
+          {activeTab === 'TEACHER' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-900" />}
         </button>
       </div>
+
+      {activeTab === 'STUDENT' && (
+        <div className="flex flex-wrap items-center gap-4 py-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Stream:</span>
+            <select 
+              value={streamFilter}
+              onChange={(e) => setStreamFilter(e.target.value)}
+              className="bg-transparent text-[10px] font-bold text-zinc-900 outline-none cursor-pointer hover:text-zinc-600 transition-colors"
+            >
+              <option value="ALL">All Streams</option>
+              {streams.map(st => (
+                <option key={st.id} value={st.id}>
+                  {st.full_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="w-px h-3 bg-zinc-100 mx-2 hidden sm:block" />
+
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Fees:</span>
+            <select 
+              value={financialFilter}
+              onChange={(e) => setFinancialFilter(e.target.value as any)}
+              className="bg-transparent text-[10px] font-bold text-zinc-900 outline-none cursor-pointer hover:text-zinc-600 transition-colors"
+            >
+              <option value="ALL">Status - All</option>
+              <option value="PAID">Paid in Full</option>
+              <option value="ARREARS">With Arrears</option>
+            </select>
+          </div>
+
+          {/* <div className="w-px h-3 bg-zinc-100 mx-2 hidden sm:block" />
+
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Performance:</span>
+            <select 
+              value={performanceFilter}
+              onChange={(e) => setPerformanceFilter(e.target.value as any)}
+              className="bg-transparent text-[10px] font-bold text-zinc-900 outline-none cursor-pointer hover:text-zinc-600 transition-colors"
+            >
+              <option value="ALL">School Avg (Full)</option>
+              <option value="TOP_20">Top 20 Performers</option>
+              <option value="BOTTOM_20">Bottom 20 (Support Priority)</option>
+            </select>
+          </div> */}
+          
+          <button 
+            onClick={() => {
+              setSearchQuery('');
+              setStreamFilter('ALL');
+              setFinancialFilter('ALL');
+              // setPerformanceFilter('ALL');
+            }}
+            className="ml-auto text-[9px] font-black uppercase text-zinc-400 hover:text-rose-500 transition-colors tracking-widest"
+          >
+            Clear Filters
+          </button>
+        </div>
+      )}
 
       <div className="bg-white dark:bg-zinc-950 border border-zinc-100 rounded-2xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
@@ -100,27 +239,51 @@ export const UserDirectory: React.FC = () => {
               {filteredData.map((person) => (
                 <tr key={person.id} className="group hover:bg-zinc-50/80 transition-colors">
                   <td className="px-6 py-4 text-left">
-                      <span className="text-xs font-bold text-zinc-900">{person.profile?.full_name}</span>
+                      <div className="flex items-center gap-2">
+                         <span className="text-xs font-bold text-zinc-900">{person.profile?.full_name}</span>
+                         {/* {studentPerformance[person.id] !== undefined && (
+                           <span className={cn(
+                             "text-[8px] font-black px-1.5 py-0.5 rounded-full",
+                             Number(studentPerformance[person.id]) >= 75 ? "bg-emerald-50 text-emerald-600" :
+                             Number(studentPerformance[person.id]) < 40 ? "bg-rose-50 text-rose-600" :
+                             "bg-zinc-100 text-zinc-400"
+                           )}>
+                             {Number(studentPerformance[person.id]).toFixed(1)}%
+                           </span>
+                         )} */}
+                      </div>
                   </td>
                   <td className="px-6 py-4 text-left">
                     <span className="text-[10px] font-black text-zinc-500">{person.adm_no}</span>
                   </td>
                   <td className="px-6 py-4 text-left">
                     <div className="flex flex-col text-[10px] font-bold text-zinc-400 uppercase tracking-tighter leading-tight">
-                      <span>guyo.h@example.com</span>
-                      <span className="opacity-60">0768141129</span>
+                      <span className="text-zinc-600">{person.parent?.full_name || 'No Parent'}</span>
+                      <span className="opacity-60">{person.parent?.phone || 'No Phone'}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-left">
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-tighter">
-                      Form {person.stream?.class?.name?.slice(-1)} - {person.stream?.name || 'G'}
+                      {person.stream?.class?.name || 'Form ?'} - {person.stream?.name || 'G'}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-left">
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      <span className="text-[9px] font-black uppercase tracking-tighter text-emerald-600">Active</span>
-                    </div>
+                    {(() => {
+                      const studentFees = fees.filter(f => f.student_id === person.id);
+                      const totalDue = studentFees.reduce((acc, f) => acc + (f.amount_due || 0), 0);
+                      const totalPaid = studentFees.reduce((acc, f) => acc + (f.amount_paid || 0), 0);
+                      const balance = totalDue - totalPaid;
+                      const hasArrears = balance > 0;
+                      
+                      return (
+                        <div className="flex items-center gap-2">
+                          <div className={cn("w-1.5 h-1.5 rounded-full", hasArrears ? "bg-amber-500" : "bg-emerald-500")} />
+                          <span className={cn("text-[8px] font-black uppercase tracking-widest", hasArrears ? "text-amber-600" : "text-emerald-600")}>
+                            {hasArrears ? `Arrears: ${formatCurrency(balance)}` : 'Cleared'}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-1">

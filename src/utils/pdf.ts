@@ -6,13 +6,21 @@ export const generateResultPDF = async (student: any, studentDetails: any, schoo
   const pageWidth = doc.internal.pageSize.width;
   const subjects_list = ['MATHEMATICS', 'ENGLISH', 'KISWAHILI', 'CHEMISTRY', 'BIOLOGY', 'PHYSICS', 'HISTORY', 'GEOGRAPHY', 'CRE', 'AGRICULTURE', 'BUSINESS', 'COMPUTER'];
 
-  // 1. SCHOOL LOGO & HEADER
-  try {
-    if (schoolInfo?.logo_url) {
-      doc.addImage(schoolInfo.logo_url, 'PNG', 15, 10, 25, 25);
+  // 1. SCHOOL LOGO & HEADER (Asynchronous & CORS Safe)
+  if (schoolInfo?.logo_url) {
+    try {
+      // Helper to load image safely
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const image = new Image();
+        image.crossOrigin = 'Anonymous';
+        image.onload = () => resolve(image);
+        image.onerror = () => reject();
+        image.src = schoolInfo.logo_url;
+      });
+      doc.addImage(img, 'PNG', 15, 10, 25, 25);
+    } catch (e) {
+      console.warn("Logo skipped due to load error or CORS policy");
     }
-  } catch (e) {
-    console.error("Logo load failed", e);
   }
 
   doc.setFont('courier', 'bold');
@@ -20,7 +28,7 @@ export const generateResultPDF = async (student: any, studentDetails: any, schoo
   doc.text(schoolInfo?.name?.toUpperCase() || "SCHOOL NAME", 15 + 30, 20);
   doc.setFont('courier', 'normal');
   doc.setFontSize(10);
-  doc.text(schoolInfo?.address || "P.O. BOX 1234", 15 + 30, 26);
+  doc.text(schoolInfo?.address || "INSTITUTION ADDRESS", 15 + 30, 26);
   doc.text(`Email: ${schoolInfo?.email || 'N/A'} | Phone: ${schoolInfo?.phone || 'N/A'}`, 15 + 30, 31);
   doc.setLineWidth(0.5);
   doc.line(15, 38, pageWidth - 15, 38);
@@ -108,5 +116,9 @@ export const generateResultPDF = async (student: any, studentDetails: any, schoo
   doc.text(schoolInfo?.name?.toUpperCase() || "SCHOOL NAME", pageWidth / 2, footerY, { align: 'center' });
   doc.text("P3L SYSTEM | OFFICIAL TRANSCRIPT | MATTA DEVELOPS", pageWidth / 2, footerY + 4, { align: 'center' });
 
-  doc.save(`${student.adm_no}_Form${mode}_Transcript.pdf`);
+  // Clean filename for Windows/Browser compatibility
+  const cleanerName = (student.profile?.full_name || 'Student').replace(/[^a-zA-Z0-9]/g, '_');
+  const filename = `${cleanerName}_Transcript_F${mode}.pdf`;
+  
+  doc.save(filename);
 };

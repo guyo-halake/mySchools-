@@ -62,28 +62,26 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
   PRINCIPAL: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'Results and student mngt', icon: FileText, path: '/results-management' },
-    { label: 'My Class', icon: BookOpen, path: '/my-classroom' },
     { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
-    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
-    { label: 'Students', icon: Users, path: '/students' },
-    { label: 'Teachers', icon: ShieldCheck, path: '/teachers' },
-    { label: 'Classes', icon: BookOpen, path: '/classes' },
-    { label: 'Templates', icon: Settings, path: '/templates' },
-    { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
-  ],
-  ADMIN: [
-    { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-    { label: 'Admin OS', icon: Activity, path: '/adminos' },
-    { label: 'Results and student mngt', icon: FileText, path: '/results-management' },
-    { label: 'My Class', icon: BookOpen, path: '/my-classroom' },
-    { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
-    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
     { label: 'Students', icon: Users, path: '/students' },
     { label: 'Teachers', icon: ShieldCheck, path: '/teachers' },
     { label: 'Classes', icon: BookOpen, path: '/classes' },
     { label: 'Fees', icon: CreditCard, path: '/fees' },
-    { label: 'Templates', icon: Settings, path: '/templates' },
+    { label: 'School Calendar', icon: Calendar, path: '/calendar' },
     { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
+    { label: 'Templates', icon: Settings, path: '/templates' },
+  ],
+  ADMIN: [
+    { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+    { label: 'Results and student mngt', icon: FileText, path: '/results-management' },
+    { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
+    { label: 'Students', icon: Users, path: '/students' },
+    { label: 'Teachers', icon: ShieldCheck, path: '/teachers' },
+    { label: 'Classes', icon: BookOpen, path: '/classes' },
+    { label: 'Fees', icon: CreditCard, path: '/fees' },
+    { label: 'School Calendar', icon: Calendar, path: '/calendar' },
+    { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
+    { label: 'Templates', icon: Settings, path: '/templates' },
   ],
 };
 
@@ -400,8 +398,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </div>
         </header>
 
-        <main className="flex-1 p-4 lg:p-6 overflow-x-hidden pb-20">
-          <div className="max-w-6xl mx-auto">
+        <main className="flex-1 p-2 lg:p-4 overflow-x-hidden pb-20">
+          <div className="w-full">
             {children}
           </div>
         </main>

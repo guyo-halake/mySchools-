@@ -53,7 +53,7 @@ const resolveCurrentTerm = (terms: any[]) => {
   const today = new Date();
   const current = terms.find(t => t.is_current === true || t.status === 'ACTIVE');
   if (current) return current;
-  
+
   const inRange = terms.find(t => {
     if (!t.start_date || !t.end_date) return false;
     return new Date(t.start_date) <= today && new Date(t.end_date) >= today;
@@ -63,7 +63,7 @@ const resolveCurrentTerm = (terms: any[]) => {
   // Holiday Fallback: Find the most recently finished term
   return [...terms]
     .filter(t => t.end_date && new Date(t.end_date) < today)
-    .sort((a,b) => new Date(b.end_date).getTime() - new Date(a.end_date).getTime())[0];
+    .sort((a, b) => new Date(b.end_date).getTime() - new Date(a.end_date).getTime())[0];
 };
 
 export const ResultsManagement: React.FC = () => {
@@ -141,10 +141,10 @@ export const ResultsManagement: React.FC = () => {
     if (!activeTerm && !currentTerm) return 'On Holiday';
     const term = activeTerm || currentTerm;
     if (!term) return 'Select Term';
-    
+
     const name = term.name || '';
     const year = term.year?.toString() || '';
-    
+
     // Prevent "Term 1 2026 2026" duplication
     if (year && name.includes(year)) return name;
     return `${name} ${year}`.trim();
@@ -344,7 +344,7 @@ export const ResultsManagement: React.FC = () => {
             if (!match) console.log(`⏩ [DEBUG] Filtering OUT record (Submitted by ${r.submitted_by} != Current User ${user?.id})`);
             return match;
           });
-        
+
         console.log(`✅ [DEBUG] FILTERED WORKFLOW DATA: ${normalizedQueue.length} rows remain after UI filtering.`);
         setWorkflowRows(normalizedQueue);
         setWorkflowUnavailable(false);
@@ -702,8 +702,8 @@ export const ResultsManagement: React.FC = () => {
     const payload = buildPayload('DRAFT', targets, targets.length === visibleStudents.length ? 'CLASS' : (targets.length === 1 ? 'SINGLE' : 'GROUP'));
     console.log(`🚀 [DEBUG] SENDING DRAFT PAYLOAD (Size: ${payload.length}):`, payload);
     if (!payload.length) {
-       console.warn("🛑 [DEBUG] Payload is empty. Check if marks are valid (0-100).");
-       return;
+      console.warn("🛑 [DEBUG] Payload is empty. Check if marks are valid (0-100).");
+      return;
     }
     setSaving(true);
     try {
@@ -1119,13 +1119,13 @@ export const ResultsManagement: React.FC = () => {
           <div className="flex items-center gap-2 text-xs text-zinc-500">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
             <span className="font-medium tracking-wide">
-              {selectedStream?.class_teacher_id === user?.id 
-                ? `Class Teacher Dashboard: ${selectedStream?.class?.name || ''} ${selectedStream?.name || ''}` 
+              {selectedStream?.class_teacher_id === user?.id
+                ? `Class Teacher Dashboard: ${selectedStream?.class?.name || ''} ${selectedStream?.name || ''}`
                 : `Teacher Page: ${selectedStream?.name || 'Class Console'}`}
             </span>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-2">
           <input
             type="file"
@@ -1134,18 +1134,18 @@ export const ResultsManagement: React.FC = () => {
             accept=".xlsx, .xls, .csv"
             onChange={handleImport}
           />
-          
-          <Button 
-            variant="outline" 
+
+          <Button
+            variant="outline"
             onClick={() => setFormClassId('ALL')}
             className="text-xs border-zinc-200"
           >
             Switch Class
           </Button>
 
-          <Button 
-            variant="outline" 
-            onClick={() => fileInputRef.current?.click()} 
+          <Button
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
             loading={importing}
             className="text-xs border-zinc-200"
           >
@@ -1163,8 +1163,8 @@ export const ResultsManagement: React.FC = () => {
             My Drafts
           </Button>
 
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             onClick={() => {
               setWorkflowMode('MY_ENTRIES');
               setIsExpanded(false);
@@ -1174,11 +1174,11 @@ export const ResultsManagement: React.FC = () => {
           >
             {showRecordForm ? 'Hide Form' : 'Record Results'}
           </Button>
-          
+
           <div className="h-6 w-px bg-zinc-200 mx-2 hidden md:block" />
-          
-          <Button 
-            variant="outline" 
+
+          <Button
+            variant="outline"
             onClick={() => setIsExpanded(!isExpanded)}
             className="p-2 border-zinc-200"
           >
@@ -1210,8 +1210,8 @@ export const ResultsManagement: React.FC = () => {
           {/* Class Selector */}
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Form</span>
-            <select 
-              value={formClassId} 
+            <select
+              value={formClassId}
               onChange={(e) => { setFormClassId(e.target.value); setSelection(prev => ({ ...prev, streamId: 'ALL' })); }}
               className="bg-transparent text-sm font-medium text-zinc-900 outline-none pr-4 cursor-pointer"
             >
@@ -1224,8 +1224,8 @@ export const ResultsManagement: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Stream</span>
-            <select 
-              value={selection.streamId} 
+            <select
+              value={selection.streamId}
               onChange={(e) => setSelection(prev => ({ ...prev, streamId: e.target.value }))}
               className="bg-transparent text-sm font-medium text-zinc-900 outline-none pr-4 cursor-pointer"
             >
@@ -1263,11 +1263,11 @@ export const ResultsManagement: React.FC = () => {
         {/* Search */}
         <div className="relative group w-full lg:max-w-xs">
           <Search className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-300" size={16} />
-          <input 
-            value={search} 
-            onChange={(e) => setSearch(e.target.value)} 
-            placeholder="Search students..." 
-            className="w-full h-10 pl-6 bg-transparent border-0 text-sm font-medium text-zinc-700 placeholder:text-zinc-300 outline-none transition-all" 
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search students..."
+            className="w-full h-10 pl-6 bg-transparent border-0 text-sm font-medium text-zinc-700 placeholder:text-zinc-300 outline-none transition-all"
           />
         </div>
       </div>
@@ -1330,7 +1330,7 @@ export const ResultsManagement: React.FC = () => {
         <div className={`${(showRecordForm && workflowMode === 'MY_ENTRIES' && !isExpanded) ? 'xl:col-span-8' : 'xl:col-span-12'} bg-white border border-zinc-100 rounded-2xl p-0 overflow-hidden shadow-sm`}>
           <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/20">
             <h2 className="text-sm font-semibold text-zinc-900 tracking-tight">
-              Results for {selectedStream?.class?.name || ''} {selectedStream?.name || ''}, 
+              Results for {selectedStream?.class?.name || ''} {selectedStream?.name || ''},
               For {activeTermLabel} - {examTypeLabel(selection.examType)}
             </h2>
           </div>
@@ -1376,13 +1376,13 @@ export const ResultsManagement: React.FC = () => {
                   <tr className="bg-zinc-50/50">
                     <th className="sticky left-0 z-20 bg-zinc-50 px-6 py-4 text-[10px] uppercase text-zinc-500 font-semibold tracking-wider border-b border-zinc-100 min-w-[220px]">Student & ADM</th>
                     {selection.subjectId === 'ALL' ? (
-                      [...subjects].sort((a,b) => {
+                      [...subjects].sort((a, b) => {
                         if (a.code === 'MAT' || a.name.toUpperCase().startsWith('MAT')) return -1;
                         if (b.code === 'MAT' || b.name.toUpperCase().startsWith('MAT')) return 1;
                         return a.name.localeCompare(b.name);
                       }).map(sub => (
                         <th key={sub.id} className="px-4 py-4 text-[10px] uppercase text-zinc-400 font-semibold text-center border-b border-zinc-100 min-w-[120px]">
-                          {sub.code || sub.name.substring(0,3).toUpperCase()}
+                          {sub.code || sub.name.substring(0, 3).toUpperCase()}
                         </th>
                       ))
                     ) : (
@@ -1407,7 +1407,7 @@ export const ResultsManagement: React.FC = () => {
                         </td>
 
                         {selection.subjectId === 'ALL' ? (
-                          [...subjects].sort((a,b) => {
+                          [...subjects].sort((a, b) => {
                             if (a.code === 'MAT' || a.name.toUpperCase().startsWith('MAT')) return -1;
                             if (b.code === 'MAT' || b.name.toUpperCase().startsWith('MAT')) return 1;
                             return a.name.localeCompare(b.name);
@@ -1416,31 +1416,30 @@ export const ResultsManagement: React.FC = () => {
                             const result = publishedByStudentSubject.get(key);
                             const workflow = workflowByStudentSubject.get(key);
                             const draft = draftInputs[key];
-                            
+
                             const mark = draft?.marks || workflow?.marks?.toString() || (result?.marks !== undefined ? result.marks.toString() : '');
                             const grade = mark ? toGrade(Number(mark)) : (result?.grade || '');
                             const remark = draft?.remarks || workflow?.remarks || result?.remarks;
-                            
+
                             return (
                               <td key={sub.id} className="px-4 py-4 text-center border-l border-zinc-100/30">
                                 <div className="flex flex-col items-center gap-1">
                                   {showRecordForm ? (
                                     <div className="flex items-center justify-center gap-1">
-                                      <input 
-                                        value={mark} 
-                                        onChange={(e) => setDraftValueForSubject(s.id, sub.id, { marks: e.target.value })} 
-                                        className="w-12 px-1 py-1 rounded border border-zinc-200 text-[10px] font-semibold text-center outline-none focus:border-zinc-900 transition-all" 
-                                        type="number" 
+                                      <input
+                                        value={mark}
+                                        onChange={(e) => setDraftValueForSubject(s.id, sub.id, { marks: e.target.value })}
+                                        className="w-12 px-1 py-1 rounded border border-zinc-200 text-[10px] font-semibold text-center outline-none focus:border-zinc-900 transition-all"
+                                        type="number"
                                       />
                                       {grade && <span className="text-[9px] font-semibold text-zinc-400 w-4">{grade}</span>}
                                     </div>
                                   ) : mark !== undefined ? (
                                     <>
-                                      <div className={`px-2 py-0.5 rounded-md flex flex-col items-center ${
-                                        grade === 'A' || grade === 'B' ? 'bg-emerald-50/40 text-emerald-700' :
-                                        grade === 'C' ? 'bg-lime-50/30 text-lime-700' :
-                                        'bg-zinc-50 text-zinc-500'
-                                      }`}>
+                                      <div className={`px-2 py-0.5 rounded-md flex flex-col items-center ${grade === 'A' || grade === 'B' ? 'bg-emerald-50/40 text-emerald-700' :
+                                          grade === 'C' ? 'bg-lime-50/30 text-lime-700' :
+                                            'bg-zinc-50 text-zinc-500'
+                                        }`}>
                                         <span className="text-xs font-semibold leading-none">{mark} {grade}</span>
                                       </div>
                                       {remark && <span className="text-[9px] text-zinc-400 italic line-clamp-1 max-w-[100px]">{remark}</span>}
@@ -1459,29 +1458,28 @@ export const ResultsManagement: React.FC = () => {
                           const prev = publishedByStudentSubject.get(`${s.id}::${selection.subjectId}`);
                           const markNum = Number(draft.marks);
                           const grade = Number.isFinite(markNum) ? toGrade(markNum) : '-';
-                          
+
                           return (
                             <>
                               <td className="px-6 py-4 text-xs font-semibold text-zinc-400 text-center">{prev?.marks ?? '-'}</td>
                               <td className="px-6 py-4 text-center">
                                 <div className="flex items-center justify-center gap-2">
-                                  <input 
-                                    value={draft.marks} 
-                                    onChange={(e) => setDraftValueForSubject(s.id, selection.subjectId, { marks: e.target.value })} 
-                                    className="w-14 px-2 py-1.5 rounded-lg border border-zinc-200 text-xs font-semibold text-center outline-none focus:ring-4 focus:ring-zinc-900/5 transition-all" 
-                                    type="number" 
+                                  <input
+                                    value={draft.marks}
+                                    onChange={(e) => setDraftValueForSubject(s.id, selection.subjectId, { marks: e.target.value })}
+                                    className="w-14 px-2 py-1.5 rounded-lg border border-zinc-200 text-xs font-semibold text-center outline-none focus:ring-4 focus:ring-zinc-900/5 transition-all"
+                                    type="number"
                                   />
-                                  <span className={`text-[10px] font-semibold w-6 h-6 flex items-center justify-center rounded-md ${
-                                    grade === 'A' || grade === 'B' ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-50 text-zinc-400'
-                                  }`}>{grade}</span>
+                                  <span className={`text-[10px] font-semibold w-6 h-6 flex items-center justify-center rounded-md ${grade === 'A' || grade === 'B' ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-50 text-zinc-400'
+                                    }`}>{grade}</span>
                                 </div>
                               </td>
                               <td className="px-6 py-4">
-                                <input 
-                                  value={draft.remarks} 
-                                  onChange={(e) => setDraftValueForSubject(s.id, selection.subjectId, { remarks: e.target.value })} 
-                                  placeholder="Observation..." 
-                                  className="w-full min-w-[120px] px-3 py-1.5 rounded-lg border border-zinc-100 bg-zinc-50/30 text-xs outline-none focus:bg-white transition-all" 
+                                <input
+                                  value={draft.remarks}
+                                  onChange={(e) => setDraftValueForSubject(s.id, selection.subjectId, { remarks: e.target.value })}
+                                  placeholder="Observation..."
+                                  className="w-full min-w-[120px] px-3 py-1.5 rounded-lg border border-zinc-100 bg-zinc-50/30 text-xs outline-none focus:bg-white transition-all"
                                 />
                               </td>
                             </>

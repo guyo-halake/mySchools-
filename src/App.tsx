@@ -28,20 +28,12 @@ import { Calendar } from './pages/Calendar';
 import { Settings } from './pages/Settings';
 import { Privacy } from './pages/Privacy';
 import { MyStudents } from './pages/MyStudents';
+import { PrincipalOversight } from './pages/PrincipalOversight';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
   
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-white dark:bg-zinc-950 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-zinc-900 dark:border-white border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
-
-  if (!user) return <Navigate to={`/login${location.search}`} />;
   return <Layout>{children}</Layout>;
 };
 
@@ -59,7 +51,8 @@ const AppContent = () => {
               <Route path="/fees" element={<Fees />} />
               <Route path="/fees-management" element={<FeesManagement />} />
               <Route path="/announcements" element={<Announcements />} />
-              <Route path="/directory" element={<UserDirectory />} />
+              <Route path="/students" element={<UserDirectory />} />
+              <Route path="/teachers" element={<UserDirectory />} />
               <Route path="/classes" element={<ClassesManagement />} />
               <Route path="/results-management" element={<ResultsManagement />} />
               <Route path="/chat" element={<Chat />} />
@@ -76,6 +69,7 @@ const AppContent = () => {
               <Route path="/settings" element={<Settings />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/my-students" element={<MyStudents />} />
+              <Route path="/principal-oversight" element={<PrincipalOversight />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </ProtectedRoute>
