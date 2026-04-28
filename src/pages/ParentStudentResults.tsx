@@ -7,7 +7,24 @@ import {
    ResponsiveContainer,
    PolarRadiusAxis 
 } from 'recharts';
-import { Download, Share2, FileText, TrendingUp, Filter, AlertCircle, Mail, MessageCircle, X, Info } from 'lucide-react';
+import { 
+   FileText, 
+   TrendingUp, 
+   TrendingDown, 
+   Calendar, 
+   Download, 
+   Filter, 
+   ChevronRight, 
+   Search, 
+   MessageSquare,
+   Mail,
+   MessageCircle,
+   X,
+   Star,
+   ArrowRight,
+   Share2,
+   AlertCircle
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { generateResultPDF } from '../utils/pdf';
@@ -29,6 +46,7 @@ export const ParentStudentResults: React.FC = () => {
    const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
    const [selectedTermId, setSelectedTermId] = useState<string>('ALL');
    const [selectedExamType, setSelectedExamType] = useState<string>('ALL');
+   const [gradingSystem, setGradingSystem] = useState<any[]>([]);
 
    const years = useMemo(() => {
       const ySet = new Set<string>();
@@ -63,8 +81,12 @@ export const ParentStudentResults: React.FC = () => {
       if (!user?.school_id) return;
       setLoading(true);
       try {
-         const allTerms = await api.getTerms(user.school_id);
+         const [allTerms, scales] = await Promise.all([
+            api.getTerms(user.school_id),
+            api.getGradingSystem(user.school_id)
+         ]);
          setTerms(allTerms || []);
+         setGradingSystem(scales || []);
 
          const today = new Date();
          const current = allTerms.find(t => {
@@ -74,9 +96,12 @@ export const ParentStudentResults: React.FC = () => {
          
          if (current) {
             setSelectedYear(current.year?.toString() || new Date().getFullYear().toString());
-            if (selectedTermId === 'ALL') setSelectedTermId(current.id);
-         } else {
-            setSelectedYear(new Date().getFullYear().toString());
+            // Only set default term if we haven't manually picked one yet
+            setSelectedTermId(current.id);
+         } else if (allTerms.length > 0) {
+            const latest = allTerms.sort((a,b) => new Date(b.start_date || 0).getTime() - new Date(a.start_date || 0).getTime())[0];
+            setSelectedYear(latest.year?.toString() || new Date().getFullYear().toString());
+            setSelectedTermId(latest.id);
          }
 
          const allStudents = await api.getStudents(user.school_id);
@@ -104,50 +129,119 @@ export const ParentStudentResults: React.FC = () => {
    const tableData = useMemo(() => {
       if (!resultRows.length) return [];
       const filtered = resultRows.filter(r => {
-         const matchesYear = !selectedYear || r.exam?.term?.year?.toString() === selectedYear;
-         const matchesTerm = selectedTermId === 'ALL' || r.exam?.term_id === selectedTermId;
+         const rTermId = r.term_id || r.exam?.term_id || r.exam?.term?.id || r.term?.id;
+         const rYear = r.year || r.exam?.term?.year || r.term?.year || 
+                       (r.created_at ? new Date(r.created_at).getFullYear() : null);
+         
+         const matchesYear = !selectedYear || rYear?.toString() === selectedYear;
+         const matchesTerm = selectedTermId === 'ALL' || rTermId === selectedTermId;
+         
          let matchesType = selectedExamType === 'ALL';
          if (!matchesType) {
-            const eName = (r.exam?.name || '').toUpperCase();
+            const eName = (r.exam?.name || r.exam_name || r.name || '').toUpperCase();
             const eType = (r.exam?.type || '').toUpperCase();
             if (selectedExamType === 'OPENER') matchesType = eName.includes('OPENER') || eName.includes('START');
             else if (selectedExamType === 'MID-TERM') matchesType = eName.includes('MID') || eType.includes('MID');
             else if (selectedExamType === 'END-TERM') matchesType = eName.includes('END') || eType.includes('END');
          }
-         return matchesYear && matchesTerm && matchesType;
+
+         const isMatch = matchesYear && matchesTerm && matchesType;
+         return isMatch;
       });
+      console.log(`FILTERED RESULTS: ${filtered.length} out of ${resultRows.length}`);
 
       const subjectMap = new Map<string, any>();
       filtered.forEach(r => {
          const sName = r.subject?.name || 'Unknown';
-         if (!subjectMap.has(sName)) subjectMap.set(sName, { subject: sName, opener: '-', mid: '-', end: '-', remarks: '' });
+         if (!subjectMap.has(sName)) {
+            subjectMap.set(sName, { 
+               subject: sName, 
+               opener: '-', mid: '-', end: '-', 
+               t1: [], t2: [], t3: [],
+               remarksList: [] 
+            });
+         }
          const entry = subjectMap.get(sName);
-         const eName = (r.exam?.name || '').toUpperCase();
+         const eName = (r.exam?.name || r.exam_name || '').toUpperCase();
          const eType = (r.exam?.type || '').toUpperCase();
-         const val = { marks: r.marks, grade: r.grade || markToGrade(r.marks) };
-         if (eName.includes('OPENER') || eName.includes('START')) entry.opener = val;
-         else if (eName.includes('MID') || eType.includes('MID')) entry.mid = val;
-         else if (eName.includes('END') || eType.includes('END')) entry.end = val;
-         if (r.remarks) entry.remarks = r.remarks;
+         const val = { marks: r.marks, grade: r.grade || markToGrade(r.marks, gradingSystem) };
+         
+         // Phase logic (for single term view)
+         let typeLabel = '';
+         if (eName.includes('OPENER') || eName.includes('START')) { entry.opener = val; typeLabel = 'Opener'; }
+         else if (eName.includes('MID') || eType.includes('MID')) { entry.mid = val; typeLabel = 'Mid-Term'; }
+         else if (eName.includes('END') || eType.includes('END')) { entry.end = val; typeLabel = 'End-Term'; }
+
+         const tName = (r.exam?.term?.name || r.term?.name || '').toUpperCase();
+         if (tName.includes('TERM 1')) entry.t1.push(Number(r.marks));
+         else if (tName.includes('TERM 2')) entry.t2.push(Number(r.marks));
+         else if (tName.includes('TERM 3')) entry.t3.push(Number(r.marks));
+
+         if (r.remarks) {
+            entry.remarksList.push({ 
+               text: r.remarks, 
+               teacher: r.teacher?.full_name || 'System Auto-graded',
+               type: typeLabel || tName
+            });
+         }
       });
 
       return Array.from(subjectMap.values()).map(row => {
-         const scores = [row.opener, row.mid, row.end].filter(s => s !== '-');
-         const avgMarks = scores.length ? (scores.reduce((a, b) => a + Number(b.marks), 0) / scores.length) : 0;
-         const avg = scores.length ? { marks: avgMarks.toFixed(1), grade: markToGrade(avgMarks) } : '-';
-         return { ...row, avg };
+         const buildFinalRemarks = (list: any[]) => {
+            if (!list.length) return null;
+            return list;
+         };
+
+         if (selectedTermId === 'ALL') {
+            const calcT = (arr: number[]) => {
+               if (!arr.length) return '-';
+               const m = arr.reduce((a, b) => a + b, 0) / arr.length;
+               return { marks: m.toFixed(1), grade: markToGrade(m, gradingSystem) };
+            };
+            const t1Res = calcT(row.t1);
+            const t2Res = calcT(row.t2);
+            const t3Res = calcT(row.t3);
+            const allM = [...row.t1, ...row.t2, ...row.t3];
+            const avgM = allM.length ? allM.reduce((a, b) => a + b, 0) / allM.length : 0;
+            return {
+               ...row,
+               col1: t1Res, col2: t2Res, col3: t3Res,
+               avg: allM.length ? { marks: avgM.toFixed(1), grade: markToGrade(avgM, gradingSystem) } : '-',
+               remarks: buildFinalRemarks(row.remarksList)
+            };
+         } else {
+            const scores = [row.opener, row.mid, row.end].filter(s => s !== '-');
+            const avgMarks = scores.length ? (scores.reduce((a, b) => a + Number(b.marks), 0) / scores.length) : 0;
+            return {
+               ...row,
+               col1: row.opener, col2: row.mid, col3: row.end,
+               avg: scores.length ? { marks: avgMarks.toFixed(1), grade: markToGrade(avgMarks, gradingSystem) } : '-',
+               remarks: buildFinalRemarks(row.remarksList)
+            };
+         }
       });
-   }, [resultRows, selectedYear, selectedTermId, selectedExamType]);
+   }, [resultRows, selectedYear, selectedTermId, selectedExamType, gradingSystem]);
+
+   const tableTotals = useMemo(() => {
+      if (!tableData.length) return null;
+      const scores = tableData.filter(r => r.avg !== '-').map(r => Number(r.avg.marks));
+      if (!scores.length) return null;
+      const meanValue = scores.reduce((a, b) => a + b, 0) / scores.length;
+      return {
+         avg: {
+            marks: meanValue.toFixed(1),
+            grade: markToGrade(meanValue, gradingSystem)
+         }
+      };
+   }, [tableData, gradingSystem]);
 
    const summary = useMemo(() => {
       if (!tableData.length || !resultRows.length) return { meanGrade: '-', meanMarks: 0, trend: null };
       
-      // 1. Current Mean
       const averages = tableData.filter(r => r.avg !== '-').map(r => Number(r.avg.marks));
       const meanMarksValue = averages.length ? (averages.reduce((a, b) => a + b, 0) / averages.length) : 0;
       const meanMarks = meanMarksValue.toFixed(1);
 
-      // 2. Trend Calculation (Compare with Previous Term or Year chronologically)
       let trend = null;
       if (terms.length > 1) {
          const sortedTerms = terms.sort((a,b) => new Date(a.start_date || 0).getTime() - new Date(b.start_date || 0).getTime());
@@ -182,7 +276,6 @@ export const ParentStudentResults: React.FC = () => {
                }
             }
          } else {
-            // ALL TERMS selected: Compare Current Year with Previous Year
             const currentYear = new Date().getFullYear().toString();
             const prevYear = (Number(currentYear) - 1).toString();
             
@@ -216,7 +309,12 @@ export const ParentStudentResults: React.FC = () => {
          }
       }
 
-      return { meanGrade: markToGrade(Number(meanMarks)), meanMarks, trend };
+      return { 
+         meanGrade: markToGrade(Number(meanMarks), gradingSystem), 
+         meanMarks, 
+         trend,
+         prevMean: terms.length > 1 && trend ? (Number(meanMarks) - Number(trend.value)).toFixed(1) : null
+      };
    }, [tableData, resultRows, terms, selectedTermId]);
 
    const radarData = useMemo(() => {
@@ -253,25 +351,22 @@ export const ParentStudentResults: React.FC = () => {
       const list = [];
       if (!summary.meanMarks) return [];
 
-      // 1. Performance Peak
       if (['A', 'A-'].includes(summary.meanGrade)) {
          list.push({ icon: '🏆', label: 'Performance Peak', color: 'bg-amber-100 text-amber-700 border-amber-200' });
       }
 
-      // 2. Growth Master
       if (summary.trend?.isPositive && Number(summary.trend.value) >= 5) {
          list.push({ icon: '🚀', label: 'Growth Master', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' });
       }
 
-      // 3. Subject Specialist (Any mark > 90)
       const hasExpert = tableData.some(r => r.avg !== '-' && Number(r.avg.marks) >= 90);
       if (hasExpert) {
          list.push({ icon: '⭐', label: 'Subject Specialist', color: 'bg-blue-100 text-blue-700 border-blue-200' });
       }
 
-      // 4. Consistency Star (All subjects > 60)
-      const isConsistent = tableData.length > 0 && tableData.every(r => r.avg !== '-' && Number(r.avg.marks) >= 60);
-      if (isConsistent) {
+      const allTimeResults = resultRows.map(r => Number(r.marks)).filter(m => !isNaN(m));
+      const isTrulyConsistent = allTimeResults.length > 0 && allTimeResults.every(m => m >= 65);
+      if (isTrulyConsistent) {
          list.push({ icon: '💎', label: 'Consistency Star', color: 'bg-purple-100 text-purple-700 border-purple-200' });
       }
 
@@ -280,18 +375,19 @@ export const ParentStudentResults: React.FC = () => {
 
    const downloadReportCard = async () => {
       if (!selectedStudent || !studentDetails) return;
-      await generateResultPDF(selectedStudent, studentDetails, schoolInfo, 4);
+      const level = selectedStudent.stream?.class?.name?.match(/\d+/);
+      await generateResultPDF(selectedStudent, studentDetails, schoolInfo, (level ? parseInt(level[0]) : 'ALL') as any);
    };
 
-   const renderMark = (val: any) => {
-      if (val === '-') return <span className="text-zinc-300 font-medium text-[8px]">No data</span>;
-      return (
-         <div className="flex flex-col items-center">
-            <span className="text-[11px] font-bold text-zinc-900 dark:text-zinc-100">{val.marks}%</span>
-            <span className={cn("text-[9px] font-bold leading-none", getGradeColor(val.grade))}>({val.grade})</span>
-         </div>
-      );
-   };
+    const renderMark = (val: any) => {
+       if (val === '-') return <span className="text-zinc-300 font-bold text-[10px] uppercase font-inter tracking-wider">No Data</span>;
+       return (
+          <div className="flex flex-col items-center">
+             <span className="text-[13px] font-bold text-zinc-900 dark:text-zinc-100 font-inter">{val.marks}%</span>
+             <span className={cn("text-[10px] font-bold uppercase font-inter", getGradeColor(val.grade))}>{val.grade}</span>
+          </div>
+       );
+    };
 
    const getCellGlow = (val: any) => {
       if (!val || val === '-' || !val.marks) return "";
@@ -301,7 +397,7 @@ export const ParentStudentResults: React.FC = () => {
       return "";
    };
 
-   const [selectedRemark, setSelectedRemark] = useState<{subject: string, text: string} | null>(null);
+   const [selectedRemark, setSelectedRemark] = useState<{subject: string, items: any[]} | null>(null);
 
    if (loading) return (
       <div className="max-w-6xl mx-auto p-4 space-y-4">
@@ -313,7 +409,6 @@ export const ParentStudentResults: React.FC = () => {
    return (
       <div className="max-w-[1400px] mx-auto p-3 sm:p-6 space-y-4 animate-in fade-in duration-500 pb-20 overflow-x-hidden">
          
-         {/* 0. CURRENT CALENDAR CONTEXT */}
          <div className="flex flex-col gap-1 border-b border-zinc-100 dark:border-zinc-800 pb-4">
             <div className="flex items-center gap-2">
                <span className={cn("w-1.5 h-1.5 rounded-full animate-pulse", activeTermObject ? "bg-emerald-500" : "bg-orange-400")} />
@@ -326,50 +421,75 @@ export const ParentStudentResults: React.FC = () => {
             </p>
          </div>
 
-         {/* 1. ORIGINAL DESIGN: HEADER */}
-         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-               <div className="flex items-center gap-3">
-                  <h1 className="text-lg sm:text-2xl font-bold text-zinc-900 dark:text-white font-sora lowercase capitalize">Exams & Results</h1>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                     <div className={cn("px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase", getGradeBadge(summary.meanGrade))}>
-                        {summary.meanGrade} ({summary.meanMarks}%)
-                     </div>
-                     
-                     {summary.trend && (
-                        <div className={cn(
-                           "flex items-center gap-0.5 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-tighter",
-                           summary.trend.isPositive ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10" : "bg-rose-50 text-rose-600 dark:bg-rose-500/10"
-                        )}>
-                           {summary.trend.isPositive ? <TrendingUp size={10} /> : <TrendingUp size={10} className="rotate-180" />}
-                           {summary.trend.isPositive ? '+' : ''}{summary.trend.value}% 
-                           <span className="opacity-60 font-medium lowercase ml-0.5 whitespace-nowrap">{summary.trend.label}</span>
+         <div className="flex flex-col gap-8 py-8 border-b border-zinc-100 dark:border-zinc-800">
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+               <div className="space-y-2">
+                  <h1 className="text-2xl sm:text-3xl font-bold text-zinc-900 dark:text-white font-sora tracking-tight">
+                     Results for {selectedExamType === 'ALL' ? 'Cumulative' : selectedExamType} {selectedTermId === 'ALL' ? 'Performance' : terms.find(t => t.id === selectedTermId)?.name} {selectedYear}
+                  </h1>
+                  <p className="text-sm font-semibold text-emerald-600 font-inter">{selectedStudent?.profile?.full_name}</p>
+               </div>
+               
+               <div className="flex flex-wrap items-center gap-8 sm:gap-12">
+                  <div className="flex items-center gap-4">
+                     <div className="text-center sm:text-left">
+                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 font-inter">Mean Grade</p>
+                        <div className="flex items-baseline gap-2">
+                           <span className={cn("text-5xl font-black font-sora", getGradeColor(summary.meanGrade))}>{summary.meanGrade}</span>
+                           <span className="text-lg font-bold text-zinc-400">/ {summary.meanMarks}%</span>
                         </div>
+                     </div>
+                  </div>
+
+                  <div className="hidden sm:block h-12 w-px bg-zinc-200 dark:bg-zinc-800" />
+
+                  <div className="flex items-center gap-8">
+                     {summary.trend ? (
+                        <div className="flex items-center gap-6">
+                           <div className="space-y-1">
+                              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest font-inter">Previous</p>
+                              <p className="text-sm font-bold text-zinc-900 dark:text-white font-inter">{summary.prevMean}% ({markToGrade(Number(summary.prevMean), gradingSystem)})</p>
+                           </div>
+                           <div className={cn(
+                              "flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold border font-inter",
+                              summary.trend.isPositive ? "text-emerald-600 bg-emerald-50 border-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/20" : "text-rose-600 bg-rose-50 border-rose-100 dark:bg-rose-500/10 dark:border-rose-500/20"
+                           )}>
+                              {summary.trend.isPositive ? <TrendingUp size={14} /> : <TrendingUp size={14} className="rotate-180" />}
+                              <span>{summary.trend.isPositive ? 'Improved' : 'Dropped'} {Math.abs(Number(summary.trend.value))}%</span>
+                           </div>
+                        </div>
+                     ) : (
+                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest font-inter">No History Found</p>
                      )}
                   </div>
                </div>
-               <p className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mt-0.5 font-inter">
-                  {selectedStudent?.profile?.full_name}
-               </p>
             </div>
-            
-            <div className="flex items-center gap-2">
-               {students.length > 1 && (
-                  <select 
-                     value={selectedStudentId} 
-                     onChange={e => setSelectedStudentId(e.target.value)}
-                     className="bg-zinc-100 dark:bg-zinc-800 border-none rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase outline-none"
-                  >
-                     {students.map(s => <option key={s.id} value={s.id}>{s.profile?.full_name}</option>)}
-                  </select>
-               )}
-               <button onClick={downloadReportCard} title="Download Report" className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all shadow-md">
-                  <Download size={14} />
-               </button>
+
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 pt-4">
+               <div className="flex items-center gap-4 text-[11px] font-bold text-zinc-600 dark:text-zinc-400 font-inter">
+                  <span className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-md">{selectedYear}</span>
+                  <span className="w-1 h-1 rounded-full bg-zinc-300" />
+                  <span className="uppercase tracking-wider">{selectedTermId === 'ALL' ? 'Cumulative Performance' : terms.find(t => t.id === selectedTermId)?.name}</span>
+               </div>
+
+               <div className="flex items-center gap-3 w-full sm:w-auto">
+                  {students.length > 1 && (
+                     <select 
+                        value={selectedStudentId} 
+                        onChange={e => setSelectedStudentId(e.target.value)}
+                        className="flex-1 sm:flex-none bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2 text-xs font-bold outline-none shadow-sm font-inter"
+                     >
+                        {students.map(s => <option key={s.id} value={s.id}>{s.profile?.full_name}</option>)}
+                     </select>
+                  )}
+                  <button onClick={downloadReportCard} className="flex items-center justify-center gap-2 px-4 py-2 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-xl hover:bg-zinc-800 dark:hover:bg-zinc-100 transition-all shadow-sm font-inter text-xs font-bold">
+                     <Download size={14} />
+                     <span className="hidden sm:inline">Save PDF Report</span>
+                  </button>
+               </div>
             </div>
          </div>
          
-         {/* 1b. ACHIEVEMENT BADGES */}
          {achievements.length > 0 && (
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-2 -mt-2">
                {achievements.map((a, i) => (
@@ -381,9 +501,7 @@ export const ParentStudentResults: React.FC = () => {
             </div>
          )}
 
-         {/* 1. ANALYTICS & FILTERS GRID */}
          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Visual Analytics (Radar Chart) */}
             {radarData.length >= 3 && (
                <div className="lg:col-span-4 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-3xl p-6 shadow-sm sticky top-4">
                   <div className="flex items-center gap-2 mb-6">
@@ -424,7 +542,6 @@ export const ParentStudentResults: React.FC = () => {
                </div>
             )}
 
-            {/* Results Filters & Table */}
             <div className={cn("space-y-4", radarData.length >= 3 ? "lg:col-span-8" : "lg:col-span-12")}>
                <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-3xl p-6 shadow-sm overflow-hidden">
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-50 dark:border-zinc-900 pb-4 mb-4">
@@ -453,34 +570,65 @@ export const ParentStudentResults: React.FC = () => {
                   <div className="overflow-x-auto no-scrollbar">
                      <table className="w-full min-w-[500px] table-fixed">
                         <thead>
-                           <tr className="bg-zinc-50/50 dark:bg-zinc-800/30 border-b border-zinc-100 dark:border-zinc-800 font-bold uppercase text-[9px] text-zinc-400">
-                              <th className="w-[30%] px-3 py-4 text-left">Subject</th>
-                              <th className="w-[13%] px-1 py-4 text-center border-l border-zinc-100 dark:border-zinc-800/50">Opener</th>
-                              <th className="w-[13%] px-1 py-4 text-center border-l border-zinc-100 dark:border-zinc-800/50">Mid</th>
-                              <th className="w-[13%] px-1 py-4 text-center border-l border-zinc-100 dark:border-zinc-800/50">End</th>
-                              <th className="w-[13%] px-1 py-4 text-center border-l border-zinc-100 dark:border-zinc-800/50 text-zinc-900 dark:text-white bg-zinc-50/10">Avg</th>
-                              <th className="w-[18%] px-2 py-4 text-center border-l border-zinc-100 dark:border-zinc-800/50">Feed</th>
+                           <tr className="bg-zinc-50 dark:bg-zinc-900/50">
+                              <th className="px-4 py-4 text-left text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-inter">Subject</th>
+                              {selectedTermId === 'ALL' ? (
+                                 <>
+                                    <th className="px-2 py-4 text-center text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-inter">Term 1</th>
+                                    <th className="px-2 py-4 text-center text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-inter">Term 2</th>
+                                    <th className="px-2 py-4 text-center text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-inter">Term 3</th>
+                                 </>
+                              ) : (
+                                 <>
+                                    {(selectedExamType === 'ALL' || selectedExamType === 'OPENER') && <th className="px-2 py-4 text-center text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-inter">Opener</th>}
+                                    {(selectedExamType === 'ALL' || selectedExamType === 'MID-TERM') && <th className="px-2 py-4 text-center text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-inter">Mid-Term</th>}
+                                    {(selectedExamType === 'ALL' || selectedExamType === 'END-TERM') && <th className="px-2 py-4 text-center text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-inter">End-Term</th>}
+                                 </>
+                              )}
+                              <th className="px-2 py-4 text-center text-[11px] font-bold text-zinc-900 dark:text-white uppercase tracking-wider font-inter bg-zinc-100/50 dark:bg-zinc-800/50">Average</th>
+                              <th className="px-4 py-4 text-right text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-inter">Remarks</th>
                            </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/50">
-                           {tableData.length > 0 ? tableData.map((row, i) => (
-                              <tr key={i} className="hover:bg-zinc-50/20 dark:hover:bg-zinc-800/5 transition-colors">
-                                 <td className="px-3 py-3 sm:py-4 text-[10px] sm:text-[12px] font-bold text-zinc-900 dark:text-zinc-100 uppercase truncate" title={row.subject}>{row.subject}</td>
-                                 <td className={cn("px-1 py-3 sm:py-4 text-center border-l border-zinc-100 dark:border-zinc-800/50", getCellGlow(row.opener))}>{renderMark(row.opener)}</td>
-                                 <td className={cn("px-1 py-3 sm:py-4 text-center border-l border-zinc-100 dark:border-zinc-800/50", getCellGlow(row.mid))}>{renderMark(row.mid)}</td>
-                                 <td className={cn("px-1 py-3 sm:py-4 text-center border-l border-zinc-100 dark:border-zinc-800/50", getCellGlow(row.end))}>{renderMark(row.end)}</td>
-                                 <td className={cn("px-1 py-3 sm:py-4 text-center border-l border-zinc-100 dark:border-zinc-800/50 bg-zinc-50/10 font-bold", getCellGlow(row.avg))}>{renderMark(row.avg)}</td>
-                                 <td className="px-2 py-3 sm:py-4 text-center border-l border-zinc-100 dark:border-zinc-800/50">
+                           {tableData.length > 0 ? tableData.map((row, idx) => (
+                              <tr key={idx} className="group hover:bg-zinc-50/50 dark:hover:bg-zinc-900/50 transition-colors border-b border-zinc-100 dark:border-zinc-800/50">
+                                 <td className="px-4 py-4">
+                                    <span className="text-sm font-bold text-zinc-900 dark:text-white font-sora">{row.subject}</span>
+                                 </td>
+                                 {selectedTermId === 'ALL' ? (
+                                    <>
+                                       <td className="px-2 py-4 text-center font-inter">{renderMark(row.col1)}</td>
+                                       <td className="px-2 py-4 text-center font-inter">{renderMark(row.col2)}</td>
+                                       <td className="px-2 py-4 text-center font-inter">{renderMark(row.col3)}</td>
+                                    </>
+                                 ) : (
+                                    <>
+                                       {(selectedExamType === 'ALL' || selectedExamType === 'OPENER') && <td className="px-2 py-4 text-center font-inter">{renderMark(row.col1)}</td>}
+                                       {(selectedExamType === 'ALL' || selectedExamType === 'MID-TERM') && <td className="px-2 py-4 text-center font-inter">{renderMark(row.col2)}</td>}
+                                       {(selectedExamType === 'ALL' || selectedExamType === 'END-TERM') && <td className="px-2 py-4 text-center font-inter">{renderMark(row.col3)}</td>}
+                                    </>
+                                 )}
+                                 <td className="px-2 py-4 text-center bg-zinc-50/50 dark:bg-zinc-800/30">
+                                    {row.avg === '-' ? (
+                                       <span className="text-[10px] font-bold text-zinc-300 font-inter">Pending</span>
+                                    ) : (
+                                       <div className="flex flex-col items-center">
+                                          <span className="text-sm font-bold text-zinc-900 dark:text-white font-inter">{row.avg.marks}%</span>
+                                          <span className={cn("text-[10px] font-bold", getGradeColor(row.avg.grade))}>({row.avg.grade})</span>
+                                       </div>
+                                    )}
+                                 </td>
+                                 <td className="px-4 py-4 text-right">
                                     {row.remarks ? (
                                        <button 
-                                          onClick={() => setSelectedRemark({ subject: row.subject, text: row.remarks })}
-                                          className="p-1.5 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors animate-pulse"
-                                          title="Read Teacher's Remark"
+                                          onClick={() => setSelectedRemark({ subject: row.subject, items: row.remarks })}
+                                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 transition-all border border-zinc-100 dark:border-zinc-700/50 group/btn"
                                        >
-                                          <Mail size={12} />
+                                          <span className="hidden md:inline text-[11px] font-bold font-inter truncate max-w-[100px]">{row.remarks[0].text}</span>
+                                          <MessageSquare className="w-3.5 h-3.5" />
                                        </button>
                                     ) : (
-                                       <span className="opacity-20">—</span>
+                                       <span className="text-[10px] font-bold text-zinc-300 dark:text-zinc-700 uppercase tracking-widest">No Remarks</span>
                                     )}
                                  </td>
                               </tr>
@@ -493,18 +641,19 @@ export const ParentStudentResults: React.FC = () => {
                               </tr>
                            )}
                         </tbody>
-                        {tableData.length > 0 && (
-                           <tfoot>
-                              <tr className="bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 font-bold">
-                                 <td className="px-3 py-4 text-[10px] uppercase tracking-widest">Mean Score</td>
-                                 <td colSpan={3} className="px-1 py-4"></td>
-                                 <td className="px-1 py-4 text-center border-l border-white/10 dark:border-black/5 bg-white/5 dark:bg-black/5">
+                        {tableTotals && tableData.length > 0 && (
+                           <tfoot className="border-t border-zinc-100 dark:border-zinc-800">
+                              <tr>
+                                 <td colSpan={selectedExamType === 'ALL' ? 4 : 2} className="py-8"></td>
+                                 <td className="px-6 py-8 text-center bg-zinc-50/50 dark:bg-zinc-800/20">
                                     <div className="flex flex-col items-center">
-                                       <span className="text-[12px]">{summary.meanMarks}%</span>
-                                       <span className="text-[10px] leading-none opacity-60">({summary.meanGrade})</span>
+                                       <span className="text-xl font-black text-zinc-900 dark:text-white font-sora">{tableTotals.avg.marks}%</span>
+                                       <span className={cn("text-[11px] font-black uppercase tracking-widest", getGradeColor(tableTotals.avg.grade))}>{tableTotals.avg.grade}</span>
                                     </div>
                                  </td>
-                                 <td className="px-2 py-4 text-center border-l border-white/10 dark:border-black/5 font-black uppercase text-[8px]">Overview</td>
+                                 <td className="px-6 py-8 text-right">
+                                    <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">Mean</span>
+                                 </td>
                               </tr>
                            </tfoot>
                         )}
@@ -514,35 +663,43 @@ export const ParentStudentResults: React.FC = () => {
             </div>
          </div>
 
-         {/* REMARK MODAL */}
+         {/* Minimalist Remarks Overlay */}
          {selectedRemark && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-               <div className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 p-6 animate-in zoom-in-95 duration-200">
-                  <div className="flex items-center justify-between mb-4">
-                     <div className="flex items-center gap-2">
-                        <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 text-blue-600">
-                           <MessageCircle size={18} />
-                        </div>
-                        <div>
-                           <h3 className="text-[12px] font-black uppercase tracking-widest text-zinc-900 dark:text-zinc-100">Teacher's Corner</h3>
-                           <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-tighter">{selectedRemark.subject}</p>
-                        </div>
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-zinc-950/20 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setSelectedRemark(null)}>
+               <div 
+                  className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-100 dark:border-zinc-800 p-6 space-y-6 animate-in zoom-in-95 duration-200"
+                  onClick={e => e.stopPropagation()}
+               >
+                  <div className="flex items-center justify-between">
+                     <div>
+                        <h3 className="text-lg font-bold text-zinc-900 dark:text-white font-sora">{selectedRemark.subject}</h3>
+                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest font-inter text-emerald-600">Academic Feedback</p>
                      </div>
-                     <button onClick={() => setSelectedRemark(null)} className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors">
-                        <X size={18} />
+                     <button onClick={() => setSelectedRemark(null)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors text-zinc-400">
+                        <X className="w-5 h-5" />
                      </button>
                   </div>
-                  <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-xl p-4 border border-zinc-100 dark:border-zinc-700/50">
-                     <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-300 italic leading-relaxed">
-                        "{selectedRemark.text}"
-                     </p>
+
+                  <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 no-scrollbar">
+                     {selectedRemark.items.map((item, i) => (
+                        <div key={i} className="p-4 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800 space-y-3">
+                           <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-500">{item.type}</span>
+                              <span className="text-[10px] font-bold text-zinc-400 font-inter italic">from — {item.teacher}</span>
+                           </div>
+                           <p className="text-sm text-zinc-700 dark:text-zinc-300 font-inter leading-relaxed whitespace-pre-wrap">
+                              {item.text}
+                           </p>
+                        </div>
+                     ))}
                   </div>
-                  <div className="mt-6">
+
+                  <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
                      <button 
                         onClick={() => setSelectedRemark(null)}
-                        className="w-full py-2.5 bg-zinc-900 dark:bg-white dark:text-zinc-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all"
+                        className="w-full py-3 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-xl font-bold text-sm font-inter hover:opacity-90 transition-opacity"
                      >
-                        Close Remark
+                        Close Feedback
                      </button>
                   </div>
                </div>
@@ -551,3 +708,5 @@ export const ParentStudentResults: React.FC = () => {
       </div>
    );
 };
+
+export default ParentStudentResults;
