@@ -24,20 +24,24 @@ import {
   UserCircle2,
   Activity,
   CheckCircle,
-  ExternalLink
+  ExternalLink,
+  LifeBuoy,
+  CloudUpload
 } from 'lucide-react';
 import { cn, formatDate } from '../utils/utils';
 import { Role } from '../types';
+import { Badge } from './UI';
 
 const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> = {
   PARENT: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'Results', icon: FileText, path: '/results' },
     { label: 'My Class', icon: BookOpen, path: '/my-classroom' },
-    { label: 'My Chats', icon: MessageSquare, path: '/my-chats' },
     { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
-    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
     { label: 'School Fees', icon: CreditCard, path: '/fees' },
+    { label: 'Messages', icon: MessageSquare, path: '/my-chats' },
+    { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
+    { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
   ],
   STUDENT: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
@@ -53,7 +57,7 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'Results and student mngt', icon: FileText, path: '/results-management' },
     { label: 'My Class', icon: BookOpen, path: '/my-classroom' },
-    { label: 'My Chats', icon: MessageSquare, path: '/my-chats' },
+    { label: 'Messages', icon: MessageSquare, path: '/my-chats' },
     { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
     { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
     { label: 'Templates', icon: Settings, path: '/templates' },
@@ -61,6 +65,7 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
   ],
   PRINCIPAL: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+    { label: 'School Audit', icon: Activity, path: '/principal-oversight' },
     { label: 'Results and student mngt', icon: FileText, path: '/results-management' },
     { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
     { label: 'Students', icon: Users, path: '/students' },
@@ -73,6 +78,7 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
   ],
   ADMIN: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+    { label: 'School Audit', icon: Activity, path: '/principal-oversight' },
     { label: 'Results and student mngt', icon: FileText, path: '/results-management' },
     { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
     { label: 'Students', icon: Users, path: '/students' },
@@ -154,8 +160,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     }
   };
 
-  const links = sidebarLinks[user.role] || [];
-  const linksWithTemplates = links;
+  const linksWithTemplates = [...(sidebarLinks[user.role] || [])];
+  
+  // Dynamic links for Class Teachers
+  if (user.is_class_teacher) {
+     // Insert after Results and student mngt
+     linksWithTemplates.splice(2, 0, { label: 'Submissions & Upload', icon: CloudUpload, path: '/submissions-upload' });
+  }
 
   const getUserInitials = (name?: string) => {
     if (!name) return '??';
@@ -220,24 +231,23 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 {link.label}
               </Link>
             ))}
-          </nav>
+            </nav>
 
-          <div className="p-4 border-t border-gray-50 dark:border-zinc-800 space-y-3">
-            <div className="px-2">
-              <p className="text-[10px] font-black text-zinc-900 dark:text-white uppercase tracking-tight leading-none mb-1">
-                MySchools Management System
+          <div className="p-4 border-t border-gray-50 dark:border-zinc-800 space-y-4">
+            <div className="grid grid-cols-2 gap-y-2 px-2">
+              <a href="#" className="text-[9px] font-black text-zinc-400 hover:text-zinc-900 dark:hover:text-white uppercase tracking-tight">About P3L Devs</a>
+              <a href="#" className="text-[9px] font-black text-zinc-400 hover:text-zinc-900 dark:hover:text-white uppercase tracking-tight">Privacy Policy</a>
+              <a href="#" className="text-[9px] font-black text-zinc-400 hover:text-zinc-900 dark:hover:text-white uppercase tracking-tight">Support</a>
+              <a href="#" className="text-[9px] font-black text-zinc-400 hover:text-zinc-900 dark:hover:text-white uppercase tracking-tight">Help desk</a>
+            </div>
+            
+            <div className="px-2 pt-2 border-t border-gray-50 dark:border-zinc-800/50">
+              <p className="text-[9px] font-black text-zinc-900 dark:text-white uppercase tracking-tighter">
+                Pschool v1.2 | myschools management system
               </p>
-              <p className="text-[8px] font-bold text-zinc-400 leading-tight">
-                Developed and maintained by:
+              <p className="text-[8px] font-bold text-zinc-400 mt-1 uppercase tracking-widest">
+                developed by © p3l developers
               </p>
-              <div className="mt-1 space-y-0.5">
-                <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">
-                  P3L Developers, <span className="text-zinc-600">© Matta Systems</span>
-                </p>
-                <p className="text-[8px] font-bold text-zinc-400">
-                  Nairobi Kenya.
-                </p>
-              </div>
             </div>
             <button 
               onClick={logout}
