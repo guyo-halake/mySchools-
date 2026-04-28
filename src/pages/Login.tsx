@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useAdminAuth } from '../admin/context/AdminAuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Button, Card } from '../components/UI';
 import { BookOpen, PenTool, X, CheckCircle2, Eye, EyeOff, Send } from 'lucide-react';
@@ -11,6 +12,7 @@ import { useBranding } from '../hooks/useBranding';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
+  const { login: adminLogin } = useAdminAuth();
   const navigate = useNavigate();
   const { school, loading: brandingLoading } = useBranding();
   const [email, setEmail] = useState('');
@@ -29,6 +31,18 @@ export const Login: React.FC = () => {
     setError(null);
 
     try {
+      // 1. Try Super Admin Login
+      try {
+        await adminLogin(email, password);
+        navigate('/admin/command-center');
+        return;
+      } catch (adminErr: any) {
+        if (!adminErr.message || !adminErr.message.includes('not found')) {
+          throw adminErr; // Throw if disabled or wrong password
+        }
+      }
+
+      // 2. Fallback to Normal School User Login
       await login(email, password);
       navigate('/dashboard');
     } catch (err: any) {
@@ -161,16 +175,6 @@ export const Login: React.FC = () => {
                   'Sign In'
                 )}
               </Button>
-
-              {!school && (
-                <button 
-                  type="button"
-                  onClick={() => navigate('/admin')}
-                  className="w-full py-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
-                >
-                  Login as Admin
-                </button>
-              )}
             </div>
             
             <div className="pt-2 text-center text-[11px] text-zinc-400">
