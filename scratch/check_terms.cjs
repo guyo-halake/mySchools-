@@ -1,19 +1,15 @@
 const { Client } = require('pg');
-const connectionString = 'postgresql://postgres.vomsaqkhtturzqfuwxsn:Guyesa_10333@aws-0-eu-west-1.pooler.supabase.com:5432/postgres';
-(async () => {
-  const client = new Client({ connectionString });
+const client = new Client({ connectionString: 'postgresql://postgres.vomsaqkhtturzqfuwxsn:Guyesa_10333@aws-0-eu-west-1.pooler.supabase.com:5432/postgres' });
+
+client.connect().then(async () => {
   try {
-    await client.connect();
-    const result = await client.query(`
-      SELECT school_id, year, name, start_date, end_date
-      FROM terms
-      ORDER BY school_id, year DESC, name ASC;
-    `);
-    console.dir(result.rows.slice(0, 20), { depth: null });
-  } catch (err) {
-    console.error(err.message);
-    process.exitCode = 1;
+    const r1 = await client.query("SELECT unnest(enum_range(NULL::exam_type)) AS type");
+    console.log('Exam Types:', r1.rows.map(r=>r.type));
+    const r2 = await client.query("SELECT id, name, year FROM terms WHERE school_id = 'f01e2ad5-9dbe-4df8-bb23-0d9e56f113f5' LIMIT 5");
+    console.log('Terms:', r2.rows);
+  } catch (e) {
+    console.error(e);
   } finally {
-    await client.end();
+    client.end();
   }
-})();
+});
