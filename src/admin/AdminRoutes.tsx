@@ -8,8 +8,9 @@ import { CommandCenter } from './pages/CommandCenter';
 import { SchoolsPage } from './pages/SchoolsPage';
 import { SalesPage } from './pages/SalesPage';
 import { TechOpsPage } from './pages/TechOpsPage';
+import { P3LDevelopersPage } from './pages/P3LDevelopersPage';
 import { DataEnginePage } from './pages/DataEnginePage';
-import { UserManagementPage } from './pages/UserManagementPage';
+import { UsersSupportPage } from './pages/UsersSupportPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -32,24 +33,23 @@ const AdminProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const AdminRoutes: React.FC = () => {
   return (
-    <AdminAuthProvider>
-      <AdminAlertProvider>
-        <Routes>
-          <Route path="login" element={<AdminLogin />} />
-          
-          <Route path="command-center" element={<AdminProtectedRoute><CommandCenter /></AdminProtectedRoute>} />
-          <Route path="schools" element={<AdminProtectedRoute><SchoolsPage /></AdminProtectedRoute>} />
-          <Route path="sales" element={<AdminProtectedRoute><SalesPage /></AdminProtectedRoute>} />
-          <Route path="tech-ops" element={<AdminProtectedRoute><TechOpsPage /></AdminProtectedRoute>} />
-          <Route path="data-engine" element={<AdminProtectedRoute><DataEnginePage /></AdminProtectedRoute>} />
-          <Route path="users" element={<AdminProtectedRoute><UserManagementPage /></AdminProtectedRoute>} />
-          <Route path="analytics" element={<AdminProtectedRoute><AnalyticsPage /></AdminProtectedRoute>} />
-          <Route path="notifications" element={<AdminProtectedRoute><NotificationsPage /></AdminProtectedRoute>} />
-          <Route path="settings" element={<AdminProtectedRoute><SettingsPage /></AdminProtectedRoute>} />
-          
-          <Route path="*" element={<Navigate to="command-center" />} />
-        </Routes>
-      </AdminAlertProvider>
-    </AdminAuthProvider>
+    <AdminAlertProvider>
+      <Routes>
+        <Route path="login" element={<Navigate to="/login" replace />} />
+        
+        <Route path="command-center" element={<AdminProtectedRoute><CommandCenter /></AdminProtectedRoute>} />
+        <Route path="schools" element={<AdminProtectedRoute><SchoolsPage /></AdminProtectedRoute>} />
+        <Route path="sales" element={<AdminProtectedRoute><SalesPage /></AdminProtectedRoute>} />
+        <Route path="tech-ops" element={<AdminProtectedRoute><TechOpsPage /></AdminProtectedRoute>} />
+        <Route path="p3l-developers" element={<AdminProtectedRoute><P3LDevelopersPage /></AdminProtectedRoute>} />
+        <Route path="data-engine" element={<AdminProtectedRoute><DataEnginePage /></AdminProtectedRoute>} />
+        <Route path="users" element={<AdminProtectedRoute><UsersSupportPage /></AdminProtectedRoute>} />
+        <Route path="analytics" element={<AdminProtectedRoute><AnalyticsPage /></AdminProtectedRoute>} />
+        <Route path="notifications" element={<AdminProtectedRoute><NotificationsPage /></AdminProtectedRoute>} />
+        <Route path="settings" element={<AdminProtectedRoute><SettingsPage /></AdminProtectedRoute>} />
+        
+        <Route path="*" element={<Navigate to="command-center" />} />
+      </Routes>
+    </AdminAlertProvider>
   );
 };
