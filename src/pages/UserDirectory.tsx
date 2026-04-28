@@ -1,13 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { 
   Users, Search, Filter, MoreVertical, Eye, Pencil, FileText, Download, UserPlus, 
   Mail, Phone, BookOpen, GraduationCap, CreditCard, AlertTriangle, X, Star, 
   ChevronLeft, Printer, Trash2, MessageSquare, ChevronDown, ExternalLink, Info, 
   User, MapPin, Calendar, Briefcase, Heart, TrendingUp, Activity, History, Trophy, 
-  ShieldCheck, CheckCircle2, AlertCircle, Plus
+  ShieldCheck, CheckCircle2, AlertCircle, Plus, ShieldAlert
 } from 'lucide-react';
 import { Button, Card, Badge } from '../components/UI';
 import { StudentFullDetailsView } from '../components/StudentFullDetailsView';
@@ -37,8 +38,9 @@ export const UserDirectory: React.FC = () => {
   const [viewMode, setViewMode] = useState<'LIST' | 'DETAILS'>('LIST');
   const [detailTab, setDetailTab] = useState<'ACADEMIC' | 'EXTRA' | 'HEALTH' | 'FEES' | 'DISCIPLINE' | null>(null);
   const [transcriptForm, setTranscriptForm] = useState<number>(4);
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const { user } = useAuth();
   
   // Advanced Filter States
   const [streamFilter, setStreamFilter] = useState<string>('ALL');
@@ -121,6 +123,36 @@ export const UserDirectory: React.FC = () => {
   }, [activeTab, students, teachers, searchQuery, streamFilter, financialFilter, fees]);
 
   // local generateResultPDF removed in favor of utilities/pdf.ts to avoid conflict
+
+  console.log('[USER DIRECTORY] Role:', user?.role, 'Restricted:', user?.role !== 'TEACHER');
+
+  if (user && !['TEACHER', 'PRINCIPAL', 'ADMIN'].includes(user.role)) {
+    return (
+      <div className="fixed inset-0 z-[100] bg-white/80 backdrop-blur-xl flex items-center justify-center p-6">
+        <div className="w-full max-w-md bg-white border border-zinc-100 shadow-2xl rounded-[2.5rem] p-10 space-y-8 animate-in zoom-in-95 duration-300">
+           <div className="w-16 h-16 rounded-3xl bg-zinc-950 flex items-center justify-center text-white mx-auto shadow-xl">
+              <ShieldAlert size={32} />
+           </div>
+           
+           <div className="text-center space-y-3">
+              <h2 className="text-xl font-black text-zinc-950 tracking-tight">Access Restricted</h2>
+              <p className="text-zinc-500 text-sm font-medium leading-relaxed">
+                Sorry, you don't have the necessary administrative permissions to view the school directory. If you believe this is an error, please contact the system administrator.
+              </p>
+           </div>
+
+           <div className="flex justify-center">
+              <button 
+                onClick={() => window.history.back()}
+                className="px-8 py-4 rounded-2xl bg-zinc-950 text-white text-xs font-bold uppercase tracking-widest hover:bg-zinc-800 transition-colors shadow-lg shadow-zinc-200"
+              >
+                Go Back
+              </button>
+           </div>
+        </div>
+      </div>
+    );
+  }
 
   return viewMode === 'DETAILS' ? <StudentFullDetailsView student={selectedPerson} onClose={() => setViewMode('LIST')} /> : (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -227,81 +259,89 @@ export const UserDirectory: React.FC = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-zinc-50/50 border-b border-zinc-100">
-                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">Student Name</th>
-                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">ADM No</th>
-                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">Parent Info</th>
-                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">Class</th>
+                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">
+                  {activeTab === 'STUDENT' ? 'Student Name' : 'Teacher Name'}
+                </th>
+                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">
+                  {activeTab === 'STUDENT' ? 'ADM No' : 'Email Address'}
+                </th>
+                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">
+                  {activeTab === 'STUDENT' ? 'Parent Info' : 'Phone'}
+                </th>
+                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">
+                  {activeTab === 'STUDENT' ? 'Class' : 'Assigned Class'}
+                </th>
                 <th className="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">Status</th>
                 <th className="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-50">
-              {filteredData.map((person) => (
-                <tr key={person.id} className="group hover:bg-zinc-50/80 transition-colors">
-                  <td className="px-6 py-4 text-left">
-                      <div className="flex items-center gap-2">
-                         <span className="text-xs font-bold text-zinc-900">{person.profile?.full_name}</span>
-                         {/* {studentPerformance[person.id] !== undefined && (
-                           <span className={cn(
-                             "text-[8px] font-black px-1.5 py-0.5 rounded-full",
-                             Number(studentPerformance[person.id]) >= 75 ? "bg-emerald-50 text-emerald-600" :
-                             Number(studentPerformance[person.id]) < 40 ? "bg-rose-50 text-rose-600" :
-                             "bg-zinc-100 text-zinc-400"
-                           )}>
-                             {Number(studentPerformance[person.id]).toFixed(1)}%
-                           </span>
-                         )} */}
-                      </div>
-                  </td>
-                  <td className="px-6 py-4 text-left">
-                    <span className="text-[10px] font-black text-zinc-500">{person.adm_no}</span>
-                  </td>
-                  <td className="px-6 py-4 text-left">
-                    <div className="flex flex-col text-[10px] font-bold text-zinc-400 uppercase tracking-tighter leading-tight">
-                      <span className="text-zinc-600">{person.parent?.full_name || 'No Parent'}</span>
-                      <span className="opacity-60">{person.parent?.phone || 'No Phone'}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-left">
-                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-tighter">
-                      {person.stream?.class?.name || 'Form ?'} - {person.stream?.name || 'G'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-left">
-                    {(() => {
-                      const studentFees = fees.filter(f => f.student_id === person.id);
-                      const totalDue = studentFees.reduce((acc, f) => acc + (f.amount_due || 0), 0);
-                      const totalPaid = studentFees.reduce((acc, f) => acc + (f.amount_paid || 0), 0);
-                      const balance = totalDue - totalPaid;
-                      const hasArrears = balance > 0;
-                      
-                      return (
+              {filteredData.map((person) => {
+                const isTeacher = activeTab === 'TEACHER';
+                const assignedStream = isTeacher ? streams.find(s => s.class_teacher_id === person.id) : null;
+                
+                return (
+                  <tr key={person.id} className="group hover:bg-zinc-50/80 transition-colors">
+                    <td className="px-6 py-4 text-left">
                         <div className="flex items-center gap-2">
-                          <div className={cn("w-1.5 h-1.5 rounded-full", hasArrears ? "bg-amber-500" : "bg-emerald-500")} />
-                          <span className={cn("text-[8px] font-black uppercase tracking-widest", hasArrears ? "text-amber-600" : "text-emerald-600")}>
-                            {hasArrears ? `Arrears: ${formatCurrency(balance)}` : 'Cleared'}
-                          </span>
+                           <span className="text-xs font-bold text-zinc-900">{isTeacher ? person.full_name : person.profile?.full_name}</span>
                         </div>
-                      );
-                    })()}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => { setSelectedPerson(person); setViewMode('DETAILS'); }} className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-900 transition-all"><Eye size={14} /></button>
-                      <button className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-900 transition-all"><Pencil size={14} /></button>
-                      <div className="relative">
-                        <button onClick={(e) => { e.stopPropagation(); setOpenDropdown(openDropdown === person.id ? null : person.id); }} className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-900 transition-all"><MoreVertical size={14} /></button>
-                        {openDropdown === person.id && (
-                          <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-zinc-100 rounded-xl shadow-xl z-50 overflow-hidden">
-                            <button className="w-full px-4 py-2 text-[10px] font-bold hover:bg-orange-50 text-orange-600 flex items-center gap-2">Suspend</button>
-                            <button className="w-full px-4 py-2 text-[10px] font-bold hover:bg-red-50 text-red-600 flex items-center gap-2">Delete</button>
-                          </div>
-                        )}
+                    </td>
+                    <td className="px-6 py-4 text-left">
+                      <span className="text-[10px] font-black text-zinc-500">{isTeacher ? person.email : person.adm_no}</span>
+                    </td>
+                    <td className="px-6 py-4 text-left">
+                      <div className="flex flex-col text-[10px] font-bold text-zinc-400 uppercase tracking-tighter leading-tight">
+                        <span className="text-zinc-600">{isTeacher ? (person.phone || 'No Phone') : (person.parent?.full_name || 'No Parent')}</span>
+                        {!isTeacher && <span className="opacity-60">{person.parent?.phone || 'No Phone'}</span>}
                       </div>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-6 py-4 text-left">
+                      <span className="text-[10px] font-black text-zinc-500 uppercase tracking-tighter">
+                        {isTeacher 
+                          ? (assignedStream ? `Form ${assignedStream.class?.name} ${assignedStream.name}` : 'No Assignment')
+                          : `Form ${person.stream?.class?.name || '?'} ${person.stream?.name || ''}`
+                        }
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-left">
+                      {isTeacher ? (
+                        <Badge label="Staff" variant="info" />
+                      ) : (() => {
+                        const studentFees = fees.filter(f => f.student_id === person.id);
+                        const totalDue = studentFees.reduce((acc, f) => acc + (f.amount_due || 0), 0);
+                        const totalPaid = studentFees.reduce((acc, f) => acc + (f.amount_paid || 0), 0);
+                        const balance = totalDue - totalPaid;
+                        const hasArrears = balance > 0;
+                        
+                        return (
+                          <div className="flex items-center gap-2">
+                            <div className={cn("w-1.5 h-1.5 rounded-full", hasArrears ? "bg-amber-500" : "bg-emerald-500")} />
+                            <span className={cn("text-[8px] font-black uppercase tracking-widest", hasArrears ? "text-amber-600" : "text-emerald-600")}>
+                              {hasArrears ? `Arrears: ${formatCurrency(balance)}` : 'Cleared'}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => { setSelectedPerson(person); setViewMode('DETAILS'); }} className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-900 transition-all"><Eye size={14} /></button>
+                        <button className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-900 transition-all"><Pencil size={14} /></button>
+                        <div className="relative">
+                          <button onClick={(e) => { e.stopPropagation(); setOpenDropdown(openDropdown === person.id ? null : person.id); }} className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-900 transition-all"><MoreVertical size={14} /></button>
+                          {openDropdown === person.id && (
+                            <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-zinc-100 rounded-xl shadow-xl z-50 overflow-hidden">
+                              <button className="w-full px-4 py-2 text-[10px] font-bold hover:bg-orange-50 text-orange-600 flex items-center gap-2">Suspend</button>
+                              <button className="w-full px-4 py-2 text-[10px] font-bold hover:bg-red-50 text-red-600 flex items-center gap-2">Delete</button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
