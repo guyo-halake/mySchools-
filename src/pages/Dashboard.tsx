@@ -34,7 +34,8 @@ import {
   RefreshCcw,
   BarChart2,
   DollarSign,
-  Search
+  Search,
+  Database
 } from 'lucide-react';
 import { formatCurrency, cn, formatDate } from '../utils/utils';
 import { Link } from 'react-router-dom';
@@ -1454,6 +1455,7 @@ const PrincipalView = ({ user }: any) => {
   const [activeFormTab, setActiveFormTab] = useState(1);
   const [selectedAcademicTerm, setSelectedAcademicTerm] = useState('CURRENT');
   const [selectedAcademicYear, setSelectedAcademicYear] = useState(new Date().getFullYear());
+  const [fetchError, setFetchError] = useState<any>(null);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activityFilter, setActivityFilter] = useState('ALL');
@@ -1488,21 +1490,16 @@ const PrincipalView = ({ user }: any) => {
   }, []);
 
   const { currentTerm, prevTerm, nextTerm } = useMemo(() => {
-    if (!data?.terms) return { currentTerm: null, prevTerm: null, nextTerm: null };
-    const now = new Date().toISOString().slice(0, 10);
+    if (!data?.terms || data.terms.length === 0) return { currentTerm: null, prevTerm: null, nextTerm: null };
     
-    // Sort terms to find relative positions
+    // Prioritize the term marked as is_current in the database
+    const active = data.terms.find((t: any) => t.is_current) || data.terms[0];
+    
     const sortedTerms = [...data.terms].sort((a, b) => b.start_date.localeCompare(a.start_date));
+    const activeIndex = sortedTerms.findIndex(t => t.id === active.id);
     
-    // Current Active Term
-    const active = sortedTerms.find(t => now >= t.start_date && now <= t.end_date) || sortedTerms.find(t => t.start_date <= now) || sortedTerms[0];
-    const activeIndex = sortedTerms.indexOf(active);
-    
-    // Previous Term (for trends)
     const prev = sortedTerms[activeIndex + 1] || null;
-    
-    // Next Term (for upcoming view)
-    const next = data.terms.filter((t: any) => t.start_date > now).sort((a: any, b: any) => a.start_date.localeCompare(b.start_date))[0] || null;
+    const next = sortedTerms[activeIndex - 1] || null;
 
     return { currentTerm: active, prevTerm: prev, nextTerm: next };
   }, [data?.terms]);
@@ -1515,10 +1512,7 @@ const PrincipalView = ({ user }: any) => {
 
     // 1. Term Filter
     if (selectedFinanceTerm === 'CURRENT') {
-      const now = new Date().toISOString().slice(0, 10);
-      const activeTerm = data.terms?.find((t: any) => now >= t.start_date && now <= t.end_date)
-        || data.terms?.filter((t: any) => t.start_date <= now).sort((a: any, b: any) => b.start_date.localeCompare(a.start_date))[0]
-        || data.terms?.[0];
+      const activeTerm = data.terms?.find((t: any) => t.is_current) || data.terms?.[0];
       if (activeTerm) {
         filtered = filtered.filter((f: any) => f.term_id === activeTerm.id);
       }
@@ -1574,32 +1568,38 @@ const PrincipalView = ({ user }: any) => {
     const activeTermId = selectedAcademicTerm === 'CURRENT' ? currentTerm.id : selectedAcademicTerm;
     const activeYear = selectedAcademicYear;
 
-    console.log(`[ACADEMIC AUDIT] Filtering Form ${activeFormTab} for Term ${activeTermId}, Year ${activeYear}`);
+    console.log('[ACADEMIC AUDIT] Filtering Form', activeFormTab, 'for Term', activeTermId, 'Year', activeYear);
     
     const formResults = data.results.filter((r: any) => {
-       const classLevel = r.student?.stream?.class?.level;
-       return classLevel === activeFormTab;
+       // Use the pre-mapped class_level from API or fallback to nested join
+       const classLevel = r.class_level || r.student?.stream?.class?.level || r.student?.stream?.class_level;
+       return Number(classLevel) === Number(activeFormTab);
     });
 
     const termFilteredResults = formResults.filter((r: any) => {
-       // Support both published exams and live workflow entries
        const exam = r.exam || r.exams;
        const resultTermId = exam?.term_id || r.term_id;
-       
        if (!resultTermId) return false;
        
        const term = data.terms?.find((t: any) => t.id === resultTermId);
-       const matchesTerm = (resultTermId === activeTermId);
-       const matchesYear = term && (term.year === Number(activeYear));
-       
-       return matchesTerm && matchesYear;
+       return (resultTermId === activeTermId) && term && (term.year === Number(activeYear));
     });
 
-    console.log(`[ACADEMIC AUDIT] Found ${termFilteredResults.length} records matching Term/Year criteria.`);
+    const prevResults = prevTerm ? formResults.filter((r: any) => (r.term_id || r.exam?.term_id) === prevTerm.id) : [];
 
-    const prevResults = prevTerm ? formResults.filter((r: any) => r.term_id === prevTerm.id) : [];
-
-    const calculateMean = (res: any[]) => res.length > 0 ? (res.reduce((acc, r) => acc + (Number(r.points) || 0), 0) / res.length).toFixed(1) : '0.0';
+    const calculateMean = (res: any[]) => {
+      if (res.length === 0) return '0.0';
+      
+      const totalPoints = res.reduce((acc, r) => {
+        // Use the dynamic points from database if available, otherwise calculate from custom scale
+        const m = Number(r.marks) || 0;
+        const customGrade = data.gradingScales?.find((s: any) => m >= s.min_mark && m <= s.max_mark);
+        const p = Number(r.points) || Number(customGrade?.grade_point) || 0;
+        return acc + p;
+      }, 0);
+      
+      return (totalPoints / res.length).toFixed(2);
+    };
 
     const currentMean = calculateMean(termFilteredResults);
     const prevMean = calculateMean(prevResults);
@@ -1629,20 +1629,20 @@ const PrincipalView = ({ user }: any) => {
   }, [data?.results, data?.classes, data?.streams, data?.terms, currentTerm, prevTerm, activeFormTab, selectedAcademicTerm, selectedAcademicYear]);
 
   const fetchInitialData = async () => {
+    setFetchError(null);
     try {
-      // TIER 1: Essential Config & High-Level Metrics
-      const [terms, stats, school] = await Promise.all([
+      // TIER 1: Core Institutional Config
+      const [terms, stats, school, scales] = await Promise.all([
         api.getTerms(user.school_id),
-        api.getFinancialSummary(user.school_id), // Simplified call
-        api.getSchool(user.school_id)
+        api.getFinancialSummary(user.school_id), 
+        api.getSchool(user.school_id),
+        api.getGradingSystem(user.school_id)
       ]);
 
       const currentTermRes = terms?.find((t: any) => t.is_current) || terms?.[0];
-      
-      // Update first-render data
-      setData((prev: any) => ({ ...prev, terms, school, financialSummary: stats }));
+      setData((prev: any) => ({ ...prev, terms, school, financialSummary: stats, gradingScales: scales }));
 
-      // TIER 2: Secondary Metadata (Parallel background)
+      // TIER 2: Secondary Metadata
       const [students, teachers, classes, streams] = await Promise.all([
         api.getStudents(user.school_id),
         api.getTeachers(user.school_id),
@@ -1652,7 +1652,7 @@ const PrincipalView = ({ user }: any) => {
 
       setData((prev: any) => ({ ...prev, students, teachers, classes, streams }));
 
-      // TIER 3: Heavy Ledgers (Lazy)
+      // TIER 3: Heavy Ledgers
       const [results, fees, events, announcements, discipline] = await Promise.all([
         api.getResults(user.school_id),
         api.getFeesFull(user.school_id),
@@ -1662,16 +1662,19 @@ const PrincipalView = ({ user }: any) => {
       ]);
       
       const arrearsByStream = await api.getArrearsByStream(user.school_id, currentTermRes?.id);
-
-      // Principal/Admin Sync: Mapping UI 'PRINCIPAL' to DB 'ADMIN' for operations
-      // const effectiveRole = user.role === 'PRINCIPAL' ? 'ADMIN' : user.role;
+      
       setData((prev: any) => ({ 
         ...prev, 
         results, fees, events, announcements,
         discipline, arrearsByStream 
       }));
-    } catch (err) {
-      console.error('Data acquisition failed:', err);
+    } catch (err: any) {
+      console.error('CRITICAL DATABASE ERROR:', err);
+      setFetchError({
+        message: err.message || 'Unknown database connection error',
+        details: err.details || 'The system could not synchronize with the central data server.',
+        hint: err.hint || 'Check if the institutional credentials are still valid.'
+      });
     } finally {
       setLoading(false);
     }
@@ -1954,6 +1957,7 @@ const PrincipalView = ({ user }: any) => {
           <CompactStat label="Students" value={data.students?.length || 0} />
           <CompactStat label="Staff" value={data.teachers?.length || 0} />
           <CompactStat label="Revenue" value={`${data.financialSummary?.efficiency || 0}%`} />
+          <CompactStat label="Mean Score" value={academicHub?.currentMean || '0.00'} />
         </div>
       </header>
 
