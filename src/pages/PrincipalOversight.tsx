@@ -15,7 +15,8 @@ import {
   UserCheck,
   Search,
   Filter,
-  DollarSign
+  DollarSign,
+  Settings
 } from 'lucide-react';
 import { formatCurrency, cn, formatDate } from '../utils/utils';
 
@@ -36,13 +37,48 @@ export const PrincipalOversight: React.FC = () => {
     if (!user?.school_id) return;
     setLoading(true);
     try {
-      const [subs, staff, cal, terms] = await Promise.all([
+      const [subs, staff, cal, terms, results] = await Promise.all([
         api.getResultsWorkflow({ schoolId: user.school_id }),
         api.getStaffActivity(user.school_id),
         api.getSchoolCalendar(user.school_id),
-        api.getTerms(user.school_id)
+        api.getTerms(user.school_id),
+        api.getResults(user.school_id)
       ]);
-      setData({ submissions: subs, staff, calendar: cal, terms });
+
+      console.log('[OVERSIGHT AUDIT] Submissions Count:', subs?.length);
+      console.log('[OVERSIGHT AUDIT] Raw Results Count:', results?.length);
+      console.log('[OVERSIGHT AUDIT] Terms Count:', terms?.length);
+
+      // Calculate Academic Summary for the strip
+      const calculateMean = (res: any[]) => {
+        if (res.length === 0) return '0.0';
+        const getPoints = (marks: number) => {
+          if (marks >= 80) return 12; if (marks >= 75) return 11; if (marks >= 70) return 10;
+          if (marks >= 65) return 9; if (marks >= 60) return 8; if (marks >= 55) return 7;
+          if (marks >= 50) return 6; if (marks >= 45) return 5; if (marks >= 40) return 4;
+          if (marks >= 35) return 3; if (marks >= 30) return 2; return 1;
+        };
+        const totalPoints = res.reduce((acc, r) => acc + (Number(r.points) || getPoints(Number(r.marks) || 0)), 0);
+        return (totalPoints / res.length).toFixed(2);
+      };
+
+      const currentTerm = terms.find((t: any) => t.is_current) || terms[0];
+      const termResults = results.filter((r: any) => {
+        const exam = r.exam || r.exams;
+        return (exam?.term_id || r.term_id) === currentTerm?.id;
+      });
+
+      setData({ 
+        submissions: subs, 
+        staff, 
+        calendar: cal, 
+        terms,
+        academicSummary: {
+          mean: calculateMean(termResults),
+          count: termResults.length,
+          aCount: termResults.filter((r: any) => ['A', 'A-'].includes(r.grade)).length
+        }
+      });
     } catch (err) {
       console.error("Oversight data error:", err);
     } finally {
@@ -73,6 +109,22 @@ export const PrincipalOversight: React.FC = () => {
           <TabButton active={activeTab === 'financials'} onClick={() => setActiveTab('financials')} icon={DollarSign} label="Financials Admin" />
           <TabButton active={activeTab === 'institutional'} onClick={() => setActiveTab('institutional')} icon={Calendar} label="Institutional Hub" />
         </div>
+
+        <Button 
+          variant="ghost"
+          onClick={() => window.location.href = '/school-settings'}
+          className="rounded-2xl border border-zinc-100 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-zinc-900 hover:bg-white transition-all active:scale-95"
+        >
+          <Settings size={14} className="mr-2" /> School Settings
+        </Button>
+      </div>
+
+      {/* QUICK STATS STRIP */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <OversightStat label="Academic Mean" value={data.academicSummary?.mean || '0.00'} sub="Active Term" />
+        <OversightStat label="Result Records" value={data.academicSummary?.count || 0} sub="Verified Entries" />
+        <OversightStat label="Excellence (A)" value={data.academicSummary?.aCount || 0} sub="Top Performers" />
+        <OversightStat label="Staff Active" value={data.staff?.length || 0} sub="Digital Presence" />
       </div>
 
       {/* CONTENT AREA */}
@@ -230,7 +282,9 @@ const InstitutionalHub = ({ data }: any) => {
           <div className="grid grid-cols-2 gap-8 relative z-10">
             <div className="p-8 rounded-[2rem] bg-white/5 border border-white/10 backdrop-blur-md">
               <p className="text-[9px] font-black text-zinc-400 uppercase mb-4 tracking-widest">Current Cycle</p>
-              <h4 className="text-2xl font-black uppercase tracking-tighter tabular-nums">Term 2, 2024</h4>
+              <h4 className="text-2xl font-black uppercase tracking-tighter tabular-nums">
+                {data.terms.find((t: any) => t.is_current)?.name || 'Term 1'}, {data.terms.find((t: any) => t.is_current)?.year || '2026'}
+              </h4>
             </div>
             <div className="p-8 rounded-[2rem] bg-emerald-500/10 border border-emerald-500/20 backdrop-blur-md">
               <p className="text-[9px] font-black text-emerald-400 uppercase mb-4 tracking-widest">System Status</p>
@@ -298,10 +352,14 @@ const FinancialsHub = ({ schoolId, terms }: any) => {
         ? terms.find((t: any) => t.is_current)?.id || terms[0]?.id 
         : selectedTerm;
       
+      console.log('[OVERSIGHT FINANCE] Loading for Term:', activeTermId);
+      
       const [sum, heatmap] = await Promise.all([
         api.getFinancialSummary(schoolId, activeTermId),
         api.getArrearsByStream(schoolId, activeTermId)
       ]);
+      console.log('[OVERSIGHT FINANCE] Summary:', sum);
+      console.log('[OVERSIGHT FINANCE] Arrears Heatmap Count:', heatmap?.length);
       setStats(sum);
       setArrears(heatmap);
     } catch (err) {
@@ -419,6 +477,14 @@ const OversightSkeleton = () => (
       {[1, 2, 3, 4].map(i => <div key={i} className="h-10 w-32 bg-zinc-100 rounded-xl" />)}
     </div>
     <div className="h-[600px] bg-zinc-50 rounded-[3rem]" />
+  </div>
+);
+
+const OversightStat = ({ label, value, sub }: any) => (
+  <div className="bg-white border border-zinc-100 p-6 rounded-3xl shadow-sm space-y-1">
+    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">{label}</p>
+    <h4 className="text-2xl font-black text-zinc-900 tabular-nums uppercase">{value}</h4>
+    <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter opacity-60">{sub}</p>
   </div>
 );
 
