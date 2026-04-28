@@ -27,6 +27,7 @@ export interface Profile {
   tsc_number?: string;
   rating?: number;
   username?: string;
+  is_class_teacher?: boolean;
 }
 
 export interface Class {
