@@ -8,7 +8,14 @@ import {
 // Admin Client (Bypasses RLS for Institutional Actions)
 const supabaseAdmin = createClient(
   supabaseUrl,
-  import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY || import.meta.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey
+  import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY || import.meta.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey,
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    }
+  }
 );
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -139,21 +146,40 @@ export const api = {
     if (!isUuid(schoolId)) return [];
     
     // Deep relational join to ensure we have Class/Stream context for every result
+    // Use Admin client to bypass RLS and ensure related context (stream/class) is ALWAYS available
     const [published, workflow] = await Promise.all([
-      supabase.from('exam_results')
-        .select('*, subject:subjects(*), exam:exams(*), student:students(stream:streams(class:classes(*)))')
+      supabaseAdmin.from('exam_results')
+        .select(`
+          *, 
+          subject:subjects(*), 
+          exam:exams(*), 
+          student:students(id, adm_no, profile:profiles(full_name)),
+          stream:streams(id, name, class:classes(id, level))
+        `)
         .eq('school_id', schoolId),
-      supabase.from('results_workflow')
-        .select('*, subject:subjects(*), term:terms(*), student:students(stream:streams(class:classes(*)))')
-        .eq('school_id', schoolId).in('status', ['APPROVED', 'PUBLISHED'])
+      supabaseAdmin.from('results_workflow')
+        .select(`
+          *, 
+          subject:subjects(*), 
+          term:terms(*), 
+          student:students(id, adm_no, profile:profiles(full_name)),
+          stream:streams(id, name, class:classes(id, level))
+        `)
+        .eq('school_id', schoolId).in('status', ['SUBMITTED', 'APPROVED', 'PUBLISHED'])
     ]);
 
     const workflowAsResults = (workflow.data || []).map(r => ({
       ...r,
-      is_workflow: true
+      is_workflow: true,
+      class_level: (r as any).stream?.class?.level || (r as any).student?.stream?.class?.level
     }));
 
-    return [...(published.data || []), ...workflowAsResults] as any[];
+    const publishedAsResults = (published.data || []).map(r => ({
+      ...r,
+      class_level: (r as any).stream?.class?.level || (r as any).student?.stream?.class?.level
+    }));
+
+    return [...publishedAsResults, ...workflowAsResults] as any[];
   },
 
   async getSubjects(schoolId: string): Promise<Subject[]> {
@@ -515,8 +541,8 @@ export const api = {
 
   async getStudentResultsAll(studentId: string) {
     const [published, workflow] = await Promise.all([
-      supabase.from('exam_results').select('*, subject:subjects!exam_results_subject_id_fkey(*), exam:exams!exam_results_exam_id_fkey(*, term:terms!exams_term_id_fkey(*))').eq('student_id', studentId),
-      supabase.from('results_workflow').select('*, subject:subjects(*), term:terms(*)').eq('student_id', studentId).in('status', ['APPROVED', 'PUBLISHED'])
+      supabase.from('exam_results').select('*, subject:subjects!exam_results_subject_id_fkey(name), exam:exams!exam_results_exam_id_fkey(name, type, term:terms!exams_term_id_fkey(id, name, year, start_date)), teacher:profiles!exam_results_teacher_id_fkey(full_name)').eq('student_id', studentId),
+      supabase.from('results_workflow').select('*, subject:subjects!results_workflow_subject_id_fkey(name), term:terms!results_workflow_term_id_fkey(id, name, year, start_date), teacher:profiles!results_workflow_submitted_by_fkey(full_name)').eq('student_id', studentId)
     ]);
 
     const workflowAsResults = (workflow.data || []).map(r => ({
@@ -980,6 +1006,7 @@ export const api = {
         student:students!results_workflow_student_id_fkey(id, adm_no, profile:profiles!students_id_fkey(full_name)),
         subject:subjects!results_workflow_subject_id_fkey(id, name),
         term:terms!results_workflow_term_id_fkey(id, name, year),
+        stream:streams!results_workflow_stream_id_fkey(id, name, class:classes(id, name)),
         submitted_by_profile:profiles!results_workflow_submitted_by_fkey(id, full_name),
         class_teacher_profile:profiles!results_workflow_class_teacher_id_fkey(id, full_name)
       `)
@@ -1016,8 +1043,14 @@ export const api = {
       .from('results_workflow')
       .update(patch)
       .in('id', ids)
-      .select('*');
-    if (error) throw error;
+      .select('*, student:students!results_workflow_student_id_fkey(id, parent_id, profile:profiles!students_id_fkey(full_name))');
+    
+    if (error) {
+      console.error('Workflow Update Error:', error);
+      throw error;
+    }
+
+    // Parent notifications are now handled automatically by a Database Trigger for 100% reliability.
     return data || [];
   },
 
@@ -1131,6 +1164,38 @@ export const api = {
     for (const key of termPairs) {
       const [schoolId, termId] = key.split('::');
       await this.recomputeStudentTermAverages(schoolId, termId);
+    }
+
+    // --- NEW: NOTIFICATION LOGIC ---
+    try {
+      const studentIds = Array.from(new Set(approvedRows.map((r: any) => r.student_id)));
+      const { data: studentDetails } = await supabase
+        .from('students')
+        .select('id, school:schools(name), profile:profiles!students_id_fkey(full_name), parent:profiles!students_parent_id_fkey(full_name, email)')
+        .in('id', studentIds);
+
+      if (studentDetails) {
+        for (const s of studentDetails) {
+          const parent = (s as any).parent;
+          if (parent?.email) {
+            const firstRow = approvedRows.find((r: any) => r.student_id === s.id);
+            fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000'}/api/notify-results`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                parentEmail: parent.email,
+                parentName: parent.full_name,
+                studentName: s.profile?.full_name,
+                examName: firstRow?.exam_name || 'Academic Term',
+                termName: firstRow?.term?.name || 'Current Term',
+                schoolName: s.school?.name || 'The School'
+              })
+            }).catch(e => console.warn('Email trigger failed:', e));
+          }
+        }
+      }
+    } catch (notifyErr) {
+      console.warn('Notification grouping failed:', notifyErr);
     }
 
     return { published: approvedRows.length };
@@ -1773,5 +1838,58 @@ export const api = {
       return { category: cat, allocated, spent, percentage: allocated > 0 ? Math.round((spent / allocated) * 100) : 0 };
     });
   },
+
+  // --- GRADING & CALCULATIONS ---
+  async getGradingSystem(schoolId: string) {
+    const { data, error } = await supabaseAdmin
+      .from('grading_systems')
+      .select('*')
+      .eq('school_id', schoolId)
+      .order('sort_order', { ascending: true });
+    
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getAttendance(studentId: string) {
+    if (!isUuid(studentId)) return [];
+    const { data, error } = await supabase
+      .from('attendance')
+      .select('*')
+      .eq('student_id', studentId);
+    if (error) throw error;
+    return data || [];
+  },
+
+  async updateGradingSystem(schoolId: string, scales: any[]) {
+    // Delete existing scales for this school and insert new ones
+    const { error: deleteError } = await supabaseAdmin
+      .from('grading_systems')
+      .delete()
+      .eq('school_id', schoolId);
+    
+    if (deleteError) throw deleteError;
+
+    const { data, error: insertError } = await supabaseAdmin
+      .from('grading_systems')
+      .insert(scales.map(s => {
+        const { id, created_at, updated_at, ...rest } = s;
+        return { ...rest, school_id: schoolId };
+      }))
+      .select();
+    
+    if (insertError) throw insertError;
+    return data;
+  },
+
+  async recomputeInstitutionalAverages(schoolId: string, termId?: string) {
+    const { data, error } = await supabase.rpc('recompute_student_term_averages', {
+      p_school_id: schoolId,
+      p_term_id: termId || null
+    });
+    
+    if (error) throw error;
+    return data;
+  }
 };
 
