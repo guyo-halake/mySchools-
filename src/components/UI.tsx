@@ -7,8 +7,14 @@ export const Card: React.FC<{
   title?: string;
   subtitle?: string;
   icon?: any;
-}> = ({ children, className, title, subtitle, icon: Icon }) => (
-  <div className={cn("bg-white dark:bg-zinc-900 rounded-xl border border-gray-100 dark:border-zinc-800 shadow-sm overflow-hidden", className)}>
+  onClick?: (e: React.MouseEvent) => void;
+  [key: string]: any;
+}> = ({ children, className, title, subtitle, icon: Icon, onClick, ...props }) => (
+  <div 
+    onClick={onClick}
+    {...props}
+    className={cn("bg-white dark:bg-zinc-900 rounded-xl border border-gray-100 dark:border-zinc-800 shadow-sm overflow-hidden", className)}
+  >
     {(title || Icon) && (
       <div className="px-4 py-3 border-b border-gray-50 dark:border-zinc-800 flex items-center justify-between">
         <div>
