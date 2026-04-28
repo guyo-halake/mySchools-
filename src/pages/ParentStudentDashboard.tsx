@@ -30,6 +30,8 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
   const [events, setEvents] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [gradingSystem, setGradingSystem] = useState<any[]>([]);
+  const [attendance, setAttendance] = useState<any[]>([]);
   const [schoolName, setSchoolName] = useState('School');
 
   // UI CONTROLS
@@ -48,10 +50,30 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
   const selectedStream = useMemo(() => streams.find((s: any) => s.id === selectedStudent?.stream_id) || null, [streams, selectedStudent?.stream_id]);
 
   const currentGradeLabel = useMemo(() => {
-    if (!results.length) return { grade: '-', mean: 0 };
-    const avg = results.reduce((acc: number, row: any) => acc + Number(row.marks || 0), 0) / results.length;
-    return { grade: markToGrade(avg), mean: avg.toFixed(1) };
-  }, [results]);
+    if (!results.length) return { grade: '-', mean: 0, examName: 'No results', termName: '' };
+    
+    // Find the most recent exam results
+    const sortedByDate = [...results].sort((a, b) => {
+      const dateA = new Date(a.exam?.date || 0).getTime();
+      const dateB = new Date(b.exam?.date || 0).getTime();
+      return dateB - dateA;
+    });
+
+    const latestExamId = sortedByDate[0]?.exam_id;
+    const isCurrentYear = sortedByDate[0]?.exam?.term?.year === new Date().getFullYear();
+    
+    if (!latestExamId || !isCurrentYear) return { grade: '-', mean: 0, examName: 'No 2026 Results', termName: '' };
+
+    const latestResults = sortedByDate.filter(r => r.exam_id === latestExamId);
+    const avg = latestResults.reduce((acc: number, row: any) => acc + Number(row.marks || 0), 0) / latestResults.length;
+    
+    return { 
+      grade: markToGrade(avg, gradingSystem), 
+      mean: avg.toFixed(1),
+      examName: latestResults[0]?.exam?.name || 'Exam',
+      termName: latestResults[0]?.exam?.term?.name || ''
+    };
+  }, [results, gradingSystem]);
 
   const feeSummary = useMemo(() => {
     const totalDue = fees.reduce((acc: number, row: any) => acc + Number(row.amount_due || 0), 0);
@@ -59,6 +81,17 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
     const lastPayment = [...fees].filter(f => Number(f.amount_paid) > 0).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
     return { totalDue, totalPaid, balance: totalDue - totalPaid, lastPayment };
   }, [fees]);
+  
+  const attendanceSummary = useMemo(() => {
+    if (!attendance.length) return { percentage: '0%', present: 0, total: 0 };
+    const present = attendance.filter(a => a.status === 'PRESENT').length;
+    const total = attendance.length;
+    return { 
+      percentage: `${Math.round((present / total) * 100)}%`,
+      present,
+      total
+    };
+  }, [attendance]);
 
   // DYNAMIC NOTIFICATION FEED
   const recentActivities = useMemo(() => {
@@ -86,21 +119,20 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
     return activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 8);
   }, [notifications, feeSummary]);
 
-  // 📊 SMART GRAPH ENGINE (Sequential Terms & Grade Mapping)
   const analyticsData = useMemo(() => {
-    if (!results.length) return [];
+    const currentYear = new Date().getFullYear();
+    const yearResults = results.filter(r => r.exam?.term?.year === currentYear);
+    
+    if (!yearResults.length || !gradingSystem.length) return [];
 
-    const getLevel = (m: number) => {
-      if (m >= 80) return 5;
-      if (m >= 70) return 4;
-      if (m >= 60) return 3;
-      if (m >= 50) return 2;
-      return 1;
+    const getPoints = (m: number) => {
+      const found = gradingSystem.find(s => m >= s.min_mark && m <= s.max_mark);
+      return Number(found?.grade_point || 0);
     };
 
     if (viewMode === 'SUBJECTS') {
       const subjectMap = new Map();
-      results.forEach(r => {
+      yearResults.forEach(r => {
         const name = r.subject?.name || 'Unknown';
         if (!subjectMap.has(name)) subjectMap.set(name, []);
         subjectMap.get(name).push(Number(r.marks || 0));
@@ -108,17 +140,18 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
 
       return Array.from(subjectMap.entries()).map(([name, scores]) => {
         const avg = scores.reduce((a: any, b: any) => a + b, 0) / scores.length;
-        const level = getLevel(avg);
+        const points = getPoints(avg);
         return {
           name,
-          grade: level,
-          color: level >= 4 ? '#10b981' : level >= 2 ? '#f59e0b' : '#ef4444'
+          points,
+          gradeLabel: markToGrade(avg, gradingSystem),
+          color: points >= 9 ? '#10b981' : points >= 5 ? '#f59e0b' : '#ef4444'
         };
       });
     }
 
-    // PERFORMANCE VIEW (Group by Term -> Exam)
-    const termGrouped = results.reduce((acc: any, r) => {
+    // PERFORMANCE VIEW (Group by Term -> Exam for Current Year)
+    const termGrouped = yearResults.reduce((acc: any, r) => {
       const termName = r.exam?.term?.name || 'Unknown';
       const examName = r.exam?.name || 'Exam';
       const key = `${termName}-${examName}`;
@@ -138,20 +171,20 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
 
     return timeline.map((group: any) => {
       const avg = group.scores.length ? group.scores.reduce((a: any, b: any) => a + b, 0) / group.scores.length : 0;
-      const level = getLevel(avg);
-      const examShort = group.exam.length > 8 ? group.exam.substring(0, 5) + '..' : group.exam;
+      const points = getPoints(avg);
+      const examShort = group.exam.length > 10 ? group.exam.substring(0, 8) + '..' : group.exam;
 
       return {
         name: examShort,
         termLabel: group.term,
         isFirstOfTerm: true,
-        grade: level,
+        points,
         marks: avg.toFixed(1),
-        gradeLabel: markToGrade(avg),
-        color: avg > 0 ? (level >= 4 ? '#10b981' : level >= 2 ? '#f59e0b' : '#ef4444') : '#f4f4f5'
+        gradeLabel: markToGrade(avg, gradingSystem),
+        color: avg > 0 ? (points >= 9 ? '#10b981' : points >= 5 ? '#f59e0b' : '#ef4444') : '#f4f4f5'
       };
     });
-  }, [results, viewMode]);
+  }, [results, viewMode, gradingSystem]);
 
   const strugglingSubjects = useMemo(() => {
     const map = new Map();
@@ -170,7 +203,7 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
     if (!user?.school_id) return;
     try {
       setLoading(true);
-      const [visible, schoolEvents, schoolAnnouncements, school, schoolStreams, userNotifs, schoolTeachers] = await Promise.all([
+      const [visible, schoolEvents, schoolAnnouncements, school, schoolStreams, userNotifs, schoolTeachers, scales] = await Promise.all([
         user.role === 'PARENT'
           ? api.getStudentsByParentId(user.school_id, user.id)
           : api.getStudentByProfileId(user.school_id, user.id).then(s => s ? [s] : []),
@@ -179,12 +212,14 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
         api.getSchool(user.school_id),
         api.getStreams(user.school_id),
         api.getNotifications(user.id, user.school_id),
-        api.getTeachers(user.school_id)
+        api.getTeachers(user.school_id),
+        api.getGradingSystem(user.school_id)
       ]);
 
       setStudents(visible || []);
       setNotifications(userNotifs || []);
       setTeachers(schoolTeachers || []);
+      setGradingSystem(scales || []);
 
       const now = new Date();
       const upcoming = (schoolEvents || []).filter(e => new Date(e.date) >= now);
@@ -195,12 +230,14 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
 
       if (visible && visible[0]) {
         const student = visible[0];
-        const [res, fee] = await Promise.all([
+        const [res, fee, att] = await Promise.all([
           api.getStudentResultsAll(student.id),
-          api.getFees(user.school_id).then(all => all.filter((f: any) => f.student_id === student.id))
+          api.getFees(user.school_id).then(all => all.filter((f: any) => f.student_id === student.id)),
+          api.getAttendance(student.id)
         ]);
         setResults(res || []);
         setFees(fee || []);
+        setAttendance(att || []);
       }
     } catch (error) {
       console.error('Error loading parent dashboard:', error);
@@ -472,8 +509,21 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
       <section className="space-y-3">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <StatCard label="Outstanding" value={formatMoney(feeSummary.balance)} sub={feeSummary.lastPayment ? `Recent: ${formatMoney(feeSummary.lastPayment.amount_paid)}` : "No history"} trend={feeSummary.balance > 0 ? "danger" : "success"} icon={<CreditCard size={14} />} />
-          <StatCard label="Current Grade" value={`${currentGradeLabel.mean}% (${currentGradeLabel.grade})`} sub="Class Position: - " trend="success" icon={<GraduationCap size={14} />} />
-          <StatCard label="Attendance" value="94%" sub="Term Goal: 95%" trend="success" icon={<Users size={14} />} hideMobile={!showAllStats} />
+          <StatCard 
+            label="Current Grade" 
+            value={`${currentGradeLabel.mean}% (${currentGradeLabel.grade})`} 
+            sub={`${currentGradeLabel.examName} • ${currentGradeLabel.termName}`} 
+            trend="success" 
+            icon={<GraduationCap size={14} />} 
+          />
+          <StatCard 
+            label="Attendance" 
+            value={attendanceSummary.percentage} 
+            sub={`Present: ${attendanceSummary.present} / ${attendanceSummary.total} Days`} 
+            trend={Number(attendanceSummary.percentage.replace('%', '')) >= 90 ? "success" : "warning"} 
+            icon={<Users size={14} />} 
+            hideMobile={!showAllStats} 
+          />
           <StatCard label="Next Event" value={events[0]?.title || "TBD"} sub={events[0]?.date ? formatDate(events[0].date) : "—"} trend="neutral" icon={<Calendar size={14} />} hideMobile={!showAllStats} />
         </div>
         <button onClick={() => setShowAllStats(!showAllStats)} className="lg:hidden w-full py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[9px] font-black uppercase tracking-widest text-zinc-400">
@@ -555,13 +605,12 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
                           }}
                         />
                         <YAxis
-                          domain={[0.5, 5.5]}
-                          ticks={[1, 2, 3, 4, 5]}
+                          domain={[0, 12]}
+                          ticks={[0, 3, 6, 9, 12]}
                           axisLine={false}
                           tickLine={false}
-                          tickFormatter={(val) => ({ 5: 'A', 4: 'B', 3: 'C', 2: 'D', 1: 'E' }[val] || '')}
-                          tick={{ fontSize: 13, fontWeight: 900, fill: '#18181b' }}
-                          label={{ value: 'GRADE', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fontWeight: 900, fill: '#a1a1aa' }}
+                          tick={{ fontSize: 10, fontWeight: 900, fill: '#18181b' }}
+                          label={{ value: 'POINTS', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fontWeight: 900, fill: '#a1a1aa' }}
                         />
                         <Tooltip
                           cursor={{ stroke: '#f4f4f5', strokeWidth: 2 }}
@@ -602,7 +651,7 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
                         />
                         <Line
                           type="monotone"
-                          dataKey="grade"
+                          dataKey="points"
                           stroke="#18181b"
                           strokeWidth={2.5}
                           connectNulls={true}
@@ -625,13 +674,12 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
                           label={{ value: viewMode === 'SUBJECTS' ? 'SUBJECTS' : 'EXAMS', position: 'insideBottom', offset: -10, fontSize: 10, fontWeight: 900, fill: '#a1a1aa' }}
                         />
                         <YAxis
-                          domain={[0.5, 5.5]}
-                          ticks={[1, 2, 3, 4, 5]}
+                          domain={[0, 12]}
+                          ticks={[0, 3, 6, 9, 12]}
                           axisLine={false}
                           tickLine={false}
-                          tickFormatter={(val) => ({ 5: 'A', 4: 'B', 3: 'C', 2: 'D', 1: 'E' }[val] || '')}
-                          tick={{ fontSize: 13, fontWeight: 900, fill: '#18181b' }}
-                          label={{ value: 'GRADE', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fontWeight: 900, fill: '#a1a1aa' }}
+                          tick={{ fontSize: 10, fontWeight: 900, fill: '#18181b' }}
+                          label={{ value: 'POINTS', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fontWeight: 900, fill: '#a1a1aa' }}
                         />
                         <Tooltip
                           contentStyle={{ backgroundColor: '#18181b', borderRadius: '12px', border: 'none', color: '#fff', padding: '12px' }}
@@ -639,7 +687,7 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
                           labelStyle={{ opacity: 0.5, fontSize: '9px', marginBottom: '4px', textTransform: 'uppercase', color: '#fff' }}
                           cursor={{ stroke: '#f4f4f5', strokeWidth: 1 }}
                         />
-                        <Bar dataKey="grade" radius={[8, 8, 8, 8]} barSize={viewMode === 'SUBJECTS' ? 24 : 32}>
+                        <Bar dataKey="points" radius={[8, 8, 8, 8]} barSize={viewMode === 'SUBJECTS' ? 24 : 32}>
                           {analyticsData.map((entry: any, index: number) => (
                             <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.8} />
                           ))}
