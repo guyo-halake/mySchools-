@@ -23,16 +23,26 @@ import { TemplatesList } from './pages/TemplatesList';
 import { TemplateDetail } from './pages/TemplateDetail';
 import { ProfileSettings } from './pages/ProfileSettings';
 import MyChats from './pages/MyChats';
-import { AdminOS } from './pages/AdminOS';
+// import { AdminOS } from './pages/AdminOS';
 import { Calendar } from './pages/Calendar';
 import { Settings } from './pages/Settings';
 import { Privacy } from './pages/Privacy';
 import { MyStudents } from './pages/MyStudents';
+import { SchoolSettings } from './pages/SchoolSettings';
+import { AdminRoutes } from './admin/AdminRoutes';
 import { PrincipalOversight } from './pages/PrincipalOversight';
+import { Support } from './pages/Support';
+import { SubmissionsUpload } from './pages/SubmissionsUpload';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
+
+  if (loading) return <div className="h-screen w-screen flex items-center justify-center bg-white dark:bg-zinc-950"><div className="w-8 h-8 border-4 border-zinc-900 dark:border-white border-t-transparent rounded-full animate-spin" /></div>;
+  
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
   
   return <Layout>{children}</Layout>;
 };
@@ -41,12 +51,14 @@ const AppContent = () => {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/admin/*" element={<AdminRoutes />} />
       <Route
         path="/*"
         element={
           <ProtectedRoute>
             <Routes>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/results" element={<Results />} />
               <Route path="/fees" element={<Fees />} />
               <Route path="/fees-management" element={<FeesManagement />} />
@@ -64,12 +76,13 @@ const AppContent = () => {
               <Route path="/templates/permissions" element={<TemplatesPermision />} />
               <Route path="/templates/:id" element={<TemplateDetail />} />
               <Route path="/profile-settings" element={<ProfileSettings />} />
-              <Route path="/admin" element={<AdminOS />} />
               <Route path="/calendar" element={<Calendar />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/my-students" element={<MyStudents />} />
               <Route path="/principal-oversight" element={<PrincipalOversight />} />
+              <Route path="/school-settings" element={<SchoolSettings />} />
+              <Route path="/submissions-upload" element={<SubmissionsUpload />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </ProtectedRoute>
@@ -79,15 +92,19 @@ const AppContent = () => {
   );
 };
 
+import { AdminAuthProvider } from './admin/context/AdminAuthContext';
+
 export default function App() {
   return (
     <AuthProvider>
-      <AppProvider>
-        <ToastProvider>
-           <GlobalNotificationManager />
-           <AppContent />
-        </ToastProvider>
-      </AppProvider>
+      <AdminAuthProvider>
+        <AppProvider>
+          <ToastProvider>
+             <GlobalNotificationManager />
+             <AppContent />
+          </ToastProvider>
+        </AppProvider>
+      </AdminAuthProvider>
     </AuthProvider>
   );
 }
