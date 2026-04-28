@@ -44,30 +44,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     // 1. Initial Session Check
     const initAuth = async () => {
+      setLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('*')
+          .select('*, class_streams:streams!streams_class_teacher_id_fkey(id)')
           .eq('id', session.user.id)
           .single();
           
         if (profile) {
           rememberSchoolId(profile.school_id);
-          setUser(profile);
+          setUser({
+             ...profile,
+             is_class_teacher: (profile as any).class_streams?.length > 0
+          });
         }
       } else {
-        // Fallback to local storage for MOCK data if no Supabase session
+        // Fallback to local storage for persistence if no Supabase session
         const saved = localStorage.getItem('school_portal_user');
         if (saved) {
           const parsed = JSON.parse(saved) as Profile;
-          // Prevent stale mock identifiers from being used in live UUID queries.
-          if (isUuid(parsed?.id) && isUuid(parsed?.school_id)) {
-            rememberSchoolId(parsed.school_id);
-            setUser(parsed);
-          } else {
-            setUser({ ...parsed, school_id: getLastValidSchoolId() });
+          if (isUuid(parsed?.id)) {
+            // Re-verify the profile and class teacher status from DB to prevent stale data
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('*, class_streams:streams!streams_class_teacher_id_fkey(id)')
+              .eq('id', parsed.id)
+              .maybeSingle();
+              
+            if (profile) {
+              setUser({
+                ...profile,
+                is_class_teacher: (profile as any).class_streams?.length > 0
+              });
+            } else {
+              setUser(parsed); // Fallback to parsed if DB fetch fails
+            }
           }
         }
       }
@@ -96,10 +110,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
-    // Wait until initial auth hydration is complete before syncing storage.
-    // Otherwise a hard refresh can clear stored user data before it is restored.
     if (loading) return;
-
     if (user) {
       localStorage.setItem('school_portal_user', JSON.stringify(user));
     } else {
@@ -197,7 +208,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 4. Load full profile
     const { data: profiles, error: profileError } = await supabase
       .from('profiles')
-      .select('*')
+      .select('*, class_streams:streams!streams_class_teacher_id_fkey(id)')
       .ilike('email', targetEmail)
       .limit(1);
 
@@ -205,7 +216,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
        const profile = profiles[0];
        console.log('Login Success! Profile:', profile.full_name, 'Role:', profile.role);
        rememberSchoolId(profile.school_id);
-       setUser(profile);
+       setUser({
+          ...profile,
+          is_class_teacher: (profile as any).class_streams?.length > 0
+       });
     } else {
        throw new Error('Failed to load user profile.');
     }
