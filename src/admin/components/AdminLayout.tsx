@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Building2, DollarSign, Settings, LogOut, Sun, Moon,
   ShieldCheck, Users, BarChart3, Bell, User, Shield, Settings2,
   HardDrive, Github, Globe, ChevronUp, ChevronDown, Package,
-  Search, Plus, Menu, ChevronLeft, Database, X
+  Search, Plus, Menu, ChevronLeft, Database, X, LifeBuoy, Zap
 } from 'lucide-react';
 
 interface NavItem {
@@ -24,10 +24,11 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Schools',        icon: Building2,       path: '/admin/schools',         roles: ['SUPER_ADMIN', 'SALES_ADMIN', 'OPERATIONS_ADMIN'],          depts: ['Any'] },
   { label: 'Sales',          icon: DollarSign,      path: '/admin/sales',            roles: ['SUPER_ADMIN', 'SALES_ADMIN'],                               depts: ['Sales & Clients'] },
   { label: 'Tech Ops',       icon: ShieldCheck,     path: '/admin/tech-ops',         roles: ['SUPER_ADMIN', 'TECH_ADMIN'],                                depts: ['Engineering & Tech'] },
+  { label: 'P3L Developers',  icon: Zap,             path: '/admin/p3l-developers',   roles: ['SUPER_ADMIN', 'TECH_ADMIN'],                                depts: ['Engineering & Tech'] },
   { label: 'Data Engine',    icon: Database,        path: '/admin/data-engine',      roles: ['SUPER_ADMIN', 'TECH_ADMIN'],                                depts: ['Engineering & Tech'] },
-  { label: 'Users',          icon: Users,           path: '/admin/users',            roles: ['SUPER_ADMIN', 'TECH_ADMIN', 'SALES_ADMIN'],                 depts: ['Any'] },
-  { label: 'Analytics',      icon: BarChart3,       path: '/admin/analytics',        roles: ['SUPER_ADMIN', 'SALES_ADMIN'],                               depts: ['Sales & Clients'] },
-  { label: 'Notifications',  icon: Bell,            path: '/admin/notifications',    roles: ['SUPER_ADMIN', 'OPERATIONS_ADMIN', 'TECH_ADMIN', 'SALES_ADMIN'], depts: ['Any'] },
+  { label: 'Users & Support', icon: Users,           path: '/admin/users',            roles: ['SUPER_ADMIN', 'TECH_ADMIN', 'SALES_ADMIN'],                 depts: ['Any'] },
+  // { label: 'Analytics',      icon: BarChart3,       path: '/admin/analytics',        roles: ['SUPER_ADMIN', 'SALES_ADMIN'],                               depts: ['Sales & Clients'] },
+  // { label: 'Notifications',  icon: Bell,            path: '/admin/notifications',    roles: ['SUPER_ADMIN', 'OPERATIONS_ADMIN', 'TECH_ADMIN', 'SALES_ADMIN'], depts: ['Any'] },
   { label: 'Settings',       icon: Settings,        path: '/admin/settings',         roles: ['SUPER_ADMIN', 'TECH_ADMIN'],                                depts: ['Engineering & Tech'] },
 ];
 
