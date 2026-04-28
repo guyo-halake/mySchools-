@@ -14,7 +14,8 @@ export const InfrastructureAPI = {
   async getVercelDeployments(branch?: string) {
     if (!VERCEL_TOKEN) return [];
     try {
-      const url = `https://api.vercel.com/v6/deployments?limit=30${branch ? `&branch=${branch}` : ''}${VERCEL_TEAM ? `&teamId=${VERCEL_TEAM}` : ''}`;
+      // Added &projectId=resultsystem to strictly filter deployments for this project only
+      const url = `https://api.vercel.com/v6/deployments?limit=30&projectId=resultsystem${branch ? `&branch=${branch}` : ''}${VERCEL_TEAM ? `&teamId=${VERCEL_TEAM}` : ''}`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${VERCEL_TOKEN}` }
       });
@@ -61,6 +62,24 @@ export const InfrastructureAPI = {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ deploymentId })
+      });
+      return await res.json();
+    } catch (e) {
+      return { error: e };
+    }
+  },
+
+  async rollbackDeployment(deploymentId: string, domain: string) {
+    if (!VERCEL_TOKEN) return { error: 'No token' };
+    try {
+      // Re-assign domain alias to an older deployment
+      const res = await fetch(`https://api.vercel.com/v2/deployments/${deploymentId}/aliases${VERCEL_TEAM ? `?teamId=${VERCEL_TEAM}` : ''}`, {
+        method: 'POST',
+        headers: { 
+          Authorization: `Bearer ${VERCEL_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ alias: domain })
       });
       return await res.json();
     } catch (e) {
@@ -151,6 +170,16 @@ export const InfrastructureAPI = {
       });
       const data = await res.json();
       return data.environments || [];
+    } catch (e) { return []; }
+  },
+
+  async getCommits() {
+    if (!GITHUB_TOKEN) return [];
+    try {
+      const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/commits?per_page=15`, {
+        headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json' }
+      });
+      return await res.json();
     } catch (e) { return []; }
   },
 
