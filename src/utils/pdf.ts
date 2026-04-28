@@ -60,38 +60,65 @@ export const generateResultPDF = async (student: any, studentDetails: any, schoo
   const tableHead = [['Subject', 'T1 MID', 'T1 END', 'T2 MID', 'T2 END', 'T3 MID', 'T3 END']];
   const tableBody: any[] = [];
 
-  const formsToPrint = mode === 'ALL' ? [1, 2, 3, 4] : [mode];
-  const currentFormLevel = parseInt(student.stream?.class?.level || student.stream?.class?.name?.slice(-1) || '4');
-  const latestResultYear = studentDetails.results.length > 0
-    ? Math.max(...studentDetails.results.map((r: any) => r.exam?.term?.year || 0))
-    : 2026;
+  const results = studentDetails.results || [];
+  const yearsFound = Array.from(new Set(results.map((r: any) => r.exam?.term?.year || 2026))).sort((a, b) => b - a);
 
-  formsToPrint.forEach(formNum => {
-    const targetYear = latestResultYear - (currentFormLevel - formNum);
-    const resultsForYear = studentDetails.results.filter((r: any) => {
-      const rYear = r.exam?.term?.year;
-      const rTermName = (r.exam?.term?.name || '').toUpperCase();
-      const rExamName = (r.exam?.name || '').toUpperCase();
-      return rYear === targetYear || rTermName.includes(`FORM ${formNum}`) || rExamName.includes(`FORM ${formNum}`);
-    });
+  yearsFound.forEach(year => {
+    const resultsForYear = results.filter((r: any) => r.exam?.term?.year === year);
+    if (resultsForYear.length === 0) return;
 
-    if (resultsForYear.length > 0 || (mode !== 'ALL' && formNum === mode)) {
-      tableBody.push([{ content: `FORM ${formNum} ACADEMIC TRANSCRIPT (${targetYear})`, colSpan: 7, styles: { fillColor: [240, 240, 240], fontStyle: 'bold', halign: 'center' } }]);
-
-      const subjects = studentDetails.subjects.length > 0 ? studentDetails.subjects : subjects_list.map(n => ({ subject: { name: n } }));
-      subjects.forEach((s: any) => {
-        const subjectName = s.subject?.name;
-        const row = [subjectName];
-        [1, 2, 3].forEach(termNum => {
-          const searchTerm = `TERM ${termNum}`;
-          const mid = resultsForYear.find((r: any) => r.subject?.name === subjectName && r.exam?.term?.name?.toUpperCase().includes(searchTerm) && (r.exam?.type?.includes('MID') || r.exam?.name?.toUpperCase().includes('MID')));
-          const end = resultsForYear.find((r: any) => r.subject?.name === subjectName && r.exam?.term?.name?.toUpperCase().includes(searchTerm) && (r.exam?.type?.includes('END') || r.exam?.name?.toUpperCase().includes('END')));
-          row.push(mid ? `${mid.marks}${mid.grade ? ' ' + mid.grade : ''}` : '-');
-          row.push(end ? `${end.marks}${end.grade ? ' ' + end.grade : ''}` : '-');
-        });
-        tableBody.push(row);
-      });
+    // Determine Form name more robustly
+    let formName = '4'; // Fallback
+    const firstResult = resultsForYear[0];
+    const termName = (firstResult.exam?.term?.name || '').toUpperCase();
+    const formMatch = termName.match(/FORM\s*(\d+)/i);
+    if (formMatch) {
+       formName = formMatch[1];
+    } else {
+       formName = student.stream?.class?.level || '4';
     }
+
+    tableBody.push([{ 
+       content: `ACADEMIC TRANSCRIPT - YEAR ${year} (FORM ${formName})`, 
+       colSpan: 7, 
+       styles: { fillColor: [240, 240, 240], fontStyle: 'bold', halign: 'center', textColor: [50, 50, 50] } 
+    }]);
+
+    const subjects = studentDetails.subjects?.length > 0 
+       ? studentDetails.subjects.map((s: any) => s.subject?.name || s.name).filter(Boolean)
+       : subjects_list;
+
+    subjects.forEach((subjectName: string) => {
+      const row = [subjectName];
+      [1, 2, 3].forEach(termNum => {
+        const searchTerm = `TERM ${termNum}`;
+        const mid = resultsForYear.find((r: any) => {
+           const rSubName = (r.subject?.name || '').toUpperCase();
+           const rTermName = (r.exam?.term?.name || r.term?.name || '').toUpperCase();
+           const rExamName = (r.exam?.name || '').toUpperCase();
+           const rExamType = (r.exam?.type || '').toUpperCase();
+           
+           return rSubName === subjectName.toUpperCase() && 
+                  rTermName.includes(searchTerm) && 
+                  (rExamType.includes('MID') || rExamName.includes('MID'));
+        });
+
+        const end = resultsForYear.find((r: any) => {
+           const rSubName = (r.subject?.name || '').toUpperCase();
+           const rTermName = (r.exam?.term?.name || r.term?.name || '').toUpperCase();
+           const rExamName = (r.exam?.name || '').toUpperCase();
+           const rExamType = (r.exam?.type || '').toUpperCase();
+           
+           return rSubName === subjectName.toUpperCase() && 
+                  rTermName.includes(searchTerm) && 
+                  (rExamType.includes('END') || rExamName.includes('END'));
+        });
+
+        row.push(mid ? `${mid.marks}${mid.grade ? ' ' + mid.grade : ''}` : '-');
+        row.push(end ? `${end.marks}${end.grade ? ' ' + end.grade : ''}` : '-');
+      });
+      tableBody.push(row);
+    });
   });
 
   autoTable(doc, {
