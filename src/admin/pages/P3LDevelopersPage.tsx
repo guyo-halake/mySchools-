@@ -30,7 +30,6 @@ interface AdminUser {
   full_name: string;
   email: string;
   password: string;
-  phone?: string;
   admin_role: string;
   department?: string;
   is_active: boolean;
@@ -46,7 +45,7 @@ export const P3LDevelopersPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState<Record<string, boolean>>({});
 
   // Form State
-  const [form, setForm] = useState({ full_name: '', email: '', password: '', phone: '', admin_role: 'SUPER_ADMIN', department: 'Engineering' });
+  const [form, setForm] = useState({ full_name: '', email: '', password: '', admin_role: 'SUPER_ADMIN', department: 'Engineering' });
   const [saving, setSaving] = useState(false);
 
   const loadAdmins = useCallback(async () => {
@@ -95,7 +94,7 @@ export const P3LDevelopersPage: React.FC = () => {
 
       showAlert(`${form.full_name} has been registered and notified.`, 'Admin Created');
       setShowAddModal(false);
-      setForm({ full_name: '', email: '', password: '', phone: '', admin_role: 'SUPER_ADMIN', department: 'Engineering' });
+      setForm({ full_name: '', email: '', password: '', admin_role: 'SUPER_ADMIN', department: 'Engineering' });
       loadAdmins();
     } catch (err: any) {
       showAlert(err.message, 'Database Error');
@@ -277,16 +276,6 @@ export const P3LDevelopersPage: React.FC = () => {
                            onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
                            className="w-full px-6 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-800 rounded-[1.25rem] text-sm outline-none focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-white/5 transition-all"
                            placeholder="••••••••"
-                        />
-                     </div>
-                     <div className="space-y-2">
-                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">Contact Phone</p>
-                        <input 
-                           type="text" 
-                           value={form.phone}
-                           onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
-                           className="w-full px-6 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-800 rounded-[1.25rem] text-sm outline-none focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-white/5 transition-all"
-                           placeholder="+254 7..."
                         />
                      </div>
                   </div>
