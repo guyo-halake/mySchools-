@@ -355,6 +355,8 @@ export const MyClassroom: React.FC = () => {
         .eq('school_id', user.school_id)
         .eq('stream_id', streamId)
         .in('status', ['SCHEDULED', 'UPCOMING', 'LIVE'])
+        .gte('scheduled_start_at', new Date(new Date().setHours(0,0,0,0)).toISOString())
+        .lte('scheduled_start_at', new Date(new Date().setHours(23,59,59,999)).toISOString())
         .order('scheduled_start_at', { ascending: true })
         .limit(10);
 
@@ -494,7 +496,8 @@ export const MyClassroom: React.FC = () => {
           .from('classroom_sessions')
           .select('*')
           .eq('school_id', user.school_id)
-          .in('status', ['SCHEDULED', 'LIVE']);
+          .in('status', ['SCHEDULED', 'LIVE'])
+          .gte('scheduled_start_at', new Date(new Date().setHours(0,0,0,0)).toISOString());
 
         if (user.role === 'TEACHER') {
           customQuery = customQuery.eq('teacher_id', user.id);
@@ -848,29 +851,8 @@ export const MyClassroom: React.FC = () => {
     const stableTeacherStreams = [...teacherStreams].sort((a: any, b: any) => String(a?.id || '').localeCompare(String(b?.id || '')));
     const stableTeacherSubjects = [...teacherSubjects].sort((a: any, b: any) => String(a?.id || '').localeCompare(String(b?.id || '')));
 
-    let index = 0;
-    for (const stream of stableTeacherStreams) {
-      for (const subject of stableTeacherSubjects) {
-        if (index >= 20) break; // Increased cap but don't return early
-        const day = DAYS[index % DAYS.length];
-        const [start, end] = SLOT_PAIRS[Math.floor(index / DAYS.length) % SLOT_PAIRS.length];
-
-        list.push({
-          id: `${stream.id}-${subject.id}-${index}`,
-          day,
-          start,
-          end,
-          subject: subject.name,
-          teacher: user?.full_name || 'Teacher',
-          classLabel: `${formatClassName(resolveClassForStream(stream))} ${formatStreamName(stream)}`.trim() || 'Unassigned stream',
-          streamId: stream.id,
-          subjectId: subject.id,
-          source: 'TIMETABLE'
-        });
-
-        index += 1;
-      }
-    }
+    // Mock timetable generation disabled to prevent ghost classes.
+    // Only real database sessions (customSessions) will be displayed.
 
     if (list.length === 0) {
       list.push({
@@ -3252,7 +3234,7 @@ export const MyClassroom: React.FC = () => {
   const isTeacher = user?.role === 'TEACHER' || user?.role === 'PRINCIPAL' || user?.role === 'ADMIN';
   const isStudent = user?.role === 'STUDENT' || user?.role === 'PARENT';
 
-  if (loading) return <div className="py-24 text-center text-sm font-bold text-zinc-400 animate-pulse">Synchronizing Classroom Data...</div>;
+  if (loading) return null;
 
   return (
     <div className="space-y-6 max-w-[1700px] mx-auto pb-12 transition-all duration-300">
