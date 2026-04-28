@@ -4,11 +4,23 @@ import { Card, Table, Button, Badge } from '../components/UI';
 import { Save } from 'lucide-react';
 
 export const InputResults: React.FC = () => {
-  const { students, results, updateResult, addResult } = useApp();
+  const { students: contextStudents, results, updateResult, addResult, terms } = useApp();
   const [selectedStudentId, setSelectedStudentId] = useState('');
-  const [selectedTerm, setSelectedTerm] = useState('Term 1');
-  const [selectedYear, setSelectedYear] = useState(2024);
+  const [selectedTermId, setSelectedTermId] = useState('');
   
+  // Initialize with current term
+  useEffect(() => {
+    if (terms && terms.length > 0 && !selectedTermId) {
+      const today = new Date();
+      const current = terms.find((t: any) => {
+        if (!t.start_date || !t.end_date) return false;
+        return new Date(t.start_date) <= today && new Date(t.end_date) >= today;
+      });
+      if (current) setSelectedTermId(current.id);
+      else setSelectedTermId(terms[0]?.id || '');
+    }
+  }, [terms, selectedTermId]);
+
   const subjects = [
     'Mathematics', 'English', 'Swahili', 'Geography', 'History', 
     'CRE', 'IRE', 'Physics', 'Chemistry', 'Computer', 'Business', 'Agriculture'
@@ -19,11 +31,10 @@ export const InputResults: React.FC = () => {
   );
 
   useEffect(() => {
-    if (selectedStudentId) {
+    if (selectedStudentId && selectedTermId) {
       const studentResults = results.filter(r => 
         r.studentId === selectedStudentId && 
-        r.term === selectedTerm && 
-        r.year === selectedYear
+        r.termId === selectedTermId
       );
       
       const newData = subjects.reduce((acc, sub) => {
@@ -38,10 +49,10 @@ export const InputResults: React.FC = () => {
       }, {});
       setInputData(newData);
     }
-  }, [selectedStudentId, selectedTerm, selectedYear, results]);
+  }, [selectedStudentId, selectedTermId, results]);
 
   const handleSave = () => {
-    if (!selectedStudentId) return;
+    if (!selectedStudentId || !selectedTermId) return;
 
     Object.entries(inputData).forEach(([subject, data]) => {
       const { marks: marksStr, remarks } = data as { marks: string; remarks: string };
@@ -53,8 +64,7 @@ export const InputResults: React.FC = () => {
       const existing = results.find(r => 
         r.studentId === selectedStudentId && 
         r.subject === subject && 
-        r.term === selectedTerm && 
-        r.year === selectedYear
+        r.termId === selectedTermId
       );
 
       if (existing) {
@@ -65,8 +75,7 @@ export const InputResults: React.FC = () => {
           subject,
           marks,
           grade,
-          term: selectedTerm,
-          year: selectedYear,
+          termId: selectedTermId,
           remarks
         });
       }
@@ -87,7 +96,7 @@ export const InputResults: React.FC = () => {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1">
           <label className="text-[10px] font-bold uppercase text-zinc-400">Student</label>
           <select 
@@ -96,7 +105,7 @@ export const InputResults: React.FC = () => {
             onChange={(e) => setSelectedStudentId(e.target.value)}
           >
             <option value="">Select Student</option>
-            {students.map(s => (
+            {(contextStudents || []).map(s => (
               <option key={s.id} value={s.id}>{s.name} ({s.admissionNumber})</option>
             ))}
           </select>
@@ -105,23 +114,13 @@ export const InputResults: React.FC = () => {
           <label className="text-[10px] font-bold uppercase text-zinc-400">Term</label>
           <select 
             className="w-full bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs outline-none"
-            value={selectedTerm}
-            onChange={(e) => setSelectedTerm(e.target.value)}
+            value={selectedTermId}
+            onChange={(e) => setSelectedTermId(e.target.value)}
           >
-            <option value="Term 1">Term 1</option>
-            <option value="Term 2">Term 2</option>
-            <option value="Term 3">Term 3</option>
-          </select>
-        </div>
-        <div className="space-y-1">
-          <label className="text-[10px] font-bold uppercase text-zinc-400">Year</label>
-          <select 
-            className="w-full bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs outline-none"
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-          >
-            <option value={2024}>2024</option>
-            <option value={2023}>2023</option>
+            <option value="">Select Term</option>
+            {(terms || []).map((t: any) => (
+              <option key={t.id} value={t.id}>{t.name} ({t.year})</option>
+            ))}
           </select>
         </div>
       </div>

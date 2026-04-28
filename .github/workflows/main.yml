@@ -1,0 +1,57 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main       # Production
+      - preview    # Pre-production
+      - develop    # Development
+  pull_request:
+    branches:
+      - preview
+      - develop
+
+jobs:
+  validate:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+
+  deploy-development:
+    name: Deploy to Development
+    needs: validate
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Vercel (Development)
+        run: npx vercel deploy --prebuilt --token ${{ secrets.VERCEL_TOKEN }}
+        # Can add email notification here if needed
+
+  deploy-preview:
+    name: Deploy to Preview (Pre-Production)
+    needs: validate
+    if: github.ref == 'refs/heads/preview'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Vercel (Preview)
+        run: npx vercel deploy --prebuilt --token ${{ secrets.VERCEL_TOKEN }}
+
+  deploy-production:
+    name: Deploy to Production
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Vercel (Production)
+        run: npx vercel deploy --prod --prebuilt --token ${{ secrets.VERCEL_TOKEN }}

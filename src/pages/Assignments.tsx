@@ -4,9 +4,14 @@ import { useApp } from '../context/AppContext';
 import { Card, Table, Badge, Button } from '../components/UI';
 import { BookOpen, Calendar, MessageSquare, Plus } from 'lucide-react';
 import { formatDate } from '../utils/utils';
+import { ParentStudentAssignments } from './ParentStudentAssignments';
 
 export const Assignments: React.FC = () => {
   const { user } = useAuth();
+
+  if (user?.role === 'PARENT' || user?.role === 'STUDENT') {
+    return <ParentStudentAssignments />;
+  }
   
   const assignments = [
     { id: 'as1', title: 'Calculus Worksheet', subject: 'Mathematics', dueDate: '2024-03-28', status: 'PENDING' },
