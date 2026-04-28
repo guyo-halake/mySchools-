@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { Button, Badge, Modal } from '../components/UI';
 import { StudentFullDetailsView } from '../components/StudentFullDetailsView';
-import { Eye, Pencil, PencilLine, Upload, Maximize2, Minimize2, Download, Save, Pause, ArrowUpRight, X, ChevronRight, RefreshCw, Search } from 'lucide-react';
+import { Eye, Pencil, PencilLine, Upload, Maximize2, Minimize2, Download, Save, Pause, ArrowUpRight, X, ChevronRight, RefreshCw, Search, ShieldAlert } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -93,7 +93,6 @@ export const ResultsManagement: React.FC = () => {
   const [subjectGroupId, setSubjectGroupId] = useState('ALL');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'UNRECORDED' | WorkflowStatus>('ALL');
-
   const [selection, setSelection] = useState({
     streamId: '',
     subjectId: 'ALL',
@@ -334,18 +333,14 @@ export const ResultsManagement: React.FC = () => {
           .filter((r: any) => {
             if (workflowMode === 'CLASS_INBOX') return true;
             if (!selection.examName) return true;
-            const match = r.exam_name?.trim().toLowerCase() === selection.examName.trim().toLowerCase();
-            if (!match) console.log(`⏩ [DEBUG] Filtering OUT record for exam "${r.exam_name}" (Target: "${selection.examName}")`);
-            return match;
+            const normalize = (s: string) => s.trim().toLowerCase().replace(/-/g, ' ');
+            return normalize(r.exam_name || '') === normalize(selection.examName);
           })
           .filter((r: any) => {
             if (workflowMode === 'CLASS_INBOX') return r.class_teacher_id === user?.id;
-            const match = r.submitted_by === user?.id;
-            if (!match) console.log(`⏩ [DEBUG] Filtering OUT record (Submitted by ${r.submitted_by} != Current User ${user?.id})`);
-            return match;
+            return r.submitted_by === user?.id;
           });
 
-        console.log(`✅ [DEBUG] FILTERED WORKFLOW DATA: ${normalizedQueue.length} rows remain after UI filtering.`);
         setWorkflowRows(normalizedQueue);
         setWorkflowUnavailable(false);
       } catch (workflowErr: any) {
@@ -799,6 +794,42 @@ export const ResultsManagement: React.FC = () => {
     return selection.examName;
   };
 
+  console.log('[ACCESS CHECK] Role:', user?.role, 'Restricted:', user?.role !== 'TEACHER');
+
+  if (user && user.role !== 'TEACHER') {
+    return (
+      <div className="fixed inset-0 z-[100] bg-white/80 backdrop-blur-xl flex items-center justify-center p-6">
+        <div className="w-full max-w-md bg-white border border-zinc-100 shadow-2xl rounded-[2.5rem] p-10 space-y-8 animate-in zoom-in-95 duration-300">
+           <div className="w-16 h-16 rounded-3xl bg-zinc-950 flex items-center justify-center text-white mx-auto shadow-xl">
+              <ShieldAlert size={32} />
+           </div>
+           
+           <div className="text-center space-y-3">
+              <h2 className="text-xl font-black text-zinc-950 tracking-tight">Access Restricted</h2>
+              <p className="text-zinc-500 text-sm font-medium leading-relaxed">
+                Sorry, you can't access this page unless you are a teacher. Please ensure your logged in and your role is set to teacher.
+              </p>
+           </div>
+
+           <div className="grid grid-cols-2 gap-3">
+              <button 
+                onClick={() => window.history.back()}
+                className="px-6 py-4 rounded-2xl bg-zinc-50 text-zinc-600 text-xs font-bold uppercase tracking-widest hover:bg-zinc-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => window.location.href = '/principal-oversight'}
+                className="px-6 py-4 rounded-2xl bg-zinc-950 text-white text-xs font-bold uppercase tracking-widest hover:bg-zinc-800 transition-colors shadow-lg shadow-zinc-200"
+              >
+                I am a Principal
+              </button>
+           </div>
+        </div>
+      </div>
+    );
+  }
+
   if (fullViewStudent) {
     return (
       <StudentFullDetailsView
@@ -1188,7 +1219,16 @@ export const ResultsManagement: React.FC = () => {
           {isClassTeacher && (
             <Button
               variant={workflowMode === 'CLASS_INBOX' ? 'primary' : 'outline'}
-              onClick={() => setWorkflowMode('CLASS_INBOX')}
+              onClick={() => {
+                setWorkflowMode('CLASS_INBOX');
+                setStatusFilter('ALL');
+                // Auto-select the teacher's own stream if available
+                const myStream = streams.find(s => s.class_teacher_id === user?.id);
+                if (myStream) {
+                   setFormClassId(myStream.class_id);
+                   setSelection(prev => ({ ...prev, streamId: myStream.id }));
+                }
+              }}
               className="text-xs"
             >
               Class Inbox
