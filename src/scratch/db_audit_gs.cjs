@@ -1,0 +1,17 @@
+const { Client } = require('pg');
+const connectionString = 'postgresql://postgres.vomsaqkhtturzqfuwxsn:Guyesa_10333@aws-0-eu-west-1.pooler.supabase.com:5432/postgres';
+
+async function audit() {
+  const client = new Client({ connectionString });
+  await client.connect();
+
+  try {
+    const r = await client.query("SELECT * FROM grading_systems WHERE school_id = 'f01e2ad5-9dbe-4df8-bb23-0d9e56f113f5' ORDER BY max_mark DESC");
+    console.log('Grading Systems Data:');
+    console.table(r.rows);
+  } finally {
+    await client.end();
+  }
+}
+
+audit();
