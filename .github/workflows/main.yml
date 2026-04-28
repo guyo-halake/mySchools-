@@ -3,12 +3,13 @@ name: CI/CD Pipeline
 on:
   push:
     branches:
-      - main
-      - preview
+      - main       # Production
+      - preview    # Pre-production
+      - develop    # Development
   pull_request:
     branches:
-      - main
       - preview
+      - develop
 
 jobs:
   validate:
@@ -24,10 +25,21 @@ jobs:
       - run: npm run lint
       - run: npx tsc --noEmit
 
-  deploy-preview:
-    name: Deploy to Preview
+  deploy-development:
+    name: Deploy to Development
     needs: validate
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/preview'
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Vercel (Development)
+        run: npx vercel deploy --prebuilt --token ${{ secrets.VERCEL_TOKEN }}
+        # Can add email notification here if needed
+
+  deploy-preview:
+    name: Deploy to Preview (Pre-Production)
+    needs: validate
+    if: github.ref == 'refs/heads/preview'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
