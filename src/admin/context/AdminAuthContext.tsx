@@ -60,8 +60,15 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       .ilike('email', clean)
       .maybeSingle();
 
-    if (error) throw new Error('Database error. Check connection.');
-    if (!data) throw new Error('No admin account found for this email.');
+    if (error) {
+      console.error('Admin Auth Error:', error);
+      throw new Error('Database connection issue. Please refresh.');
+    }
+    
+    if (!data) {
+      console.warn('Admin Login Failed: No record for', clean);
+      throw new Error(`The admin account "${clean}" was not found.`);
+    }
     if (data.password !== password) throw new Error('Incorrect password.');
     if (!data.is_active) throw new Error('This admin account has been disabled.');
 
