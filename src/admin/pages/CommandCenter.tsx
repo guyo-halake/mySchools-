@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/adminSupabase';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { useAdminAlert } from '../context/AdminAlertContext';
@@ -218,6 +219,7 @@ const AddSchoolModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 export const CommandCenter: React.FC = () => {
   const { adminUser, isDarkMode } = useAdminAuth();
   const { showAlert } = useAdminAlert();
+  const navigate = useNavigate();
 
   const [stats, setStats] = useState({ 
     schoolsTotal: 0, 
@@ -374,7 +376,7 @@ export const CommandCenter: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
              <button className="flex items-center gap-2 px-6 py-2.5 bg-black/5 dark:bg-white/5 border border-black/5 rounded-xl text-xs font-bold lowercase"><Ticket size={14} /> tickets</button>
-             <button className="flex items-center gap-2 px-6 py-2.5 bg-black/5 dark:bg-white/5 border border-black/5 rounded-xl text-xs font-bold lowercase"><UserPlus size={14} /> onboard</button>
+             <button onClick={() => navigate('/admin/data-engine')} className="flex items-center gap-2 px-6 py-2.5 bg-black/5 dark:bg-white/5 border border-black/5 rounded-xl text-xs font-bold lowercase"><UserPlus size={14} /> onboard school</button>
              <button onClick={() => setAddModalOpen(true)} className="flex items-center gap-2 px-6 py-3 text-black text-xs font-bold rounded-xl shadow-lg lowercase active:scale-95" style={{ backgroundColor: colors.accent }}><Plus size={14} /> add</button>
           </div>
         </header>
