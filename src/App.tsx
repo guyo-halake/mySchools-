@@ -1,5 +1,6 @@
 import React from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppProvider } from './context/AppContext';
 import { ToastProvider } from './components/Toast';
@@ -102,6 +103,7 @@ export default function App() {
           <ToastProvider>
              <GlobalNotificationManager />
              <AppContent />
+             <SpeedInsights />
           </ToastProvider>
         </AppProvider>
       </AdminAuthProvider>
