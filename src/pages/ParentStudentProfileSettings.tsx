@@ -22,7 +22,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
-import { Button } from '../components/UI';
+import { Button, Badge } from '../components/UI';
 import { cn } from '../utils/utils';
 
 export const ParentStudentProfileSettings: React.FC = () => {
@@ -193,8 +193,8 @@ export const ParentStudentProfileSettings: React.FC = () => {
                 onClick={() => setNotifs({...notifs, finance: !notifs.finance})} 
               />
               <ToggleRow 
-                label="Disciplinary Alert" 
-                desc="Urgent notification for any disciplinary incident." 
+                label="Digital Diary & Behavior" 
+                desc="Urgent notification for any behavioral incident or positive reinforcement." 
                 active={notifs.discipline} 
                 onClick={() => setNotifs({...notifs, discipline: !notifs.discipline})} 
               />

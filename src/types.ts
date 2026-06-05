@@ -1,8 +1,26 @@
-export type Role = 'ADMIN' | 'PRINCIPAL' | 'TEACHER' | 'PARENT' | 'STUDENT' | 'STAFF';
-export type ExamType = 'MID_TERM' | 'END_TERM';
+export type Role = 'ADMIN' | 'PRINCIPAL' | 'TEACHER' | 'PARENT' | 'STUDENT' | 'STAFF' | 'BURSAR';
+export type ExamType = 'MID_TERM' | 'END_TERM' | 'FORMATIVE' | 'SUMMATIVE';
 export type FeeStatus = 'PAID' | 'PARTIAL' | 'UNPAID';
 export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE';
 export type DisciplineStatus = 'ACTIVE' | 'RESOLVED' | 'ACKNOWLEDGED';
+
+// CBC Specific Types
+export type CBC4BandRating = 'EE' | 'ME' | 'AE' | 'BE';
+export type CBC8LevelRating = 'EE1' | 'EE2' | 'ME1' | 'ME2' | 'AE1' | 'AE2' | 'BE1' | 'BE2';
+
+export interface CBCStudentAssessment {
+  id: string;
+  school_id: string;
+  student_id: string;
+  exam_id: string;
+  subject_id: string;
+  strand: string;
+  sub_strand: string;
+  rating: string;
+  raw_score?: number;
+  teacher_comment?: string;
+  grade_level_at_time: number;
+}
 
 export interface School {
   id: string;
@@ -140,4 +158,50 @@ export interface SchoolEvent {
   date: string;
   location?: string;
   rsvps: string[];
+}
+
+export interface ClassroomSession {
+  id: string;
+  school_id: string;
+  teacher_id?: string;
+  stream_id?: string;
+  subject_id?: string;
+  title: string;
+  class_label?: string;
+  day_name?: string;
+  start_time?: string;
+  end_time?: string;
+  status: string;
+  room_url?: string;
+  template_started_at?: string;
+  auto_close_at?: string;
+  closed_at?: string;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ELibraryResource {
+  id: string;
+  school_id: string;
+  title: string;
+  resource_type: string;
+  url?: string;
+  subject_id?: string;
+  tags?: string[];
+  color_theme?: string;
+  icon_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MattaAcademyCourse {
+  id: string;
+  title: string;
+  description?: string;
+  progress: number;
+  students_enrolled?: string;
+  syllabus_json?: any;
+  created_at: string;
+  updated_at: string;
 }

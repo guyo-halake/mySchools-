@@ -19,6 +19,7 @@ interface AppContextType {
   parents: Profile[];
   schoolInfo: any;
   loading: boolean;
+  terms?: any[];
   
   refreshData: () => Promise<void>;
   addResult: (result: Omit<ExamResult, 'id'>) => Promise<void>;

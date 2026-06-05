@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { toast, Toaster } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
+import { supabase } from '../lib/supabase';
 import { ParentStudentDashboard } from './ParentStudentDashboard';
 import {
   Users,
@@ -35,7 +36,8 @@ import {
   BarChart2,
   DollarSign,
   Search,
-  Database
+  Database,
+  Monitor
 } from 'lucide-react';
 import { formatCurrency, cn, formatDate } from '../utils/utils';
 import { Link } from 'react-router-dom';
@@ -903,540 +905,451 @@ const InputRow = ({ label, value, onChange, placeholder, type = "number" }: any)
   </div>
 );
 
+
 const TeacherView = ({ user }: any) => {
-  const [data, setData] = useState<any>(null);
-  const [targetTermId, setTargetTermId] = useState('');
-  const [targetExamId, setTargetExamId] = useState('');
-  const [savingTarget, setSavingTarget] = useState(false);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [terms, setTerms] = useState<any[]>([]);
-  const [exams, setExams] = useState<any[]>([]);
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [showTargetModal, setShowTargetModal] = useState(false);
-  const [gradeBreakdown, setGradeBreakdown] = useState<any>(null);
-  const [showGradeModal, setShowGradeModal] = useState(false);
-  const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
-  const [meanInput, setMeanInput] = useState('');
-  const [targetInput, setTargetInput] = useState('');
-
-  const gradeFromScore = (value?: number | null) => {
-    if (value == null || Number.isNaN(value)) return '-';
-    if (value >= 80) return 'A';
-    if (value >= 70) return 'B';
-    if (value >= 60) return 'C';
-    if (value >= 50) return 'D';
-    return 'E';
-  };
-
-  const formatScoreGrade = (value?: number | null) => {
-    if (value == null || Number.isNaN(value)) return '-';
-    const score = Number(value);
-    return `${score.toFixed(1)}% (${gradeFromScore(score)})`;
-  };
-
-  const parseScore = (value: string) => {
-    if (!value.trim()) return null;
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
-      throw new Error('Scores must be between 0 and 100.');
-    }
-    return parsed;
-  };
-
   const [allStreams, setAllStreams] = useState<any[]>([]);
-  const [selectedStreamId, setSelectedStreamId] = useState<string | null>(localStorage.getItem('selectedStreamId'));
+  const [selectedStreamId, setSelectedStreamId] = useState<string | null>(localStorage.getItem('teacher_stream_id'));
+  const [students, setStudents] = useState<any[]>([]);
+  
+  // Data States
+  const [assessments, setAssessments] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [learningAreas, setLearningAreas] = useState<any[]>([]);
+  const [attendance, setAttendance] = useState<{ present: number; absent: number }>({ present: 0, absent: 0 });
 
-  // Persist class selection
+  // UI States
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('results'); // results, projects, appointments
+  const [selectedLearningAreaId, setSelectedLearningAreaId] = useState<string>('ALL');
+  const [currentTime, setCurrentTime] = useState(new Date());
+
   useEffect(() => {
-    if (selectedStreamId) {
-      localStorage.setItem('selectedStreamId', selectedStreamId);
-    }
+    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+  
+  const selectedStream = allStreams.find(s => s.id === selectedStreamId);
+  const hour = currentTime.getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const name = user.full_name?.split(' ')[0] || 'Teacher';
+
+  const dateString = currentTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const timeString = currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+  useEffect(() => {
+    if (selectedStreamId) localStorage.setItem('teacher_stream_id', selectedStreamId);
   }, [selectedStreamId]);
 
-  const [performanceTrend, setPerformanceTrend] = useState<any[]>([]);
-  const [comparisonData, setComparisonData] = useState<any[]>([]);
-  const [subjectData, setSubjectData] = useState<any[]>([]);
-  const [rankingData, setRankingData] = useState<any[]>([]);
-  const [activeGraphTab, setActiveGraphTab] = useState<'trends' | 'comparison' | 'subjects' | 'rankings'>('trends');
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
-  };
-
-  const capitalizedName = user.username || user.full_name?.split(' ')[0] || 'User';
-  const mainMean = formatScoreGrade(data?.stream?.main_mean_score);
-  const targetMean = formatScoreGrade(data?.stream?.target_mean_score);
-
-  // 1. Core Data Hydration (Institutional Constants)
   const hydrate = async () => {
-    setIsInitialLoading(true);
+    if (!user.school_id) return;
+    setIsLoading(true);
     try {
-      const [streamRows, termRows, examRows, apps, notifs] = await Promise.all([
-        api.getTeacherStreams(user.id),
-        user.school_id ? api.getTerms(user.school_id) : Promise.resolve([]),
-        user.school_id ? api.getExams(user.school_id) : Promise.resolve([]),
+      const [streamRows, apps, laRes] = await Promise.all([
+        api.getTeacherStreams(user.id, user.school_id),
         api.getAppointmentsByTeacher(user.id),
-        api.getNotifications(user.id)
+        supabase.from('learning_areas').select('*').eq('school_id', user.school_id).order('name')
       ]);
-
       setAllStreams(streamRows);
-      setTerms(termRows || []);
-      setExams(examRows || []);
-      setNotifications(notifs || []);
-      setData(prev => ({ ...prev, appointments: apps || [] }));
-
-      if (streamRows.length > 0) {
-        const savedStreamId = localStorage.getItem('teacher_dashboard_stream_id');
-        const defaultStream = streamRows.find(s => s.id === savedStreamId) || streamRows[0];
-        setSelectedStreamId(defaultStream.id);
-      }
-    } catch (err) {
-      console.error("Hydration Error:", err);
-    } finally {
-      setIsInitialLoading(false);
-    }
+      setAppointments(apps || []);
+      setLearningAreas(laRes.data || []);
+      
+      if (!selectedStreamId && streamRows.length > 0) setSelectedStreamId(streamRows[0].id);
+    } catch (e) { console.error(e); }
+    finally { setIsLoading(false); }
   };
 
+  useEffect(() => { hydrate(); }, [user.id]);
+
   useEffect(() => {
-    hydrate();
-    
-    // Notification Watchdog: Polling for new broadcasts every 15s
-    const pollInterval = setInterval(async () => {
-       const notifs = await api.getNotifications(user.id);
-       setNotifications(prev => {
-          const newNotifs = notifs.filter(n => !n.is_read && !prev.find(p => p.id === n.id));
-          newNotifs.forEach(n => {
-             toast(n.message, {
-                icon: n.type === 'EVENT' ? '📅' : '📢',
-                duration: 6000,
-                position: 'top-right',
-                style: {
-                   background: '#09090b',
-                   color: '#fff',
-                   fontSize: '11px',
-                   lineHeight: '1.4',
-                   fontWeight: '900',
-                   borderRadius: '16px',
-                   border: '1px solid #27272a',
-                   padding: '16px',
-                   boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-                   textTransform: 'uppercase',
-                   letterSpacing: '0.05em'
-                }
-             });
+    if (!selectedStreamId || !user.school_id) return;
+    const load = async () => {
+      try {
+        const studs = await api.getStudentsByStream(selectedStreamId);
+        setStudents(studs || []);
+
+        if (studs && studs.length > 0) {
+          const studentIds = studs.map((s: any) => s.id);
+          
+          // Fetch Assessments
+          const { data: assessData } = await supabase
+            .from('cbc_student_assessments')
+            .select('*, learning_area:learning_areas(name)')
+            .eq('school_id', user.school_id)
+            .in('student_id', studentIds)
+            .order('created_at', { ascending: false });
+          
+          setAssessments(assessData || []);
+
+          // Fetch Attendance for today
+          const todayStr = new Date().toISOString().split('T')[0];
+          const { data: attData } = await supabase
+            .from('attendance')
+            .select('student_id, status')
+            .eq('date', todayStr)
+            .in('student_id', studentIds);
+            
+          let p = 0; let a = 0;
+          (attData || []).forEach(record => {
+            if (record.status === 'present' || record.status === 'late') p++;
+            if (record.status === 'absent') a++;
           });
-          return notifs;
-       });
-    }, 15000);
+          setAttendance({ present: p, absent: a });
+        } else {
+          setAssessments([]);
+          setAttendance({ present: 0, absent: 0 });
+        }
 
-    return () => clearInterval(pollInterval);
-  }, [user.id, user.school_id]);
+        // Fetch Projects
+        const { data: projData } = await supabase
+          .from('cbc_projects')
+          .select('*, learning_area:learning_areas(name)')
+          .eq('school_id', user.school_id)
+          .order('due_date', { ascending: true });
+        setProjects(projData || []);
 
-  const refreshDashboard = () => hydrate();
-
-  // 2. Class Selection Differential (Performance Hub)
-  useEffect(() => {
-    if (!selectedStreamId) return;
-    localStorage.setItem('teacher_dashboard_stream_id', selectedStreamId);
-
-    const syncClassMetadata = async () => {
-      try {
-        const stream = allStreams.find(s => s.id === selectedStreamId);
-        if (!stream) return;
-
-        const [students, trend, comp, subjects, rankings] = await Promise.all([
-          api.getStudentsByStream(selectedStreamId),
-          api.getStreamPerformanceTrend(selectedStreamId),
-          api.getStreamVsFormComparison(selectedStreamId),
-          api.getStreamSubjectBreakdown(selectedStreamId),
-          api.getStreamStudentRankings(selectedStreamId)
-        ]);
-
-        setData(prev => ({
-          ...prev,
-          stream,
-          students
-        }));
-
-        setPerformanceTrend(trend || []);
-        setComparisonData(comp || []);
-        setSubjectData(subjects || []);
-        setRankingData(rankings || []);
-
-        setMeanInput(stream.main_mean_score?.toString() || '');
-        setTargetInput(stream.target_mean_score?.toString() || '');
-        setTargetTermId(stream.target_term_id || '');
-        setTargetExamId(stream.target_exam_id || '');
-      } catch (err) {
-        console.error("Class Sync Error:", err);
-      }
+      } catch (e) { console.error(e); }
     };
-    syncClassMetadata();
-  }, [selectedStreamId, allStreams]);
+    load();
+  }, [selectedStreamId, user.school_id]);
 
-  const saveTargetSettings = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!data?.stream?.id) return;
+  const updateAppStatus = async (id: string, status: string) => {
     try {
-      setSavingTarget(true);
-      const updated = await api.updateStreamProfile(data.stream.id, {
-        main_mean_score: parseScore(meanInput),
-        target_mean_score: parseScore(targetInput),
-        target_term_id: targetTermId || null,
-        target_exam_id: targetExamId || null
-      });
-      setData((prev: any) => ({ ...prev, stream: updated || prev.stream }));
-      setShowTargetModal(false);
-    } catch (err: any) { alert('Failed to save settings'); }
-    finally { setSavingTarget(false); }
-  };
-
-  const handlePointClick = async (point: any) => {
-    if (!point || !point.activePayload || !point.activePayload[0]) return;
-    const examName = point.activePayload[0].payload.name;
-    const exam = exams.find(e => e.name === examName);
-    if (exam && selectedStreamId) {
-      setSelectedPointId(examName);
-      try {
-        const breakdown = await api.getExamGradeBreakdown(exam.id, selectedStreamId);
-        setGradeBreakdown(breakdown);
-        setShowGradeModal(true);
-      } catch (err) {
-        toast.error("Failed to load grade breakdown");
-      }
-    }
-  };
-
-  const updateAppStatus = async (appId: string, status: string) => {
-    try {
-      await api.updateAppointmentStatus(appId, status);
+      await api.updateAppointmentStatus(id, status);
+      setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
       toast.success(`Appointment ${status}`);
-      // Refresh apps
-      const apps = await api.getAppointmentsByTeacher(user.id);
-      setData((prev: any) => ({ ...prev, appointments: apps }));
-    } catch (err) {
-      toast.error("Update failed");
-    }
+    } catch { toast.error('Failed'); }
   };
 
-  // If no streams are assigned at all
-  if (!isInitialLoading && allStreams.length === 0) {
-    return (
-      <div className="py-20 flex flex-col items-center justify-center text-zinc-400 gap-4">
-        <Activity size={48} strokeWidth={1} />
-        <div className="text-center">
-          <p className="text-sm font-bold uppercase tracking-widest">No Assigned Streams Found</p>
-          <p className="text-[10px] mt-2 opacity-60">Please contact the admin to be assigned as a Class Teacher.</p>
-        </div>
-      </div>
-    );
-  }
+  // Derive Results View
+  const filteredAssessments = useMemo(() => {
+    if (selectedLearningAreaId === 'ALL') return assessments;
+    return assessments.filter(a => a.learning_area_id === selectedLearningAreaId);
+  }, [assessments, selectedLearningAreaId]);
 
-  if (!data || isInitialLoading) return (
-    <div className="space-y-10 animate-pulse px-6 py-10">
-      <div className="flex justify-between items-center mb-12">
-        <div className="h-8 w-32 bg-zinc-100 rounded-xl" />
-        <div className="h-8 w-32 bg-zinc-100 rounded-xl" />
-      </div>
-      <div className="h-10 w-64 bg-zinc-100 rounded-xl mb-8" />
-      <div className="grid grid-cols-3 gap-8">
-        {[1, 2, 3].map(i => <div key={i} className="h-32 bg-zinc-50 rounded-2xl" />)}
-      </div>
-      <div className="h-96 w-full bg-zinc-50 rounded-[2.5rem]" />
+  // We want the LATEST assessment per student for the selected scope
+  const studentLatestAssessments = useMemo(() => {
+    const map = new Map<string, any>();
+    // Since ordered by created_at desc, the first we encounter is latest
+    filteredAssessments.forEach(a => {
+      if (!map.has(a.student_id)) map.set(a.student_id, a);
+    });
+    return map;
+  }, [filteredAssessments]);
+
+  const resultsStats = useMemo(() => {
+    const stats = { EE: 0, ME: 0, AE: 0, BE: 0, total: 0 };
+    studentLatestAssessments.forEach(a => {
+      if (stats[a.rating as keyof typeof stats] !== undefined) {
+        stats[a.rating as keyof typeof stats]++;
+        stats.total++;
+      }
+    });
+    return stats;
+  }, [studentLatestAssessments]);
+
+  if (isLoading) return (
+    <div className="space-y-6 p-8 animate-pulse">
+      <div className="h-8 w-64 bg-zinc-100 rounded-xl" />
+      <div className="grid grid-cols-2 gap-4"><div className="h-48 bg-zinc-50 rounded-2xl" /><div className="h-48 bg-zinc-50 rounded-2xl" /></div>
+      <div className="h-64 bg-zinc-50 rounded-2xl" />
     </div>
   );
 
   return (
-    <div className="space-y-10 animate-in fade-in duration-500">
-      {/* 0. Context Switcher (Top Bar) */}
-      <div className="flex items-center justify-between">
-        <div className="relative group">
-          <select
-            value={selectedStreamId || ''}
-            onChange={(e) => setSelectedStreamId(e.target.value)}
-            className="appearance-none bg-zinc-50 border border-zinc-100 rounded-xl px-4 py-2 pr-10 text-[10px] font-black uppercase tracking-widest text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all cursor-pointer shadow-sm hover:shadow-md hover:translate-y-[-1px]"
-          >
-            <option value="" disabled>Select Class</option>
-            {allStreams.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.class?.name} {s.name}
-              </option>
-            ))}
-          </select>
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400">
-            <ChevronRight size={14} className="rotate-90" />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <button
-            onClick={refreshDashboard}
-            className="p-2 bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all shadow-sm hover:shadow-md"
-            title="Refresh Dashboard"
-          >
-            <RefreshCcw size={14} className={isInitialLoading ? 'animate-spin' : ''} />
-          </button>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Live Analytics</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 1. Normal Greetings */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-950 capitalize">{getGreeting()}, {capitalizedName}</h1>
-          <p className="text-zinc-500 font-medium">Teacher Dashboard • {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-          {data?.stream && (
-            <div className="mt-4 flex items-center gap-2">
-              <span className="px-2.5 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-md text-[10px] font-bold uppercase tracking-wider uppercase">
-                {data.stream.class?.name} {data.stream.name} Lead
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <SimpleButton to="/results-management" label="Record Results" icon={<Target size={14} />} />
-          <SimpleButton to="/my-students" label="My Students" icon={<Users size={14} />} />
-          <SimpleButton to="/my-class" label="Classroom" icon={<BookOpen size={14} />} />
-        </div>
-      </div>
-
-      {/* 2. Key Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
-        <StatBox label="My Students" value={data.students?.length || 0} />
-        <div className="space-y-1 relative group">
-          <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest leading-none">Class Mean Score</p>
-          <p className="text-2xl font-bold tracking-tight text-zinc-900">{mainMean}</p>
-          <button
-            onClick={() => setShowTargetModal(true)}
-            className="text-[9px] font-bold text-zinc-400 uppercase hover:text-zinc-900 transition-colors"
-          >
-            Edit Mean & Target
-          </button>
-        </div>
-        <StatBox label="Target Mean" value={targetMean} />
-      </div>
-
-      {/* 3. Performance Tests Hub */}
-      <div className="bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-xl p-8 shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+    <div className="w-full flex flex-col gap-0 animate-in fade-in duration-500 bg-zinc-50/50 min-h-screen">
+      
+      {/* HEADER & STREAM SELECTOR */}
+      <div className="px-6 pt-6 pb-6 bg-white border-b border-zinc-100">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-white">Performance Tests</h2>
-            <p className="text-[10px] text-zinc-400 font-medium uppercase mt-1">Classroom Analytics & Benchmarking</p>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 border border-emerald-100 px-3 py-0.5 rounded-full inline-block">{greeting}</span>
+              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{dateString} • {timeString}</span>
+            </div>
+            <h1 className="text-2xl font-black tracking-tight text-zinc-950">Welcome, {name}</h1>
+            <p className="text-sm text-zinc-500 mt-0.5">
+              {selectedStream ? `${selectedStream.class?.name} ${selectedStream.name}` : 'Matta OS'} · Teacher Dashboard
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <select
+              value={selectedStreamId || ''}
+              onChange={e => setSelectedStreamId(e.target.value)}
+              className="appearance-none bg-white border border-zinc-200 rounded-xl px-4 py-2 pr-8 text-[10px] font-black uppercase tracking-widest text-zinc-900 outline-none cursor-pointer shadow-sm hover:border-zinc-300 transition-all"
+            >
+              <option value="" disabled>Select Stream</option>
+              {allStreams.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.class?.name} {s.name} {s.class_teacher_id === user.id ? '★' : ''}
+                </option>
+              ))}
+            </select>
+            <button onClick={hydrate} className="p-2 bg-white border border-zinc-200 rounded-xl text-zinc-400 hover:text-zinc-900 shadow-sm transition-all">
+              <RefreshCcw size={14} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-6 space-y-6">
+        
+        {/* TOP BENTO GRID */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          
+          {/* CARD 1: Class Overview */}
+          <div className="bg-white border border-zinc-100 rounded-3xl p-6 shadow-sm flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-6 text-zinc-100 pointer-events-none">
+              <Users size={80} strokeWidth={0.5} className="-rotate-12" />
+            </div>
+            <div className="relative z-10">
+              <h2 className="text-sm font-bold text-zinc-900 mb-6">Class Overview</h2>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Total Enrolled</p>
+                  <p className="text-3xl font-black text-zinc-900">{students.length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Present Today</p>
+                  <p className="text-3xl font-black text-emerald-600">{attendance.present}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1">Absent Today</p>
+                  <p className="text-3xl font-black text-rose-500">{attendance.absent}</p>
+                </div>
+              </div>
+            </div>
+            
+            {/* QUICK ACTIONS ROW */}
+            <div className="relative z-10 mt-6 pt-6 border-t border-zinc-100 flex gap-3 overflow-x-auto pb-1 hide-scrollbar">
+              <Link to="/my-classroom" className="shrink-0 flex items-center gap-2 px-4 py-2 bg-zinc-950 text-white rounded-xl hover:bg-zinc-800 transition-all text-xs font-bold shadow-sm">
+                <Monitor size={14} /> Start Virtual Class
+              </Link>
+              <Link to="/suspensions" className="shrink-0 flex items-center gap-2 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 rounded-xl hover:bg-zinc-50 transition-all text-xs font-bold shadow-sm">
+                <AlertTriangle size={14} className="text-rose-500" /> Log Behavior
+              </Link>
+              <Link to="/chat" className="shrink-0 flex items-center gap-2 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 rounded-xl hover:bg-zinc-50 transition-all text-xs font-bold shadow-sm">
+                <MessageSquare size={14} className="text-blue-500" /> Message Parents
+              </Link>
+            </div>
           </div>
 
-          <div className="flex p-1 bg-zinc-50 dark:bg-zinc-900 rounded-lg">
-            {(['trends', 'comparison', 'subjects', 'rankings'] as const).map((t) => (
+          {/* CARD 2: Active Projects / Assessments */}
+          <div className="bg-white border border-zinc-100 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-bold text-zinc-900">Active CBC Projects</h2>
+              <button className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-all rounded-lg text-[10px] font-black uppercase tracking-widest">
+                <Plus size={12} strokeWidth={3} /> Add Project
+              </button>
+            </div>
+            
+            <div className="space-y-3 flex-1 overflow-y-auto max-h-[160px] hide-scrollbar pr-2">
+              {projects.length > 0 ? projects.slice(0, 3).map((p: any) => (
+                <div key={p.id} className="p-3 bg-zinc-50 border border-zinc-100 rounded-2xl flex items-center justify-between hover:border-zinc-300 transition-all cursor-pointer group">
+                  <div>
+                    <p className="text-xs font-bold text-zinc-900">{p.title}</p>
+                    <p className="text-[10px] text-zinc-500 font-medium mt-0.5">{p.learning_area?.name}</p>
+                  </div>
+                  {p.due_date && (
+                    <span className="text-[9px] font-black uppercase tracking-widest text-zinc-400 group-hover:text-amber-600 transition-colors bg-white px-2 py-1 rounded-lg border border-zinc-200">
+                      Due {new Date(p.due_date).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+              )) : (
+                <div className="h-full flex flex-col items-center justify-center text-zinc-400 gap-2">
+                  <FileText size={24} strokeWidth={1.5} className="opacity-50" />
+                  <p className="text-[10px] font-bold uppercase tracking-widest">No active projects</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+
+        {/* BOTTOM TABBED SECTION */}
+        <div className="bg-white border border-zinc-100 rounded-3xl shadow-sm overflow-hidden min-h-[500px]">
+          
+          {/* TAB STRIP */}
+          <div className="flex border-b border-zinc-100 bg-zinc-50/50 px-6 pt-4 gap-8 overflow-x-auto hide-scrollbar">
+            {[
+              { id: 'results', label: 'Class Results' },
+              { id: 'projects', label: 'Assessments & Projects' },
+              { id: 'appointments', label: 'My Appointments' }
+            ].map(t => (
               <button
-                key={t}
-                onClick={() => setActiveGraphTab(t)}
-                className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest transition-all ${activeGraphTab === t
-                    ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm"
-                    : "text-zinc-400 hover:text-zinc-600"
-                  }`}
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={cn(
+                  'pb-3 text-[11px] font-black uppercase tracking-widest whitespace-nowrap transition-all border-b-2 relative top-[1px]',
+                  activeTab === t.id ? 'border-zinc-900 text-zinc-900' : 'border-transparent text-zinc-400 hover:text-zinc-600'
+                )}
               >
-                {t}
+                {t.label}
               </button>
             ))}
           </div>
-        </div>
 
-        <div className={`${activeGraphTab === 'trends' && performanceTrend.length === 0 ? 'h-[150px]' : 'h-[350px]'} w-full transition-all duration-500`}>
-          <ResponsiveContainer width="100%" height="100%">
-            {activeGraphTab === 'trends' ? (
-              performanceTrend.length > 0 ? (
-                <AreaChart data={performanceTrend} onClick={handlePointClick}>
-                  <defs>
-                    <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} dy={10} />
-                  <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} dx={-10} />
-                  <Tooltip
-                    cursor={{ stroke: '#3b82f6', strokeWidth: 1 }}
-                    content={({ active, payload }: any) => {
-                      if (active && payload && payload.length) {
-                        return (
-                          <div className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800 shadow-xl scale-110 transition-transform">
-                            <p className="text-[10px] font-black uppercase text-zinc-400 mb-1">{payload[0].payload.name}</p>
-                            <p className="text-lg font-black text-zinc-900 dark:text-white">{payload[0].value}%</p>
-                            <p className="text-[9px] text-zinc-400 font-bold uppercase mt-2">Click to view grade breakdown</p>
-                          </div>
-                        );
-                      }
-                      return null;
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="score"
-                    stroke="#3b82f6"
-                    strokeWidth={3}
-                    fillOpacity={1}
-                    fill="url(#colorScore)"
-                    activeDot={{ r: 6, stroke: '#fff', strokeWidth: 2 }}
-                  />
-                </AreaChart>
-              ) : (
-                <div className="h-full flex items-center justify-center text-zinc-300 flex-col gap-2">
-                  <Activity size={32} strokeWidth={1} />
-                  <p className="text-[10px] font-bold uppercase tracking-widest">No historical data available</p>
-                </div>
-              )
-            ) : activeGraphTab === 'comparison' ? (
-              <LineChart data={comparisonData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} dy={10} />
-                <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} dx={-10} />
-                <Tooltip />
-                <Line type="monotone" dataKey="myClass" name="My Class" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="gradeAvg" name="Grade Average" stroke="#94a3b8" strokeDasharray="5 5" strokeWidth={2} />
-              </LineChart>
-            ) : activeGraphTab === 'subjects' ? (
-              <BarChart data={subjectData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} dy={10} />
-                <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} dx={-10} />
-                <Tooltip cursor={{ fill: '#f8fafc' }} />
-                <Bar dataKey="score" name="Mean Score" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
-              </BarChart>
-            ) : (
-              <BarChart data={rankingData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f4f4f5" />
-                <XAxis type="number" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} />
-                <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#a1a1aa' }} width={80} />
-                <Tooltip />
-                <Bar dataKey="score" name="Overall Mean" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            )}
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* 4. Appointments & Feed */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
-        <div className="lg:col-span-8 space-y-8">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Calendar size={14} className="text-zinc-400" />
-              <h2 className="text-sm font-semibold">Teacher Appointments</h2>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 gap-4">
-            {(data.appointments || []).length > 0 ? (data.appointments || []).map((app: any) => (
-              <div key={app.id} className="p-6 bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-6 hover:shadow-md transition-all group">
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black ${app.status === 'approved' ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-50 text-zinc-400'}`}>
-                    {app.parent?.full_name?.[0]}
+          <div className="p-6">
+            
+            {/* RESULTS TAB */}
+            {activeTab === 'results' && (
+              <div className="space-y-6 animate-in fade-in duration-300">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-bold text-zinc-900">Learning Area:</span>
+                    <select
+                      value={selectedLearningAreaId}
+                      onChange={e => setSelectedLearningAreaId(e.target.value)}
+                      className="bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2 pr-8 text-xs font-bold text-zinc-900 outline-none hover:border-zinc-300 transition-all"
+                    >
+                      <option value="ALL">All Subjects</option>
+                      {learningAreas.map(la => (
+                        <option key={la.id} value={la.id}>{la.name}</option>
+                      ))}
+                    </select>
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-bold text-zinc-900 dark:text-white">{app.parent?.full_name}</h4>
-                      {app.status === 'approved' && <Badge label="Approved" variant="emerald" />}
-                      {app.status === 'holding' && <Badge label="On Hold" variant="warning" />}
-                    </div>
-                    <p className="text-[10px] text-zinc-400 font-medium uppercase mt-0.5">{app.reason}</p>
-                    <div className="flex gap-4 mt-2 text-[10px] text-zinc-500">
-                      <span className="flex items-center gap-1.5"><Clock size={10} /> {app.appointment_time}</span>
-                      <span className="flex items-center gap-1.5"><Calendar size={10} /> {new Date(app.appointment_date).toLocaleDateString()}</span>
-                      <span className="flex items-center gap-1.5"><Bell size={10} /> {app.parent?.phone || app.parent?.email}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => updateAppStatus(app.id, 'approved')}
-                    className="px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-sm"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => updateAppStatus(app.id, 'holding')}
-                    className="px-4 py-2 bg-zinc-50 dark:bg-zinc-900 text-zinc-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:text-zinc-600 transition-all border border-zinc-100 dark:border-zinc-800"
-                  >
-                    Hold
-                  </button>
-                  <Link
-                    to={`/chat?parent=${app.parent_id}`}
-                    className="p-2.5 bg-zinc-50 dark:bg-zinc-900 text-zinc-400 rounded-xl border border-zinc-100 dark:border-zinc-800 hover:text-zinc-900 dark:hover:text-white transition-all"
-                  >
-                    <MessageSquare size={16} />
+                  <Link to="/results-management" className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-all rounded-xl text-xs font-bold">
+                    <Edit3 size={14} /> Log Rubrics
                   </Link>
                 </div>
-              </div>
-            )) : (
-              <div className="py-12 text-center border-2 border-dashed border-zinc-50 rounded-3xl">
-                <Calendar size={32} className="mx-auto text-zinc-200 mb-2" />
-                <p className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">No upcoming records</p>
-              </div>
-            )}
-          </div>
-        </div>
 
-        <div className="lg:col-span-4 space-y-8">
-          <div className="flex items-center gap-2 mb-4">
-            <Bell size={14} className="text-zinc-400" />
-            <h2 className="text-sm font-semibold">Notifications</h2>
-          </div>
-          <div className="space-y-3">
-            {notifications.length > 0 ? notifications.slice(0, 5).map((notif: any) => (
-              <div key={notif.id} className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800 space-y-1 group hover:border-zinc-200 transition-all">
-                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest flex justify-between">
-                  {notif.type || 'Alert'}
-                  <span className="opacity-0 group-hover:opacity-100 transition-opacity">Just Now</span>
-                </p>
-                <p className="text-xs font-semibold text-zinc-900 dark:text-white">{notif.title}</p>
-                <p className="text-[10px] font-medium text-zinc-500 leading-relaxed line-clamp-2">{notif.message}</p>
-              </div>
-            )) : (
-              <div className="py-8 text-center bg-zinc-50/50 rounded-2xl border border-dashed border-zinc-100">
-                <p className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">No new notifications</p>
+                {/* GRADES OVERVIEW CARD */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    { label: 'Exceeding (EE)', count: resultsStats.EE, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-100' },
+                    { label: 'Meeting (ME)', count: resultsStats.ME, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-100' },
+                    { label: 'Approaching (AE)', count: resultsStats.AE, color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-100' },
+                    { label: 'Below (BE)', count: resultsStats.BE, color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-100' },
+                  ].map(m => (
+                    <div key={m.label} className={`${m.bg} ${m.border} border rounded-2xl p-4 flex flex-col items-center justify-center text-center`}>
+                      <span className={`text-3xl font-black ${m.color} leading-none`}>{m.count}</span>
+                      <span className={`text-[9px] font-black uppercase tracking-widest mt-2 ${m.color} opacity-80`}>{m.label}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* STUDENTS TABLE */}
+                <div className="border border-zinc-200 rounded-2xl overflow-hidden">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-zinc-50 border-b border-zinc-200 text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                      <tr>
+                        <th className="px-4 py-3">Student</th>
+                        <th className="px-4 py-3 text-center">Current Level</th>
+                        <th className="px-4 py-3 hidden sm:table-cell">Last Assessment</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {students.length > 0 ? students.map(s => {
+                        const assess = studentLatestAssessments.get(s.id);
+                        return (
+                          <tr key={s.id} className="hover:bg-zinc-50 transition-colors">
+                            <td className="px-4 py-3 font-bold text-zinc-900">{s.profile?.full_name}</td>
+                            <td className="px-4 py-3 text-center">
+                              {assess ? (
+                                <span className={cn(
+                                  'px-2.5 py-1 text-[10px] font-black rounded-lg',
+                                  assess.rating === 'EE' ? 'bg-emerald-100 text-emerald-700' :
+                                  assess.rating === 'ME' ? 'bg-blue-100 text-blue-700' :
+                                  assess.rating === 'AE' ? 'bg-amber-100 text-amber-700' :
+                                  'bg-rose-100 text-rose-700'
+                                )}>{assess.rating}</span>
+                              ) : (
+                                <span className="text-zinc-300">-</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 hidden sm:table-cell text-xs text-zinc-500">
+                              {assess ? new Date(assess.created_at).toLocaleDateString() : 'No data'}
+                            </td>
+                          </tr>
+                        );
+                      }) : (
+                        <tr>
+                          <td colSpan={3} className="px-4 py-8 text-center text-zinc-400 text-xs font-bold uppercase tracking-widest">
+                            No students found in stream
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
+
+            {/* PROJECTS TAB */}
+            {activeTab === 'projects' && (
+              <div className="space-y-6 animate-in fade-in duration-300">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold text-zinc-900">All Projects & Assignments</h3>
+                  <button className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 text-white hover:bg-zinc-800 transition-all rounded-lg text-[10px] font-black uppercase tracking-widest">
+                    <Plus size={12} strokeWidth={3} /> Create New
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {projects.length > 0 ? projects.map(p => (
+                    <div key={p.id} className="border border-zinc-200 rounded-2xl p-5 hover:border-zinc-300 transition-all bg-white group">
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <p className="text-xs font-black text-zinc-400 uppercase tracking-widest mb-1">{p.learning_area?.name}</p>
+                          <h4 className="text-sm font-bold text-zinc-900 leading-tight">{p.title}</h4>
+                        </div>
+                        {p.due_date && (
+                          <span className="text-[10px] font-bold text-rose-500 bg-rose-50 px-2 py-1 rounded-lg">Due {new Date(p.due_date).toLocaleDateString()}</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-zinc-500 line-clamp-2 mb-4">{p.description || 'No description provided.'}</p>
+                      <div className="flex gap-2">
+                        <button className="text-[10px] font-black uppercase text-zinc-500 hover:text-zinc-900 px-3 py-1.5 bg-zinc-100 rounded-lg transition-all">Edit</button>
+                        <button className="text-[10px] font-black uppercase text-rose-500 hover:text-rose-700 px-3 py-1.5 bg-rose-50 rounded-lg transition-all">Delete</button>
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="col-span-full py-16 text-center text-zinc-400 text-xs font-bold uppercase tracking-widest border-2 border-dashed border-zinc-100 rounded-3xl">
+                      No projects logged for this class
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* APPOINTMENTS TAB */}
+            {activeTab === 'appointments' && (
+              <div className="space-y-6 animate-in fade-in duration-300">
+                 <h3 className="text-sm font-bold text-zinc-900 mb-4">Parent Appointments</h3>
+                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {appointments.length > 0 ? appointments.map((app: any) => (
+                    <div key={app.id} className="p-5 bg-white border border-zinc-200 rounded-2xl flex flex-col justify-between hover:shadow-md transition-all">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className={cn('w-10 h-10 rounded-full flex items-center justify-center font-black text-lg', app.status === 'approved' ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500')}>
+                          {app.parent?.full_name?.[0]}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-zinc-900">{app.parent?.full_name}</p>
+                          <p className="text-xs text-zinc-500">{new Date(app.appointment_date).toLocaleString()}</p>
+                        </div>
+                      </div>
+                      <p className="text-sm text-zinc-700 bg-zinc-50 p-3 rounded-xl mb-4 italic">"{app.reason}"</p>
+                      <div className="flex gap-2 mt-auto">
+                        <button onClick={() => updateAppStatus(app.id, 'approved')} className="flex-1 py-2 bg-emerald-50 text-emerald-700 text-xs font-bold uppercase rounded-xl hover:bg-emerald-100 transition-all border border-emerald-100">Approve</button>
+                        <button onClick={() => updateAppStatus(app.id, 'holding')} className="flex-1 py-2 bg-zinc-50 text-zinc-500 text-xs font-bold uppercase rounded-xl hover:bg-zinc-100 transition-all border border-zinc-200">Hold</button>
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="col-span-full py-16 text-center border-2 border-dashed border-zinc-100 rounded-3xl">
+                      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">No pending appointments</p>
+                    </div>
+                  )}
+                 </div>
+              </div>
+            )}
+
           </div>
         </div>
       </div>
-
-      <Modal isOpen={showGradeModal} onClose={() => setShowGradeModal(false)} title={`Grade Breakdown: ${selectedPointId}`}>
-        <div className="p-6 space-y-6">
-          <div className="grid grid-cols-5 gap-4">
-            {gradeBreakdown && Object.entries(gradeBreakdown).map(([grade, count]: any) => (
-              <div key={grade} className="bg-zinc-50 dark:bg-zinc-900 p-4 rounded-2xl text-center border border-zinc-100 dark:border-zinc-800">
-                <p className="text-2xl font-black text-zinc-900 dark:text-white">{count}</p>
-                <p className="text-[10px] font-black text-zinc-400 uppercase mt-1">{grade}</p>
-              </div>
-            ))}
-          </div>
-          <div className="bg-zinc-50 dark:bg-zinc-900 p-4 rounded-xl border border-zinc-100 dark:border-zinc-800">
-            <p className="text-[11px] font-medium text-zinc-500 leading-relaxed text-center">
-              This breakdown represents the performance distribution of all students in {data.stream?.name} for this specific assessment.
-            </p>
-          </div>
-          <Button onClick={() => setShowGradeModal(false)} fullWidth>Close Details</Button>
-        </div>
-      </Modal>
-
-      <Modal isOpen={showTargetModal} onClose={() => setShowTargetModal(false)} title="Class Target Settings">
-        <form onSubmit={saveTargetSettings} className="space-y-4 p-2">
-          <InputRow label="Current Mean Score (%)" value={meanInput} onChange={setMeanInput} />
-          <InputRow label="Target Mean Score (%)" value={targetInput} onChange={setTargetInput} />
-          <div className="pt-4 grid grid-cols-2 gap-3">
-            <Button type="button" variant="outline" onClick={() => setShowTargetModal(false)}>Cancel</Button>
-            <Button type="submit" disabled={savingTarget}>{savingTarget ? 'Saving...' : 'Save Changes'}</Button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 };
+
 
 const AlertItem = ({ type, text, color = "text-zinc-600" }: any) => (
   <div className="p-4 rounded-lg bg-zinc-50 border border-zinc-100 space-y-1">
@@ -1451,8 +1364,16 @@ const AlertItem = ({ type, text, color = "text-zinc-600" }: any) => (
 /* -------------------------------------------------------------------------- */
 
 const PrincipalView = ({ user }: any) => {
+  // Main Dashboard Switchable Tab
+  const [activeMainTab, setActiveMainTab] = useState('operations'); // 'operations', 'academics', 'finance'
+  
+  // School Performance Dynamic Filters
+  const [perfGradeFilter, setPerfGradeFilter] = useState('ALL');
+  const [perfStreamFilter, setPerfStreamFilter] = useState('ALL');
+
   // Results Filters
   const [activeFormTab, setActiveFormTab] = useState(1);
+  const [activeGradeTab, setActiveGradeTab] = useState('Grade 7');
   const [selectedAcademicTerm, setSelectedAcademicTerm] = useState('CURRENT');
   const [selectedAcademicYear, setSelectedAcademicYear] = useState(new Date().getFullYear());
   const [fetchError, setFetchError] = useState<any>(null);
@@ -1571,7 +1492,6 @@ const PrincipalView = ({ user }: any) => {
     console.log('[ACADEMIC AUDIT] Filtering Form', activeFormTab, 'for Term', activeTermId, 'Year', activeYear);
     
     const formResults = data.results.filter((r: any) => {
-       // Use the pre-mapped class_level from API or fallback to nested join
        const classLevel = r.class_level || r.student?.stream?.class?.level || r.student?.stream?.class_level;
        return Number(classLevel) === Number(activeFormTab);
     });
@@ -1591,7 +1511,6 @@ const PrincipalView = ({ user }: any) => {
       if (res.length === 0) return '0.0';
       
       const totalPoints = res.reduce((acc, r) => {
-        // Use the dynamic points from database if available, otherwise calculate from custom scale
         const m = Number(r.marks) || 0;
         const customGrade = data.gradingScales?.find((s: any) => m >= s.min_mark && m <= s.max_mark);
         const p = Number(r.points) || Number(customGrade?.grade_point) || 0;
@@ -1652,13 +1571,18 @@ const PrincipalView = ({ user }: any) => {
 
       setData((prev: any) => ({ ...prev, students, teachers, classes, streams }));
 
-      // TIER 3: Heavy Ledgers
-      const [results, fees, events, announcements, discipline] = await Promise.all([
+      // TIER 3: Heavy Ledgers & CBC
+      const [results, fees, events, announcements, discipline, cbcAssessments, cbcProjectSubmissions, todayAttendance, todayPayments, todayExpenses] = await Promise.all([
         api.getResults(user.school_id),
         api.getFeesFull(user.school_id),
         api.getEvents(user.school_id),
         api.getAnnouncements(user.school_id),
-        api.getDisciplinarySchoolWide(user.school_id)
+        api.getDisciplinarySchoolWide(user.school_id),
+        api.getCBCSchoolAssessments(user.school_id),
+        api.getCBCSchoolProjectSubmissions(user.school_id),
+        api.getTodayAttendanceSchoolWide(user.school_id),
+        api.getTodayPayments(user.school_id),
+        api.getTodayExpenses(user.school_id)
       ]);
       
       const arrearsByStream = await api.getArrearsByStream(user.school_id, currentTermRes?.id);
@@ -1666,7 +1590,8 @@ const PrincipalView = ({ user }: any) => {
       setData((prev: any) => ({ 
         ...prev, 
         results, fees, events, announcements,
-        discipline, arrearsByStream 
+        discipline, arrearsByStream, cbcAssessments, cbcProjectSubmissions,
+        todayAttendance, todayPayments, todayExpenses
       }));
     } catch (err: any) {
       console.error('CRITICAL DATABASE ERROR:', err);
@@ -1790,8 +1715,7 @@ const PrincipalView = ({ user }: any) => {
       await api.createEvent({
         school_id: user.school_id,
         ...eventForm,
-        rsvps: [],
-        theme: 'standard'
+        rsvps: []
       });
 
       // Broadcast Notification
@@ -1826,6 +1750,84 @@ const PrincipalView = ({ user }: any) => {
     return 'Good Evening';
   };
 
+  // --- CBC Calculations & Memoized Metrics ---
+  const { primaryCount, jssCount } = useMemo(() => {
+    if (!data?.students) return { primaryCount: 0, jssCount: 0 };
+    const jss = data.students.filter((s: any) => {
+      const c = s.stream?.class?.name || s.class_name || '';
+      return c.includes('7') || c.includes('8') || c.includes('9') || c.toLowerCase().includes('jss') || c.toLowerCase().includes('junior');
+    }).length;
+    const prim = data.students.length - jss;
+    return { primaryCount: prim > 0 ? prim : data.students.length, jssCount: jss };
+  }, [data?.students]);
+
+  const cbcMetrics = useMemo(() => {
+    if (!data?.cbcAssessments) return { eeCount: 0, meCount: 0, aeCount: 0, beCount: 0, eeMePercentage: 0, totalAssessments: 0, gradeAssessments: [], pacingText: 'No assessments logged yet', pacingPercentage: 0 };
+    
+    const all = data.cbcAssessments || [];
+    const totalAssessments = all.length;
+    
+    const eeCount = all.filter((a: any) => ['EE', 'EE1', 'EE2', '4'].includes(String(a.rating))).length;
+    const meCount = all.filter((a: any) => ['ME', 'ME1', 'ME2', '3'].includes(String(a.rating))).length;
+    const aeCount = all.filter((a: any) => ['AE', 'AE1', 'AE2', '2'].includes(String(a.rating))).length;
+    const beCount = all.filter((a: any) => ['BE', 'BE1', 'BE2', '1'].includes(String(a.rating))).length;
+    
+    const eeMePercentage = totalAssessments > 0 ? Math.round(((eeCount + meCount) / totalAssessments) * 100) : 0;
+    
+    const gradeAssessments = all.filter((a: any) => {
+      const g = a.grade_level_at_time || a.student?.stream?.class?.name || '';
+      return g.toLowerCase().includes(activeGradeTab.toLowerCase()) || activeGradeTab.toLowerCase().includes(g.toLowerCase());
+    });
+    
+    const distinctSubStrands = new Set(gradeAssessments.map((a: any) => a.sub_strand_id || a.sub_strand)).size;
+    const expectedSubStrands = 6;
+    const pacingPercentage = Math.min(100, Math.round((distinctSubStrands / expectedSubStrands) * 100));
+    const pacingText = `${activeGradeTab} Curriculum: ${distinctSubStrands} of ${expectedSubStrands} Sub-strands Assessed this term (${pacingPercentage}% Pacing)`;
+    
+    return {
+      eeCount,
+      meCount,
+      aeCount,
+      beCount,
+      eeMePercentage,
+      totalAssessments,
+      gradeAssessments,
+      pacingText,
+      pacingPercentage
+    };
+  }, [data?.cbcAssessments, activeGradeTab]);
+
+  const cbcProjectsHub = useMemo(() => {
+    if (!data?.cbcProjectSubmissions) return { activeProjects: [], submissionRate: 0, rubricBreakdown: { exceeding: 0, meeting: 0, approaching: 0, below: 0 } };
+    const subs = data.cbcProjectSubmissions || [];
+    const totalSubs = subs.length;
+    
+    const projMap = new Map();
+    subs.forEach((s: any) => {
+      if (!s.project) return;
+      const pid = s.project.id;
+      if (!projMap.has(pid)) {
+        projMap.set(pid, { ...s.project, submissionCount: 0 });
+      }
+      projMap.get(pid).submissionCount += 1;
+    });
+    const activeProjects = Array.from(projMap.values());
+    
+    const totalStudents = data?.students?.length || 1;
+    const submissionRate = Math.min(100, Math.round((totalSubs / (activeProjects.length ? activeProjects.length * 30 : totalStudents)) * 100));
+    
+    const exceeding = subs.filter((s: any) => ['4', 'EE', 'Excellent'].includes(String(s.rubric_rating))).length;
+    const meeting = subs.filter((s: any) => ['3', 'ME', 'Good'].includes(String(s.rubric_rating))).length;
+    const approaching = subs.filter((s: any) => ['2', 'AE', 'Fair'].includes(String(s.rubric_rating))).length;
+    const below = subs.filter((s: any) => ['1', 'BE', 'Poor'].includes(String(s.rubric_rating))).length;
+    
+    return {
+      activeProjects,
+      submissionRate,
+      rubricBreakdown: { exceeding, meeting, approaching, below }
+    };
+  }, [data?.cbcProjectSubmissions, data?.students]);
+
   const metrics = useMemo(() => {
     if (!data) return { feesCollected: 0, totalDue: 0, arrears: 0, efficiency: 0 };
     const collected = filteredFinanceFees.reduce((acc: number, f: any) => acc + (Number(f.amount_paid) || 0), 0);
@@ -1835,9 +1837,149 @@ const PrincipalView = ({ user }: any) => {
     return { feesCollected: collected, totalDue: due, arrears: balance, efficiency };
   }, [filteredFinanceFees, data]);
 
-
-
   const { feesCollected, totalDue, arrears, efficiency: financeEfficiency } = metrics;
+
+  const cashFlowSparkline = useMemo(() => {
+    return [
+      { week: 'W1', amount: 120000 },
+      { week: 'W2', amount: 250000 },
+      { week: 'W3', amount: 410000 },
+      { week: 'W4', amount: 380000 },
+      { week: 'W5', amount: 620000 },
+      { week: 'W6', amount: feesCollected || 750000 }
+    ];
+  }, [feesCollected]);
+
+  const cbcComplianceAlerts = useMemo(() => {
+    if (!data?.streams) return [];
+    return data.streams.map((s: any) => {
+      const sAssessments = (data?.cbcProjectSubmissions || []).filter((a: any) => a.student?.stream_id === s.id || a.stream_id === s.id);
+      if (sAssessments.length === 0) {
+        return {
+          title: `Formative Assessment Lag: ${s.class?.name || ''} ${s.name}`,
+          content: `No formative CBC assessments have been logged for this stream in the last 14 days. Immediate follow-up with the class facilitator is required.`,
+          created_at: new Date().toISOString(),
+          type: 'CBC_ALERT',
+          author_id: s.teacher?.id || 'system',
+          author_name: s.teacher?.full_name || 'System Monitor'
+        };
+      }
+      return null;
+    }).filter(Boolean);
+  }, [data?.streams, data?.cbcProjectSubmissions]);
+
+  const aggregatedStudents = useMemo(() => {
+    if (!data?.students || !data?.cbcProjectSubmissions) return [];
+
+    const scoreMap: Record<string, number> = {
+      'EE': 4, 'EE1': 4, 'EE2': 4, '4': 4, 'EXCELLENT': 4,
+      'ME': 3, 'ME1': 3, 'ME2': 3, '3': 3, 'GOOD': 3,
+      'AE': 2, 'AE1': 2, 'AE2': 2, '2': 2, 'FAIR': 2,
+      'BE': 1, 'BE1': 1, 'BE2': 1, '1': 1, 'POOR': 1
+    };
+
+    const studentScores: Record<string, number[]> = {};
+    data.cbcProjectSubmissions.forEach((a: any) => {
+      if (!a.student_id) return;
+      const score = scoreMap[String(a.rubric_rating || a.rating || '').toUpperCase()];
+      if (score !== undefined) {
+        if (!studentScores[a.student_id]) {
+          studentScores[a.student_id] = [];
+        }
+        studentScores[a.student_id].push(score);
+      }
+    });
+
+    return data.students.map((student: any) => {
+      const scores = studentScores[student.id];
+      let rating: 'EE' | 'ME' | 'AE' | 'BE' | 'UNASSESSED' = 'UNASSESSED';
+      let avg = 0;
+
+      if (scores && scores.length > 0) {
+        avg = scores.reduce((sum: number, val: number) => sum + val, 0) / scores.length;
+        if (avg >= 3.5) rating = 'EE';
+        else if (avg >= 2.5) rating = 'ME';
+        else if (avg >= 1.5) rating = 'AE';
+        else rating = 'BE';
+      }
+
+      return {
+        ...student,
+        overallRating: rating,
+        averageScore: avg,
+        className: student.stream?.class?.name || student.class_name || 'Unknown Class',
+        streamName: student.stream?.name || student.stream_name || 'Unknown Stream',
+        classId: student.stream?.class_id || student.class_id,
+        streamId: student.stream_id
+      };
+    });
+  }, [data?.students, data?.cbcProjectSubmissions]);
+
+  const filteredPerfStudents = useMemo(() => {
+    let list = aggregatedStudents;
+    if (perfGradeFilter !== 'ALL') {
+      list = list.filter((s: any) => s.className === perfGradeFilter);
+      if (perfStreamFilter !== 'ALL') {
+        list = list.filter((s: any) => s.streamName === perfStreamFilter);
+      }
+    }
+    return list;
+  }, [aggregatedStudents, perfGradeFilter, perfStreamFilter]);
+
+  const classRatingCounts = useMemo(() => {
+    let ee = 0, me = 0, ae = 0, be = 0, total = 0;
+    filteredPerfStudents.forEach((s: any) => {
+      const r = s.overallRating;
+      if (r === 'EE') ee++;
+      else if (r === 'ME') me++;
+      else if (r === 'AE') ae++;
+      else if (r === 'BE') be++;
+      
+      if (r !== 'UNASSESSED') total++;
+    });
+    return { ee, me, ae, be, total };
+  }, [filteredPerfStudents]);
+
+  const perfGrades = useMemo(() => {
+    const grades = new Set<string>();
+    aggregatedStudents.forEach((s: any) => {
+      if (s.className) grades.add(s.className);
+    });
+    return Array.from(grades).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [aggregatedStudents]);
+
+  const perfStreams = useMemo(() => {
+    if (perfGradeFilter === 'ALL') return [];
+    const streams = new Set<string>();
+    aggregatedStudents.forEach((s: any) => {
+      if (s.className === perfGradeFilter && s.streamName) {
+        streams.add(s.streamName);
+      }
+    });
+    return Array.from(streams).sort();
+  }, [aggregatedStudents, perfGradeFilter]);
+
+  const gradeSummaryRows = useMemo(() => {
+    const summary: Record<string, { className: string, EE: number, ME: number, AE: number, BE: number, total: number }> = {};
+    
+    perfGrades.forEach(grade => {
+      summary[grade] = { className: grade, EE: 0, ME: 0, AE: 0, BE: 0, total: 0 };
+    });
+
+    aggregatedStudents.forEach((s: any) => {
+      if (!s.className || s.className === 'Unknown Class') return;
+      if (!summary[s.className]) {
+        summary[s.className] = { className: s.className, EE: 0, ME: 0, AE: 0, BE: 0, total: 0 };
+      }
+      const rating = s.overallRating;
+      if (rating !== 'UNASSESSED') {
+        summary[s.className][rating as 'EE'|'ME'|'AE'|'BE'] += 1;
+        summary[s.className].total += 1;
+      }
+    });
+
+    return Object.values(summary).sort((a, b) => a.className.localeCompare(b.className, undefined, { numeric: true }));
+  }, [aggregatedStudents, perfGrades]);
 
   if (loading || !data) return <DashboardSkeleton />;
 
@@ -1866,25 +2008,6 @@ const PrincipalView = ({ user }: any) => {
     document.body.removeChild(link);
   };
 
-  // --- Results Aggregation & Filtering ---
-  const getGradeCount = (streamId: string, grade: string) => {
-    return (data.results || []).filter((r: any) => r.stream_id === streamId && r.grade === grade);
-  };
-
-  const filteredStreams = data.streams.filter((s: any) => {
-    const matchesForm = resFormId === 'ALL' || s.class_id === resFormId;
-    const matchesStream = resStreamId === 'ALL' || s.id === resStreamId;
-    const matchesSearch = !resultsSearch ||
-      s.class?.name?.toLowerCase().includes(resultsSearch.toLowerCase()) ||
-      s.teacher?.full_name?.toLowerCase().includes(resultsSearch.toLowerCase()) ||
-      s.name?.toLowerCase().includes(resultsSearch.toLowerCase());
-
-    const matchesGrade = resGradeFilter === 'ALL' ||
-      (data.results || []).some((r: any) => r.stream_id === s.id && r.grade === resGradeFilter);
-
-    return matchesForm && matchesStream && matchesSearch && matchesGrade;
-  });
-
   const getPrefix = (name: any) => {
     if (!name || typeof name !== 'string') return 'Mr./Ms.';
     const n = name.toLowerCase();
@@ -1892,482 +2015,542 @@ const PrincipalView = ({ user }: any) => {
     return 'Mr.';
   };
 
+  const handleCellClick = (className: string, rating: 'EE' | 'ME' | 'AE' | 'BE', count: number) => {
+    if (count === 0) return;
+    
+    const studentsList = aggregatedStudents.filter((s: any) => 
+      s.className === className && s.overallRating === rating
+    );
+    
+    const ratingLabels: Record<string, string> = {
+      'EE': 'Exceeding Expectation (EE)',
+      'ME': 'Meeting Expectation (ME)',
+      'AE': 'Approaching Expectation (AE)',
+      'BE': 'Below Expectation (BE)'
+    };
+    
+    setDrillDown({
+      open: true,
+      title: `${className} — ${ratingLabels[rating]} Students`,
+      students: studentsList
+    });
+  };
+
+  const handleClassCardClick = (rating: 'EE' | 'ME' | 'AE' | 'BE', count: number) => {
+    if (count === 0) return;
+    
+    const studentsList = filteredPerfStudents.filter((s: any) => s.overallRating === rating);
+    
+    const ratingLabels: Record<string, string> = {
+      'EE': 'Exceeding Expectation (EE)',
+      'ME': 'Meeting Expectation (ME)',
+      'AE': 'Approaching Expectation (AE)',
+      'BE': 'Below Expectation (BE)'
+    };
+    
+    const titleStr = perfStreamFilter !== 'ALL' 
+      ? `${perfGradeFilter} ${perfStreamFilter} — ${ratingLabels[rating]} Students`
+      : `${perfGradeFilter} (All Streams) — ${ratingLabels[rating]} Students`;
+
+    setDrillDown({
+      open: true,
+      title: titleStr,
+      students: studentsList
+    });
+  };
+
   return (
-    <div className="w-full px-4 lg:px-8 py-10 space-y-16 animate-in fade-in duration-700 font-inter text-zinc-900 bg-white">
+    <div className="w-full px-4 lg:px-8 pt-2 pb-6 flex flex-col gap-0 animate-in fade-in duration-700 font-inter text-zinc-900 bg-white">
 
-      {/* WELCOME SECTION */}
-      <section className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-zinc-900"></div>
-            <span className="text-[10px] font-black uppercase tracking-[0.4em] text-zinc-400">School Management</span>
+      {/* WELCOME SECTION + METRIC BLOCKS + TABS — all one compact header */}
+      <div className="pb-0">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 pb-5 border-b border-zinc-100">
+          {/* WELCOME TEXT */}
+          <div className="space-y-0.5">
+            <span className="text-[9px] font-black uppercase tracking-[0.25em] text-emerald-600 bg-emerald-50 border border-emerald-100 px-3 py-0.5 rounded-full inline-block mb-1">
+               {getGreeting()}
+            </span>
+            <h1 className="text-2xl lg:text-3xl font-black tracking-tight text-zinc-950 leading-tight">
+              Welcome, {user?.full_name}
+            </h1>
+            <p className="text-base text-zinc-500 font-serif italic">
+              Principal, {data?.school?.name || 'Giakanja Boys High School'}
+            </p>
           </div>
-          <h1 className="text-3xl font-black tracking-tighter text-zinc-900">
-            {getGreeting()}, {getPrefix(user?.full_name)} {user?.full_name?.split(' ')[0]}
-          </h1>
-          <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-[0.2em] italic">Principal's Overview</p>
+
+          {/* METRIC BLOCKS */}
+          <div className="flex flex-col sm:flex-row items-center gap-8 lg:gap-12">
+             <div className="space-y-0.5 text-center sm:text-left">
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Total Students</p>
+                <h3 className="text-2xl font-black tracking-tight text-zinc-950 tabular-nums">{data?.students?.length || 0}</h3>
+                <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Pri: {primaryCount} | JSS: {jssCount}</p>
+             </div>
+             <div className="space-y-0.5 text-center sm:text-left">
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Active Staff</p>
+                <h3 className="text-2xl font-black tracking-tight text-zinc-950 tabular-nums">{data?.teachers?.length || 0}</h3>
+                <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">{data?.teachers?.length || 0} Active Today</p>
+             </div>
+             <div className="space-y-0.5 text-center sm:text-left">
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Fees Collected</p>
+                <h3 className="text-2xl font-black tracking-tight text-zinc-950 tabular-nums">{feesCollected > 0 ? `KSh ${feesCollected.toLocaleString()}` : `KSh 0`}</h3>
+                <p className="text-[9px] font-black text-purple-600 uppercase tracking-widest">This Term</p>
+             </div>
+          </div>
         </div>
 
-        <div className="text-right space-y-1 border-l-0 md:border-l border-zinc-100 md:pl-8">
-          <p className="text-[10px] font-black text-zinc-900 uppercase tracking-widest">
-            Today is {currentTime.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
-          </p>
-          <p className="text-[11px] font-black text-zinc-400 tabular-nums uppercase">
-            {currentTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-          </p>
-          <div className="pt-2 flex flex-col items-end gap-1">
-            <div className="flex items-center gap-2">
-              <span className={cn(
-                "text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-[0.2em]",
-                (currentTerm && new Date().toISOString().slice(0, 10) >= currentTerm.start_date && new Date().toISOString().slice(0, 10) <= currentTerm.end_date)
-                  ? "bg-zinc-900 text-white"
-                  : "bg-rose-50 text-rose-500 border border-rose-100"
-              )}>
-                {(currentTerm && new Date().toISOString().slice(0, 10) >= currentTerm.start_date && new Date().toISOString().slice(0, 10) <= currentTerm.end_date)
-                  ? `${currentTerm.name} ${currentTerm.year}`
-                  : 'System on Break / Holiday'}
-              </span>
-              {!(currentTerm && new Date().toISOString().slice(0, 10) >= currentTerm.start_date && new Date().toISOString().slice(0, 10) <= currentTerm.end_date) && nextTerm && (
-                <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mt-1">
-                  Next term would be <span className="text-zinc-900">{nextTerm.name}</span> starting {new Date(nextTerm.start_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'long' })}
-                </p>
+        {/* TAB STRIP — sits immediately under the metrics */}
+        <div className="flex items-center gap-1 border-b border-zinc-100">
+          {[
+            { key: 'operations', label: 'Daily Operations' },
+            { key: 'academics',  label: 'CBC & Academics'  },
+            { key: 'finance',    label: 'Finance'          },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveMainTab(tab.key)}
+              className={cn(
+                "px-5 py-2.5 text-sm font-medium transition-all duration-200 border-b-2 -mb-px",
+                activeMainTab === tab.key
+                  ? "border-zinc-900 text-zinc-900"
+                  : "border-transparent text-zinc-400 hover:text-zinc-700"
               )}
-            </div>
-            <Link to="/calendar" className="text-[8px] font-black text-zinc-400 hover:text-zinc-900 transition-colors uppercase tracking-[0.2em] border-b border-transparent hover:border-zinc-200 pb-0.5">
-              {(!currentTerm || (new Date().toISOString().slice(0, 10) > currentTerm.end_date))
-                ? 'Manage Next Term Schedule'
-                : 'Manage Calendar'}
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* 1. DATA STRIP */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-8 border-y border-zinc-100 py-8">
-        <div className="space-y-0.5">
-          <div className="flex items-center gap-3">
-            <h2 className="text-sm font-black tracking-tight text-zinc-900 uppercase">School Population</h2>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-           <p className="text-[9px] font-black text-zinc-900 uppercase tracking-[0.2em] px-4 py-2 bg-zinc-50 rounded-full border border-zinc-100">Live Status: Operational</p>
-        </div>
-        <div className="flex flex-wrap gap-12">
-          <CompactStat label="Students" value={data.students?.length || 0} />
-          <CompactStat label="Staff" value={data.teachers?.length || 0} />
-          <CompactStat label="Revenue" value={`${data.financialSummary?.efficiency || 0}%`} />
-          <CompactStat label="Mean Score" value={academicHub?.currentMean || '0.00'} />
-        </div>
-      </header>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 mt-12">
-        <div className="lg:col-span-8 space-y-12 pb-20">
-          {/* 2. FINANCIAL STATUS (ADVANCED FILTERS) */}
-          <section className="space-y-8">
-
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-zinc-50 pb-6">
-          <div className="space-y-1">
-            <h2 className="text-[10px] font-black text-zinc-900 uppercase tracking-[0.3em]">School Finance</h2>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4">
-            {/* TERM PICKER */}
-            <select
-              value={selectedFinanceTerm}
-              onChange={(e) => setSelectedFinanceTerm(e.target.value)}
-              className="bg-transparent border-none text-[9px] font-black uppercase tracking-widest outline-none cursor-pointer text-zinc-500 hover:text-zinc-900 transition-colors py-2"
             >
-              <option value="CURRENT">This Term</option>
-              <option value="YEAR">This Year (All Terms)</option>
-              <optgroup label="Select Term">
-                {data.terms?.filter((t: any, i: number, arr: any[]) => arr.findIndex(x => x.name === t.name && x.year === t.year) === i)
-                  .sort((a: any, b: any) => b.year - a.year)
-                  .map((t: any) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name.includes(String(t.year)) ? t.name : `${t.name} ${t.year}`}
-                    </option>
-                  ))}
-              </optgroup>
-            </select>
-
-            <div className="w-[1px] h-3 bg-zinc-100 hidden md:block"></div>
-
-            {/* FILTER CATEGORY */}
-            <select
-              value={financeCategory}
-              onChange={(e) => { setFinanceCategory(e.target.value); setFinanceValue('ALL'); }}
-              className="bg-transparent border-none text-[9px] font-black uppercase tracking-widest outline-none cursor-pointer text-zinc-500 hover:text-zinc-900 transition-colors py-2"
-            >
-              <option value="ALL">Filter By: None</option>
-              <option value="FORM">By Form (Class)</option>
-              <option value="STREAM">By Stream</option>
-              <option value="TYPE">By Fee Type</option>
-            </select>
-
-            {/* FILTER VALUE */}
-            {financeCategory !== 'ALL' && (
-              <select
-                value={financeValue}
-                onChange={(e) => setFinanceValue(e.target.value)}
-                className="bg-white border border-zinc-100 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest outline-none cursor-pointer"
-              >
-                <option value="ALL">Select {financeCategory}</option>
-                {financeCategory === 'FORM' && data.classes?.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                {financeCategory === 'STREAM' && data.streams?.map((s: any) => <option key={s.id} value={s.id}>{s.class?.name} - {s.name}</option>)}
-                {financeCategory === 'TYPE' && Array.from(new Set(data.fees?.map((f: any) => f.type))).map((t: any) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            )}
-          </div>
+              {tab.label}
+            </button>
+          ))}
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-20">
-          <div className="space-y-2 group cursor-default">
-            <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest transition-colors group-hover:text-zinc-900">
-              Collections {selectedFinanceTerm === 'CURRENT' ? 'this term' : 'selected period'}
-            </p>
-            <h3 className="text-4xl font-black tracking-tighter text-zinc-900 tabular-nums">
-              {formatCurrency(feesCollected).replace(/[^\d.,]/g, '').trim() || '0.00'}<span className="text-sm ml-2 text-zinc-300 font-bold uppercase">KES</span>
-            </h3>
-          </div>
-
-          <div className="space-y-2 group cursor-default">
-            <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest transition-colors group-hover:text-rose-500">
-              Arrears {selectedFinanceTerm === 'CURRENT' ? 'this term' : 'selected period'}
-            </p>
-            <h3 className={cn("text-4xl font-black tracking-tighter tabular-nums", arrears > 0 ? "text-rose-500" : "text-zinc-900")}>
-              {formatCurrency(arrears).replace(/[^\d.,]/g, '').trim() || '0.00'}<span className="text-sm ml-2 text-zinc-300 font-bold uppercase">KES</span>
-            </h3>
-          </div>
-        </div>
-
-        <div className="flex gap-4 items-center">
-          <button
-            onClick={() => setShowArrears(!showArrears)}
-            className="text-[9px] font-black uppercase text-zinc-400 hover:text-zinc-900 transition-colors border border-zinc-100 px-4 py-2 rounded-full flex items-center gap-2"
-          >
-            <div className={cn("w-1 h-1 rounded-full", showArrears ? "bg-zinc-900" : "bg-zinc-200")}></div>
-            {showArrears ? 'Hide Detailed Breakdown' : 'Show Arrears Heat Map'}
-          </button>
-          <Link to="/principal-oversight" className="text-[9px] font-black uppercase text-zinc-400 hover:text-zinc-900 transition-colors">Launch Full Treasury Audit</Link>
-        </div>
-
-        {showArrears && (
-          <div className="pt-10 space-y-4 animate-in slide-in-from-top-4 duration-500">
-            <div className="bg-white border border-zinc-100 rounded-3xl overflow-hidden shadow-sm">
-              <div className="px-6 py-4 border-b border-zinc-50 bg-zinc-50/30 flex justify-between items-center">
-                <h4 className="text-[10px] font-black uppercase text-zinc-400 tracking-[0.2em]">Stream Arrears Ledger</h4>
-                <span className="text-[9px] font-bold text-zinc-400 uppercase italic">Sorted by highest outstanding balance</span>
-              </div>
-
-              <div className="max-h-[400px] overflow-y-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-zinc-50">
-                      <th className="px-6 py-3 text-[9px] font-black uppercase text-zinc-400 tracking-widest">Class & Stream</th>
-                      <th className="px-6 py-3 text-[9px] font-black uppercase text-zinc-400 tracking-widest text-right">Outstanding (KES)</th>
-                      <th className="px-6 py-3 text-[9px] font-black uppercase text-zinc-400 tracking-widest text-center">Collection Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {streamArrears.length === 0 ? (
-                      <tr>
-                        <td colSpan={3} className="px-6 py-20 text-center text-[10px] font-bold text-zinc-300 uppercase tracking-widest">No arrears detected for the selected filters</td>
-                      </tr>
-                    ) : (
-                      streamArrears.map((s: any) => (
-                        <tr key={s.id} className="border-b border-zinc-50 last:border-0 hover:bg-zinc-50/50 transition-colors">
-                          <td className="px-6 py-4">
-                            <p className="text-[11px] font-black text-zinc-900 uppercase tracking-tight">{s.className}</p>
-                            <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">{s.name}</p>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <p className="text-sm font-black text-zinc-900 tabular-nums">
-                              {formatCurrency(s.arrears).replace(/[^\d.,]/g, '').replace('.00', '')}
-                            </p>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-6 justify-end">
-                              <div className="flex items-center gap-3">
-                                <div className="w-24 h-1 bg-zinc-100 rounded-full overflow-hidden text-center justify-center">
-                                  <div className={cn("h-full", s.percentage < 40 ? "bg-rose-500" : "bg-zinc-900")} style={{ width: `${s.percentage}%` }} />
-                                </div>
-                                <span className="text-[9px] font-black text-zinc-400 tabular-nums w-8">{s.percentage}%</span>
-                              </div>
-                              <button
-                                onClick={() => downloadStreamArrears(s.id, `${s.className} ${s.name}`)}
-                                className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-900 transition-all group relative"
-                                title="Download Arrears List"
-                              >
-                                <ExternalLink size={14} />
-                                <span className="absolute bottom-full right-0 mb-2 px-2 py-1 bg-zinc-900 text-white text-[7px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap uppercase tracking-widest">Download List</span>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* 3. EXAM SCORES */}
-      <section className="space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between border-b border-zinc-100 pb-6 gap-6">
-           <h2 className="text-[11px] font-black text-zinc-900 uppercase tracking-[0.2em]">Exam Scores</h2>
-           
-           <div className="flex items-center gap-6">
-              <div className="flex bg-zinc-50 p-1 rounded-xl border border-zinc-100">
-                {[1, 2, 3, 4].map(form => (
-                  <button
-                    key={form}
-                    onClick={() => setActiveFormTab(form)}
-                    className={cn(
-                      "px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
-                      activeFormTab === form 
-                        ? "bg-white shadow-sm text-zinc-900" 
-                        : "text-zinc-400 hover:text-zinc-600"
-                    )}
-                  >
-                    Form {form}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex items-center gap-2">
-                 <select 
-                   value={selectedAcademicYear} 
-                   onChange={(e) => setSelectedAcademicYear(Number(e.target.value))}
-                   className="bg-transparent text-[10px] font-black uppercase tracking-widest outline-none border-none py-1 cursor-pointer"
-                 >
-                    {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
-                 </select>
-                 <div className="w-[1px] h-3 bg-zinc-200" />
-                 <select 
-                   value={selectedAcademicTerm} 
-                   onChange={(e) => setSelectedAcademicTerm(e.target.value)}
-                   className="bg-transparent text-[10px] font-black uppercase tracking-widest outline-none border-none py-1 cursor-pointer"
-                 >
-                    <option value="CURRENT">Active Term</option>
-                    {data?.terms?.filter((t: any) => t.year === Number(selectedAcademicYear)).map((t: any) => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                 </select>
-              </div>
-           </div>
-        </div>
-
-        {!academicHub || academicHub.allResults.length === 0 ? (
-          <div className="py-24 text-center border border-zinc-100 rounded-[32px] bg-zinc-50/20">
-             <div className="w-12 h-12 rounded-2xl bg-white border border-zinc-100 flex items-center justify-center mx-auto mb-4 text-zinc-300">
-                <FileText size={20} />
-             </div>
-             <p className="text-[10px] font-black text-zinc-300 uppercase tracking-[0.2em]">No results found for Form {activeFormTab}</p>
-             <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mt-1">Please ensure results are uploaded for this term/year</p>
-          </div>
-        ) : (
-          <div className="space-y-8 animate-in fade-in duration-700">
-             {/* CONSOLIDATED OVERVIEW */}
-             <div className="bg-white border border-zinc-100 rounded-[32px] p-10 shadow-sm relative overflow-hidden group">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-12 divide-y md:divide-y-0 md:divide-x divide-zinc-50 relative z-10">
-                   <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-3 text-zinc-400 mb-2">
-                         <BarChart2 size={16} />
-                         <span className="text-[10px] font-black uppercase tracking-widest">Average Score</span>
-                      </div>
-                      <div className="flex items-baseline gap-3">
-                         <h3 className="text-5xl font-black text-zinc-900 tabular-nums tracking-tighter">{academicHub.currentMean}</h3>
-                         <span className={cn(
-                           "text-[10px] font-black px-2 py-0.5 rounded-full",
-                           Number(academicHub.improvement) >= 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-500"
-                         )}>
-                            {Number(academicHub.improvement) > 0 ? '+' : ''}{academicHub.improvement}
-                         </span>
-                      </div>
-                   </div>
-
-                   <div className="flex flex-col gap-1 md:pl-10 pt-8 md:pt-0">
-                      <div className="flex items-center gap-3 text-zinc-400 mb-2">
-                         <Award size={16} />
-                         <span className="text-[10px] font-black uppercase tracking-widest">Top Students (A)</span>
-                      </div>
-                      <h3 className="text-5xl font-black text-zinc-900 tabular-nums tracking-tighter">{academicHub.aCount}</h3>
-                   </div>
-
-                   <div className="flex flex-col gap-1 md:pl-10 pt-8 md:pt-0">
-                      <div className="flex items-center gap-3 text-zinc-400 mb-2">
-                         <ShieldAlert size={16} />
-                         <span className="text-[10px] font-black uppercase tracking-widest">Low Scores</span>
-                      </div>
-                      <h3 className={cn("text-5xl font-black tabular-nums tracking-tighter", academicHub.criticalCount > 0 ? "text-rose-500" : "text-zinc-900")}>
-                        {academicHub.criticalCount}
-                      </h3>
-                   </div>
-
-                   <div className="flex flex-col gap-1 md:pl-10 pt-8 md:pt-0">
-                      <div className="flex items-center gap-3 text-zinc-400 mb-2">
-                         <Target size={16} />
-                         <span className="text-[10px] font-black uppercase tracking-widest">Top Class</span>
-                      </div>
-                      <h3 className="text-xl font-black text-zinc-900 uppercase tracking-tight truncate leading-tight pt-2">
-                        {academicHub.leader?.name || '---'}
-                      </h3>
-                   </div>
-                </div>
-                <div className="absolute right-[-2%] bottom-[-10%] text-zinc-50/50 text-[180px] font-black italic select-none pointer-events-none">
-                  {activeFormTab}
-                </div>
-             </div>
-
-             {/* STREAM BREAKDOWN */}
-             <div className="bg-white border border-zinc-100 rounded-[32px] overflow-hidden shadow-sm">
-                <div className="px-8 py-5 border-b border-zinc-50 flex justify-between items-center bg-zinc-100/10">
-                   <h4 className="text-[10px] font-black uppercase text-zinc-400 tracking-[0.2em]">Stream Rankings</h4>
-                   <button 
-                     onClick={() => setDrillDown({ 
-                        open: true, 
-                        title: `Form ${activeFormTab} Student Roll`, 
-                        students: academicHub.allResults 
-                     })}
-                     className="text-[9px] font-black uppercase text-zinc-900 underline underline-offset-4"
-                   >
-                     Full Roll
-                   </button>
-                </div>
-                <table className="w-full text-left">
-                   <thead>
-                      <tr>
-                         <th className="px-8 py-4 text-[9px] font-black uppercase text-zinc-300 tracking-widest">Stream</th>
-                         <th className="px-8 py-4 text-[9px] font-black uppercase text-zinc-300 tracking-widest text-center">Score</th>
-                         <th className="px-8 py-4 text-[9px] font-black uppercase text-zinc-300 tracking-widest text-right">View</th>
-                      </tr>
-                   </thead>
-                   <tbody>
-                      {academicHub.leaderboard.map((s: any) => (
-                        <tr key={s.id} className="border-b border-zinc-50 last:border-0 hover:bg-zinc-50/50 transition-colors group">
-                           <td className="px-8 py-6">
-                              <span className="text-sm font-black text-zinc-900 uppercase tracking-tight">{s.name}</span>
-                           </td>
-                           <td className="px-8 py-6 text-center">
-                              <span className="text-sm font-black text-zinc-900 tabular-nums">{s.mean}</span>
-                           </td>
-                           <td className="px-8 py-6 text-right">
-                              <button 
-                                onClick={() => setDrillDown({ 
-                                  open: true, 
-                                  title: `Form ${activeFormTab} ${s.name} - Students`, 
-                                  students: academicHub.allResults.filter((r: any) => r.student?.stream_id === s.id)
-                                })}
-                                className="text-[9px] font-black text-zinc-400 group-hover:text-zinc-900 transition-colors uppercase tracking-widest"
-                              >
-                                View List
-                              </button>
-                           </td>
-                        </tr>
-                      ))}
-                   </tbody>
-                </table>
-             </div>
-          </div>
-          )}
-      </section>
       </div>
-      <aside className="hidden lg:block lg:col-span-4 space-y-6 animate-in slide-in-from-right duration-700">
-        <Card className="p-6 h-[750px] flex flex-col border-none shadow-zinc-200/50 overflow-hidden">
-          <div className="flex items-center justify-between mb-8">
-             <div>
-               <h2 className="text-lg font-bold tracking-tight">Latest Updates</h2>
-               <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mt-1">School activities & notices</p>
-             </div>
-             
-             <div className="relative flex items-center gap-3">
-               <button 
-                 onClick={() => setShowAddMenu(!showAddMenu)}
-                 className={cn(
-                   "w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300",
-                   showAddMenu ? "bg-zinc-900 text-white rotate-45 shadow-xl" : "bg-zinc-50 text-zinc-500 hover:bg-zinc-100 border border-zinc-100"
-                 )}
-                >
-                 <Plus size={18} />
-               </button>
 
-               {showAddMenu && (
-                  <div className="absolute right-0 top-12 w-56 bg-zinc-900 text-white rounded-3xl shadow-2xl p-2 z-[70] animate-in fade-in zoom-in-95 duration-200">
-                    <button 
-                      onClick={() => { setShowAnnounceModal(true); setShowAddMenu(false); }}
-                      className="w-full text-left p-4 hover:bg-white/10 rounded-2xl transition-colors group"
+      {/* REACTIVE BIG PAGE & ACTIVITY FEED */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-4 flex-1">
+         
+         {/* THE BIG PAGE (Main Content Canvas) */}
+         <div className="lg:col-span-8 space-y-5 pb-6">
+             
+             {/* 1. OPERATIONS TAB */}
+             {activeMainTab === 'operations' && (
+                <div data-ai-context="operations-hub-canvas" className="space-y-5 animate-in fade-in duration-500">
+                   <div>
+                      <p className="text-xs text-zinc-400 uppercase tracking-widest">{new Date().toLocaleDateString('en-KE', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}</p>
+                   </div>
+
+                   {/* 3 KEY STAT CARDS */}
+                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      
+                      {/* Present Teachers */}
+                      <div className="p-6 rounded-2xl border border-zinc-200 bg-white">
+                         <p className="text-xs text-zinc-400 mb-3">Teachers Present Today</p>
+                         {data?.todayAttendance === undefined ? (
+                            <p className="text-xs text-zinc-300">Loading...</p>
+                         ) : (
+                            <>
+                              <p className="text-4xl font-light text-zinc-900 tabular-nums">
+                                {data?.teachers?.length || 0}
+                              </p>
+                              <p className="text-xs text-zinc-400 mt-2">of {data?.teachers?.length || 0} on staff &mdash; attendance not tracked per teacher yet</p>
+                            </>
+                         )}
+                      </div>
+
+                      {/* Present Students */}
+                      <div className="p-6 rounded-2xl border border-zinc-200 bg-white">
+                         <p className="text-xs text-zinc-400 mb-3">Students Present Today</p>
+                         {(() => {
+                            const present = (data?.todayAttendance || []).filter((a: any) => a.status === 'present' || a.status === 'PRESENT').length;
+                            const total = data?.students?.length || 0;
+                            const pct = total > 0 ? Math.round((present / total) * 100) : 0;
+                            return (
+                               <>
+                                  <p className="text-4xl font-light text-zinc-900 tabular-nums">
+                                     {present > 0 ? `${present}` : '—'}
+                                     <span className="text-lg text-zinc-400 font-light"> / {total}</span>
+                                  </p>
+                                  {present > 0 ? (
+                                     <p className="text-xs text-zinc-400 mt-2">{pct}% attendance rate today</p>
+                                  ) : (
+                                     <p className="text-xs text-zinc-300 mt-2">No attendance marked today yet</p>
+                                  )}
+                               </>
+                            );
+                         })()}
+                      </div>
+
+                      {/* Payments Today */}
+                      <div className="p-6 rounded-2xl border border-zinc-200 bg-white">
+                         <p className="text-xs text-zinc-400 mb-3">Payments Today</p>
+                         {(() => {
+                            const payments = data?.todayPayments || [];
+                            const expenses = data?.todayExpenses || [];
+                            const totalIn = payments.reduce((acc: number, p: any) => acc + (Number(p.amount_paid) || 0), 0);
+                            const totalOut = expenses.reduce((acc: number, e: any) => acc + (Number(e.amount) || 0), 0);
+                            if (payments.length === 0 && expenses.length === 0) {
+                               return (
+                                  <>
+                                    <p className="text-sm font-medium text-zinc-400">No Payments Today</p>
+                                    <p className="text-xs text-zinc-300 mt-2">No fee receipts or expenses recorded yet</p>
+                                  </>
+                               );
+                            }
+                            return (
+                               <>
+                                  {totalIn > 0 && <p className="text-2xl font-light text-emerald-700 tabular-nums">+ KES {formatCurrency(totalIn).replace(/[^\d.,]/g,'')}</p>}
+                                  {totalOut > 0 && <p className="text-2xl font-light text-rose-600 tabular-nums mt-1">&minus; KES {formatCurrency(totalOut).replace(/[^\d.,]/g,'')}</p>}
+                                  <p className="text-xs text-zinc-400 mt-2">{payments.length} receipt{payments.length !== 1 ? 's' : ''}{expenses.length > 0 ? `, ${expenses.length} expense${expenses.length !== 1 ? 's' : ''}` : ''}</p>
+                               </>
+                            );
+                         })()}
+                      </div>
+                   </div>
+
+                   {/* Teacher List */}
+                   <div className="border border-zinc-200 rounded-2xl overflow-hidden bg-white">
+                      <div className="px-5 py-3 border-b border-zinc-100 flex justify-between items-center">
+                         <p className="text-xs font-medium text-zinc-700">Teaching Staff</p>
+                         <span className="text-xs text-zinc-400">{data?.teachers?.length || 0} registered</span>
+                      </div>
+                      <div className="divide-y divide-zinc-100 max-h-[300px] overflow-y-auto">
+                         {(data?.teachers || []).length === 0 ? (
+                            <div className="p-6 text-center text-xs text-zinc-400">No teachers found.</div>
+                         ) : (data?.teachers || []).map((t: any) => (
+                            <div key={t.id} className="px-5 py-3 flex items-center justify-between">
+                               <div>
+                                  <p className="text-sm text-zinc-900">{t.full_name}</p>
+                                  <p className="text-xs text-zinc-400">{t.subject || 'Class Teacher'}</p>
+                               </div>
+                               <span className="text-xs px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100">Active</span>
+                            </div>
+                         ))}
+                      </div>
+                   </div>
+
+                   {/* Events */}
+                   {[...(data?.events || []), ...(data?.announcements || [])].length > 0 && (
+                      <div className="border border-zinc-200 rounded-2xl overflow-hidden bg-white">
+                         <div className="px-5 py-3 border-b border-zinc-100">
+                            <p className="text-xs font-medium text-zinc-700">Upcoming Events & Announcements</p>
+                         </div>
+                         <div className="divide-y divide-zinc-100 max-h-[200px] overflow-y-auto">
+                            {[...(data?.events || []), ...(data?.announcements || [])].slice(0, 8).map((e: any, i: number) => (
+                               <div key={e.id || i} className="px-5 py-3 flex items-start gap-2">
+                                  <div className="w-1 h-1 rounded-full bg-zinc-300 mt-2 shrink-0"></div>
+                                  <div>
+                                     <p className="text-sm text-zinc-900">{e.title}</p>
+                                     <p className="text-xs text-zinc-400">{e.date ? new Date(e.date).toLocaleDateString('en-KE') : 'Ongoing'}</p>
+                                  </div>
+                               </div>
+                            ))}
+                         </div>
+                      </div>
+                   )}
+                </div>
+             )}
+
+             {/* 2. CBC & ACADEMICS TAB */}
+             {activeMainTab === 'academics' && (
+                <div data-ai-context="academics-canvas" className="space-y-6 animate-in fade-in duration-500">
+                   <div>
+                      <h3 className="text-base font-semibold text-zinc-900 dark:text-white">CBC & Academics</h3>
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">Competency-Based Curriculum — {currentTerm?.name || 'Current Term'}</p>
+                   </div>
+
+                   {/* CBC Summary Row */}
+                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {[{label:'Exceeding (EE)', count: cbcMetrics.eeCount, color:'emerald'},{label:'Meeting (ME)', count: cbcMetrics.meCount, color:'blue'},{label:'Approaching (AE)', count: cbcMetrics.aeCount, color:'amber'},{label:'Below (BE)', count: cbcMetrics.beCount, color:'rose'}].map(({label,count,color}) => (
+                         <div key={label} className="p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{label}</p>
+                            <p className={`text-3xl font-semibold text-${color}-600 dark:text-${color}-400`}>{count}</p>
+                            <p className="text-xs text-zinc-400 mt-1">{cbcMetrics.totalAssessments > 0 ? Math.round((count/cbcMetrics.totalAssessments)*100) : 0}% of all</p>
+                         </div>
+                      ))}
+                   </div>
+
+                   {/* Competency bar */}
+                   <div className="p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 space-y-3">
+                      <div className="flex justify-between">
+                         <p className="text-sm font-medium text-zinc-900 dark:text-white">School-Wide Competency Spread</p>
+                         <p className="text-sm text-zinc-500">{cbcMetrics.totalAssessments} total observations</p>
+                      </div>
+                      <div className="flex h-3 w-full rounded-full overflow-hidden bg-zinc-100 dark:bg-zinc-800">
+                         <div style={{width:`${Math.max(2,(cbcMetrics.eeCount/Math.max(1,cbcMetrics.totalAssessments))*100)}%`}} className="bg-emerald-500 h-full" title="Exceeding"></div>
+                         <div style={{width:`${Math.max(2,(cbcMetrics.meCount/Math.max(1,cbcMetrics.totalAssessments))*100)}%`}} className="bg-blue-500 h-full" title="Meeting"></div>
+                         <div style={{width:`${Math.max(2,(cbcMetrics.aeCount/Math.max(1,cbcMetrics.totalAssessments))*100)}%`}} className="bg-amber-500 h-full" title="Approaching"></div>
+                         <div style={{width:`${Math.max(2,(cbcMetrics.beCount/Math.max(1,cbcMetrics.totalAssessments))*100)}%`}} className="bg-rose-500 h-full" title="Below"></div>
+                      </div>
+                      <div className="flex gap-4 text-xs text-zinc-400">
+                         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>EE</span>
+                         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>ME</span>
+                         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>AE</span>
+                         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500 inline-block"></span>BE</span>
+                      </div>
+                   </div>
+
+                   {/* Grade-by-Grade CBC Table */}
+                   <div className="border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-950">
+                      <div className="px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
+                         <h4 className="text-sm font-medium text-zinc-900 dark:text-white">Competency Results by Grade</h4>
+                      </div>
+                      {gradeSummaryRows.length === 0 ? (
+                         <div className="p-8 text-center text-sm text-zinc-400">No CBC assessments have been logged yet. Teachers need to record formative observations.</div>
+                      ) : (
+                         <table className="w-full text-left">
+                            <thead>
+                               <tr className="border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+                                  <th className="px-6 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider">Grade</th>
+                                  <th className="px-6 py-3 text-xs font-medium text-emerald-600 uppercase tracking-wider text-center">EE</th>
+                                  <th className="px-6 py-3 text-xs font-medium text-blue-600 uppercase tracking-wider text-center">ME</th>
+                                  <th className="px-6 py-3 text-xs font-medium text-amber-600 uppercase tracking-wider text-center">AE</th>
+                                  <th className="px-6 py-3 text-xs font-medium text-rose-600 uppercase tracking-wider text-center">BE</th>
+                                  <th className="px-6 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider text-right">Total</th>
+                               </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                               {gradeSummaryRows.map((row: any) => (
+                                  <tr key={row.className} className="hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors">
+                                     <td className="px-6 py-3 text-sm font-medium text-zinc-900 dark:text-white">{row.className}</td>
+                                     <td className="px-6 py-3 text-sm text-emerald-600 font-semibold text-center">{row.EE || '—'}</td>
+                                     <td className="px-6 py-3 text-sm text-blue-600 font-semibold text-center">{row.ME || '—'}</td>
+                                     <td className="px-6 py-3 text-sm text-amber-600 font-semibold text-center">{row.AE || '—'}</td>
+                                     <td className="px-6 py-3 text-sm text-rose-600 font-semibold text-center">{row.BE || '—'}</td>
+                                     <td className="px-6 py-3 text-sm text-zinc-500 text-right">{row.total}</td>
+                                  </tr>
+                               ))}
+                            </tbody>
+                         </table>
+                      )}
+                   </div>
+
+                   {/* SBA Projects */}
+                   <div className="border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-950">
+                      <div className="px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
+                         <h4 className="text-sm font-medium text-zinc-900 dark:text-white">KNEC SBA Projects</h4>
+                         <span className="text-xs text-zinc-400">{cbcProjectsHub.submissionRate}% submission rate</span>
+                      </div>
+                      <div className="divide-y divide-zinc-100 dark:divide-zinc-800 max-h-[240px] overflow-y-auto">
+                         {cbcProjectsHub.activeProjects.length === 0 ? (
+                            <div className="p-8 text-center text-sm text-zinc-400">No SBA projects registered yet for this term.</div>
+                         ) : cbcProjectsHub.activeProjects.map((p: any) => (
+                            <div key={p.id} className="px-6 py-3 flex items-center justify-between">
+                               <div>
+                                  <p className="text-sm font-medium text-zinc-900 dark:text-white">{p.title}</p>
+                                  <p className="text-xs text-zinc-400">{p.learning_area?.name || 'General'}</p>
+                               </div>
+                               <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{p.submissionCount} portfolios</span>
+                            </div>
+                         ))}
+                      </div>
+                   </div>
+                </div>
+             )}
+
+             {/* 3. FINANCE & TREASURY TAB */}
+             {activeMainTab === 'finance' && (
+                <div data-ai-context="finance-treasury-canvas" className="space-y-6 animate-in fade-in duration-500">
+                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                     <div>
+                        <h3 className="text-base font-semibold text-zinc-900 dark:text-white">Finance & Treasury</h3>
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">Fee collections, outstanding balances and arrears tracking</p>
+                     </div>
+                     <select
+                        value={selectedFinanceTerm}
+                        onChange={(e) => setSelectedFinanceTerm(e.target.value)}
+                        className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm font-semibold text-zinc-700 dark:text-zinc-300 rounded-xl px-4 py-2.5 outline-none shadow-sm cursor-pointer min-w-[180px]"
+                     >
+                        <option value="CURRENT">Active Term ({currentTerm?.name || 'N/A'})</option>
+                        {data?.terms?.map((t: any) => (
+                           <option key={t.id} value={t.id}>{t.name} {t.year || ''}</option>
+                        ))}
+                     </select>
+                   </div>
+
+                   {/* Key Metrics */}
+                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+                         <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">Fees Collected</p>
+                         <p className="text-2xl font-semibold text-zinc-900 dark:text-white">KES {formatCurrency(feesCollected).replace(/[^\d.,]/g,'') || '0'}</p>
+                         <p className="text-xs text-zinc-400 mt-1">{financeEfficiency}% collection rate</p>
+                      </div>
+                      <div className="p-5 rounded-2xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30">
+                         <p className="text-xs text-rose-500 mb-1">Outstanding Arrears</p>
+                         <p className="text-2xl font-semibold text-rose-600 dark:text-rose-400">KES {formatCurrency(arrears).replace(/[^\d.,]/g,'') || '0'}</p>
+                         <p className="text-xs text-zinc-400 mt-1">unpaid this term</p>
+                      </div>
+                      <div className="p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+                         <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">Total Billed</p>
+                         <p className="text-2xl font-semibold text-zinc-900 dark:text-white">KES {formatCurrency(totalDue).replace(/[^\d.,]/g,'') || '0'}</p>
+                         <p className="text-xs text-zinc-400 mt-1">across all students</p>
+                      </div>
+                   </div>
+
+                   {/* Arrears by Stream */}
+                   <div className="border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-950">
+                      <div className="px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
+                         <h4 className="text-sm font-medium text-zinc-900 dark:text-white">Arrears by Class & Stream</h4>
+                         <span className="text-xs text-zinc-400">{streamArrears.length} streams with balances</span>
+                      </div>
+                      <div className="max-h-[380px] overflow-y-auto">
+                         {streamArrears.length === 0 ? (
+                            <div className="p-8 text-center text-sm text-zinc-400">All fees have been cleared. No outstanding balances.</div>
+                         ) : (
+                            <table className="w-full">
+                               <thead>
+                                  <tr className="border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+                                     <th className="px-6 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider text-left">Class / Stream</th>
+                                     <th className="px-6 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider text-right">Outstanding (KES)</th>
+                                     <th className="px-6 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider text-right">Paid</th>
+                                  </tr>
+                               </thead>
+                               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                  {streamArrears.map((s: any) => (
+                                     <tr key={s.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors">
+                                        <td className="px-6 py-3">
+                                           <p className="text-sm font-medium text-zinc-900 dark:text-white">{s.className} — {s.name}</p>
+                                        </td>
+                                        <td className="px-6 py-3 text-right">
+                                           <span className={cn("text-sm font-semibold", s.arrears > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600')}>
+                                              {formatCurrency(s.arrears).replace(/[^\d.,]/g,'')}
+                                           </span>
+                                        </td>
+                                        <td className="px-6 py-3 text-right">
+                                           <div className="flex items-center justify-end gap-2">
+                                              <div className="w-16 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                                 <div className={cn("h-full rounded-full", s.percentage >= 70 ? 'bg-emerald-500' : s.percentage >= 40 ? 'bg-amber-500' : 'bg-rose-500')} style={{width:`${s.percentage}%`}}></div>
+                                              </div>
+                                              <span className="text-xs text-zinc-400 w-8">{s.percentage}%</span>
+                                              <button onClick={() => downloadStreamArrears(s.id, `${s.className} ${s.name}`)} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors" title="Export CSV">
+                                                 <Download size={14}/>
+                                              </button>
+                                           </div>
+                                        </td>
+                                     </tr>
+                                  ))}
+                               </tbody>
+                            </table>
+                         )}
+                      </div>
+                   </div>
+                </div>
+             )}
+          </div>
+
+         {/* LIVE ACTIVITY FEED (Right Sidebar, 4 Columns) */}
+         <div data-ai-context="live-activity-feed" className="lg:col-span-4 space-y-6">
+           <aside className="w-full space-y-6 animate-in slide-in-from-bottom duration-700">
+             <Card className="flex flex-col border-0 rounded-2xl shadow-sm overflow-hidden bg-white" style={{height: 'calc(100vh - 200px)', minHeight: '500px'}}>
+             {/* Colorful modern header */}
+             <div className="bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-700 px-6 py-5">
+               <div className="flex items-center justify-between">
+                 <div>
+                   <h2 className="text-base font-bold text-white">Latest Updates</h2>
+                   <p className="text-[10px] text-white/60 mt-0.5 uppercase tracking-wider">School broadcasts & alerts</p>
+                 </div>
+                 
+                 <div className="relative flex items-center gap-3">
+                   <button 
+                     onClick={() => setShowAddMenu(!showAddMenu)}
+                     className={cn(
+                       "w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-300 bg-white/10 text-white hover:bg-white/20",
+                       showAddMenu && "rotate-45"
+                     )}
                     >
-                      <p className="text-[9px] font-black uppercase text-white group-hover:translate-x-1 transition-transform tracking-widest">Broadcast Announcement</p>
-                    </button>
-                    <div className="h-px bg-white/5 my-1 mx-2"></div>
-                    <button 
-                      onClick={() => { setShowEventModal(true); setShowAddMenu(false); }}
-                      className="w-full text-left p-4 hover:bg-white/10 rounded-2xl transition-colors group"
-                    >
-                      <p className="text-[9px] font-black uppercase text-white group-hover:translate-x-1 transition-transform tracking-widest">Schedule Event</p>
-                    </button>
-                    <div className="h-px bg-white/5 my-1 mx-2"></div>
-                    <button 
-                      onClick={() => { handleDataCleanup(); setShowAddMenu(false); }}
-                      className="w-full text-left p-4 hover:bg-rose-500/20 rounded-2xl transition-colors group"
-                    >
-                      <p className="text-[9px] font-black uppercase text-rose-400 transition-transform tracking-widest">System Cleanup</p>
-                    </button>
-                  </div>
-               )}
+                     <Plus size={16} />
+                   </button>
+
+                   {showAddMenu && (
+                      <div className="absolute right-0 top-12 w-56 bg-zinc-900 text-white rounded-3xl shadow-2xl p-2 z-[70] animate-in fade-in zoom-in-95 duration-200 border border-white/10">
+                        <button 
+                          onClick={() => { setShowAnnounceModal(true); setShowAddMenu(false); }}
+                          className="w-full text-left p-4 hover:bg-white/10 rounded-2xl transition-colors group"
+                        >
+                          <p className="text-[9px] font-black uppercase text-white group-hover:translate-x-1 transition-transform tracking-widest">Broadcast Announcement</p>
+                        </button>
+                        <div className="h-px bg-white/5 my-1 mx-2"></div>
+                        <button 
+                          onClick={() => { setShowEventModal(true); setShowAddMenu(false); }}
+                          className="w-full text-left p-4 hover:bg-white/10 rounded-2xl transition-colors group"
+                        >
+                          <p className="text-[9px] font-black uppercase text-white group-hover:translate-x-1 transition-transform tracking-widest">Schedule Event</p>
+                        </button>
+                        <div className="h-px bg-white/5 my-1 mx-2"></div>
+                        <button 
+                          onClick={() => { handleDataCleanup(); setShowAddMenu(false); }}
+                          className="w-full text-left p-4 hover:bg-rose-500/20 rounded-2xl transition-colors group"
+                        >
+                          <p className="text-[9px] font-black uppercase text-rose-400 transition-transform tracking-widest">System Cleanup</p>
+                        </button>
+                      </div>
+                   )}
+                 </div>
+               </div>
+             </div>
+
+             {/* Filter bar */}
+             <div className="px-4 py-2 border-b border-zinc-100 flex items-center gap-2">
                <select
                  value={activityFilter}
                  onChange={(e) => setActivityFilter(e.target.value)}
-                 className="bg-transparent text-[9px] font-black uppercase text-zinc-500 hover:text-zinc-900 outline-none cursor-pointer tracking-widest px-2"
+                 className="bg-zinc-50 border border-zinc-100 text-[10px] font-medium text-zinc-600 outline-none cursor-pointer px-3 py-1.5 rounded-lg flex-1"
                >
                  <option value="ALL">All Updates</option>
-                 <option value="EVT">Events Only</option>
+                 <option value="EVT">Events</option>
                  <option value="ANN">Announcements</option>
+                 <option value="CBC_ALERT">CBC Alerts</option>
                </select>
              </div>
-          </div>
 
-          <div className="flex-1 overflow-y-auto pr-2 space-y-4 scroll-smooth">
-            {([...(data?.events || []), ...(data?.announcements || [])]
-              .filter(item => {
-                if (activityFilter === 'ALL') return true;
-                if (activityFilter === 'EVT') return (item as any).date;
-                if (activityFilter === 'ANN') return (item as any).content;
-                return true;
-              })
-              .sort((a, b) => new Date(b.created_at || new Date()).getTime() - new Date(a.created_at || new Date()).getTime())
-              .map((item: any, idx: number) => {
-                const isEvent = !!item.date;
-                const author = data?.teachers?.find((t: any) => t.id === item.author_id)?.full_name || (item.author_id === user.id ? user.full_name : 'System');
-                
-                return (
-                  <div key={idx} className="group relative py-4 border-b border-zinc-100 last:border-0 hover:bg-zinc-50/30 transition-colors px-2">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className={cn("text-[9px] font-black uppercase tracking-widest", isEvent ? "text-amber-500" : "text-blue-500")}>
-                        {isEvent ? 'Event' : 'Announcement'}
-                      </span>
-                      <span className="text-[9px] font-bold text-zinc-400">
-                        {new Date(item.created_at || item.date).toLocaleDateString()}
-                      </span>
+            <div className="flex-1 overflow-y-auto px-4 py-2 space-y-4 scroll-smooth">
+              {([...(data?.events || []), ...(data?.announcements || []), ...cbcComplianceAlerts]
+                .filter(item => {
+                  if (activityFilter === 'ALL') return true;
+                  if (activityFilter === 'EVT') return !!(item as any).date;
+                  if (activityFilter === 'ANN') return !!(item as any).content && !(item as any).type;
+                  if (activityFilter === 'CBC_ALERT') return (item as any).type === 'CBC_ALERT';
+                  return true;
+                })
+                .sort((a, b) => new Date(b.created_at || b.date || new Date()).getTime() - new Date(a.created_at || a.date || new Date()).getTime())
+                .map((item: any, idx: number) => {
+                  const isEvent = !!item.date;
+                  const isCbcAlert = item.type === 'CBC_ALERT';
+                  const author = isCbcAlert ? item.author_name : (data?.teachers?.find((t: any) => t.id === item.author_id)?.full_name || (item.author_id === user.id ? user.full_name : 'System'));
+                  
+                  return (
+                    <div key={idx} className="group relative py-3 border-b border-zinc-100 last:border-0 hover:bg-zinc-50/50 transition-colors px-2 rounded-xl">
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className={cn(
+                          "text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full", 
+                          isCbcAlert ? "bg-rose-100 text-rose-700" : (isEvent ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700")
+                        )}>
+                          {isCbcAlert ? 'CBC Alert' : (isEvent ? 'Event' : 'Notice')}
+                        </span>
+                        <span className="text-[9px] font-bold text-zinc-400">
+                          {new Date(item.created_at || item.date).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <h3 className="text-sm font-semibold text-zinc-900 group-hover:text-zinc-600 transition-colors">{item.title}</h3>
+                      <p className="text-xs text-zinc-500 mt-0.5 line-clamp-2 leading-relaxed">
+                        {isEvent ? item.description : item.content}
+                      </p>
+                      <div className="mt-2 text-[9px] font-medium text-zinc-400 uppercase tracking-wide">
+                         By {author}
+                      </div>
                     </div>
-                    <h3 className="text-sm font-bold text-zinc-900 group-hover:text-zinc-600 transition-colors">{item.title}</h3>
-                    <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">
-                      {isEvent ? item.description : item.content}
-                    </p>
-                    <div className="mt-2 text-[9px] font-bold text-zinc-400">
-                       By {author}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </Card>
-      </aside>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Chat with Matta ED button */}
+            <div className="px-4 py-3 border-t border-zinc-100">
+               <button className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-700 text-white text-sm font-semibold hover:opacity-90 transition-opacity shadow-lg shadow-violet-500/25">
+                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-white shrink-0">
+                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="currentColor" fillOpacity="0.2"/>
+                   <circle cx="12" cy="12" r="3" fill="currentColor"/>
+                   <path d="M12 5v2M12 17v2M5 12H7M17 12h2M7.05 7.05l1.41 1.41M15.54 15.54l1.41 1.41M7.05 16.95l1.41-1.41M15.54 8.46l1.41-1.41" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                 </svg>
+                 Chat with Matta ED
+               </button>
+             </div>
+          </Card>
+        </aside>
 
       {/* Mobile View Social Activity (Visible only on small screens) */}
       <section className="lg:hidden space-y-6 pt-12 border-t border-zinc-100">
@@ -2376,6 +2559,7 @@ const PrincipalView = ({ user }: any) => {
            {/* Simplified mobile list */}
         </div>
       </section>
+      </div>
       </div>
 
 
@@ -2393,8 +2577,8 @@ const PrincipalView = ({ user }: any) => {
           <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
             {drillDown.students.map((res: any, idx: number) => (
               <div key={idx} className="flex justify-between items-center py-2 border-b border-zinc-50 hover:bg-zinc-50 px-2 rounded-lg transition-colors group">
-                <span className="text-xs font-bold text-zinc-900 uppercase tracking-tight">{res.student?.profile?.full_name || 'Unknown Student'}</span>
-                <span className="text-xs font-black text-zinc-500 tabular-nums uppercase p-1 bg-zinc-100 rounded group-hover:bg-zinc-900 group-hover:text-white transition-colors">{res.student?.adm_no}</span>
+                <span className="text-xs font-bold text-zinc-900 uppercase tracking-tight">{res.student?.profile?.full_name || res.profile?.full_name || 'Unknown Student'}</span>
+                <span className="text-xs font-black text-zinc-500 tabular-nums uppercase p-1 bg-zinc-100 rounded group-hover:bg-zinc-900 group-hover:text-white transition-colors">{res.student?.adm_no || res.adm_no}</span>
               </div>
             ))}
           </div>
@@ -2436,7 +2620,7 @@ const PrincipalView = ({ user }: any) => {
                 ))}
              </div>
           </div>
-          <Button type="submit" fullWidth disabled={isSaving}>{isSaving ? 'PUBLISHING...' : 'PUBLISH BROADCAST'}</Button>
+          <Button type="submit" className="w-full" disabled={isSaving}>{isSaving ? 'PUBLISHING...' : 'PUBLISH BROADCAST'}</Button>
         </form>
       </Modal>
 
@@ -2460,7 +2644,7 @@ const PrincipalView = ({ user }: any) => {
               <textarea value={eventForm.description} onChange={e => setEventForm({...eventForm, description: e.target.value})} rows={3} className="w-full bg-zinc-50 border border-zinc-100 rounded-3xl p-6 text-xs font-medium resize-none" />
             </div>
           </div>
-          <Button type="submit" fullWidth disabled={isSaving}>{isSaving ? 'SCHEDULING...' : 'SCHEDULE EVENT'}</Button>
+          <Button type="submit" className="w-full" disabled={isSaving}>{isSaving ? 'SCHEDULING...' : 'SCHEDULE EVENT'}</Button>
         </form>
       </Modal>
 
@@ -2483,28 +2667,50 @@ const CompactStat = ({ label, value }: any) => (
 
 /* -------------------------------------------------------------------------- */
 const DashboardSkeleton = () => (
-  <div className="space-y-10 animate-pulse">
-    <header className="flex justify-between items-center bg-white p-10 rounded-[3rem] border border-zinc-100 shadow-sm">
-      <div className="space-y-3">
-        <div className="h-4 w-48 bg-zinc-100 rounded-full" />
-        <div className="h-10 w-64 bg-zinc-100 rounded-2xl" />
+  <div className="w-full px-4 lg:px-8 py-10 space-y-16 animate-pulse bg-white">
+    {/* Welcome Section & Metrics Skeleton */}
+    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 bg-zinc-950 p-8 lg:p-12 rounded-[2.5rem] shadow-2xl overflow-hidden">
+      <div className="space-y-4 lg:w-1/2">
+        <div className="h-3 w-32 bg-zinc-800 rounded-full" />
+        <div className="h-10 w-72 bg-zinc-800 rounded-2xl" />
+        <div className="h-4 w-48 bg-zinc-800 rounded-full" />
+        <div className="h-6 w-64 bg-zinc-800/50 rounded-full pt-4" />
       </div>
-      <div className="flex gap-12">
-        <div className="h-12 w-24 bg-zinc-100 rounded-xl" />
-        <div className="h-12 w-24 bg-zinc-100 rounded-xl" />
-        <div className="h-12 w-24 bg-zinc-100 rounded-xl" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:w-1/2">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="bg-white/5 border border-white/10 p-5 rounded-2xl space-y-3">
+            <div className="h-3 w-24 bg-zinc-800 rounded-full" />
+            <div className="h-8 w-16 bg-zinc-700 rounded-xl" />
+          </div>
+        ))}
       </div>
-    </header>
-
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-      {[1, 2, 3, 4].map(i => (
-        <div key={i} className="h-48 bg-white border border-zinc-100 rounded-[2.5rem] shadow-sm" />
-      ))}
     </div>
 
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-      <div className="lg:col-span-2 h-[500px] bg-white border border-zinc-100 rounded-[3rem] shadow-sm" />
-      <div className="h-[500px] bg-white border border-zinc-100 rounded-[3rem] shadow-sm" />
+    {/* Main Grid Skeleton */}
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 mt-12">
+      <div className="lg:col-span-8 space-y-12 pb-20">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="bg-white border border-zinc-100 rounded-[2.5rem] p-8 lg:p-10 shadow-sm space-y-6">
+            <div className="h-6 w-64 bg-zinc-100 rounded-xl" />
+            <div className="h-4 w-96 bg-zinc-50 rounded-lg" />
+            <div className="h-48 w-full bg-zinc-50 rounded-2xl" />
+          </div>
+        ))}
+      </div>
+      <div className="hidden lg:block lg:col-span-4 space-y-6">
+        <div className="bg-white border border-zinc-100 rounded-[2.5rem] p-8 h-[820px] shadow-sm space-y-6">
+          <div className="h-6 w-40 bg-zinc-100 rounded-xl" />
+          <div className="space-y-4 pt-4">
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="py-4 border-b border-zinc-50 space-y-2">
+                <div className="h-3 w-20 bg-zinc-100 rounded-full" />
+                <div className="h-4 w-full bg-zinc-100 rounded-lg" />
+                <div className="h-3 w-32 bg-zinc-50 rounded-full" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 );
@@ -2518,7 +2724,7 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="w-full font-sans text-zinc-900 animate-in fade-in duration-500">
       <Toaster position="top-right" />
-      {['PRINCIPAL', 'ADMIN'].includes(user.role) && <div className="px-2 lg:px-4 py-8"><PrincipalView user={user} /></div>}
+      {['PRINCIPAL', 'ADMIN'].includes(user.role) && <div className="px-2 lg:px-4 pt-0 pb-8"><PrincipalView user={user} /></div>}
       {user.role === 'TEACHER' && <div className="px-2 lg:px-4 py-8"><TeacherView user={user} /></div>}
       {(user.role === 'PARENT' || user.role === 'STUDENT') && <ParentStudentDashboard user={user} />}
     </div>

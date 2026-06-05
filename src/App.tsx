@@ -8,6 +8,7 @@ import GlobalNotificationManager from './components/GlobalNotificationManager';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
+import { BursarDashboard } from './pages/BursarDashboard';
 import { Results } from './pages/Results';
 import { Fees } from './pages/Fees';
 import { Announcements } from './pages/Announcements';
@@ -19,6 +20,7 @@ import { Chat } from './pages/Chat';
 import { Assignments } from './pages/Assignments';
 import { Timetable } from './pages/Timetable';
 import { MyClassroom } from './pages/MyClassroom';
+import { MattaWorkspace } from './pages/MattaWorkspace';
 import { TemplatesPermision } from './pages/TemplatesPermision';
 import { TemplatesList } from './pages/TemplatesList';
 import { TemplateDetail } from './pages/TemplateDetail';
@@ -31,20 +33,22 @@ import { Privacy } from './pages/Privacy';
 import { MyStudents } from './pages/MyStudents';
 import { SchoolSettings } from './pages/SchoolSettings';
 import { AdminRoutes } from './admin/AdminRoutes';
-import { PrincipalOversight } from './pages/PrincipalOversight';
+
 import { Support } from './pages/Support';
 import { SubmissionsUpload } from './pages/SubmissionsUpload';
+import { InputResults } from './pages/InputResults';
+import { ProjectSubmissions } from './pages/ProjectSubmissions';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
 
   if (loading) return <div className="h-screen w-screen flex items-center justify-center bg-white dark:bg-zinc-950"><div className="w-8 h-8 border-4 border-zinc-900 dark:border-white border-t-transparent rounded-full animate-spin" /></div>;
-  
+
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
-  
+
   return <Layout>{children}</Layout>;
 };
 
@@ -60,6 +64,7 @@ const AppContent = () => {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/bursar" element={<BursarDashboard />} />
               <Route path="/results" element={<Results />} />
               <Route path="/fees" element={<Fees />} />
               <Route path="/fees-management" element={<FeesManagement />} />
@@ -73,6 +78,7 @@ const AppContent = () => {
               <Route path="/assignments" element={<Assignments />} />
               <Route path="/timetable" element={<Timetable />} />
               <Route path="/my-classroom" element={<MyClassroom />} />
+              <Route path="/matta-workspace" element={<MattaWorkspace />} />
               <Route path="/templates" element={<TemplatesList />} />
               <Route path="/templates/permissions" element={<TemplatesPermision />} />
               <Route path="/templates/:id" element={<TemplateDetail />} />
@@ -81,9 +87,11 @@ const AppContent = () => {
               <Route path="/settings" element={<Settings />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/my-students" element={<MyStudents />} />
-              <Route path="/principal-oversight" element={<PrincipalOversight />} />
+
               <Route path="/school-settings" element={<SchoolSettings />} />
               <Route path="/submissions-upload" element={<SubmissionsUpload />} />
+              <Route path="/input-results" element={<InputResults />} />
+              <Route path="/project-submissions" element={<ProjectSubmissions />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </ProtectedRoute>
@@ -101,9 +109,9 @@ export default function App() {
       <AdminAuthProvider>
         <AppProvider>
           <ToastProvider>
-             <GlobalNotificationManager />
-             <AppContent />
-             <SpeedInsights />
+            <GlobalNotificationManager />
+            <AppContent />
+            <SpeedInsights />
           </ToastProvider>
         </AppProvider>
       </AdminAuthProvider>

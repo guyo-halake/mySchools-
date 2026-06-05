@@ -4,11 +4,15 @@ import { toast } from 'react-hot-toast';
 import { Bell, BarChart3, Calendar, CreditCard, FileText, GraduationCap, MessageSquare, ShieldAlert, TrendingUp, UserCircle2, Users, ArrowUpRight, ChevronRight, LayoutDashboard, X, LineChart as LineChartIcon, Activity } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell
-} from 'recharts';
-import { markToGrade, gradeWeight } from '../utils/grading';
 import { cn } from '../utils/utils';
+
+// Helper for CBC Proficiency Labels
+const getCbcProficiency = (marks: number) => {
+  if (marks >= 80) return { label: 'EE', grade: 'EE', mean: marks.toFixed(1), color: '#10b981', full: 'Exceeding Expectations' };
+  if (marks >= 65) return { label: 'ME', grade: 'ME', mean: marks.toFixed(1), color: '#3b82f6', full: 'Meeting Expectations' };
+  if (marks >= 50) return { label: 'AE', grade: 'AE', mean: marks.toFixed(1), color: '#f59e0b', full: 'Approaching Expectations' };
+  return { label: 'BE', grade: 'BE', mean: marks.toFixed(1), color: '#ef4444', full: 'Below Expectations' };
+};
 
 const formatMoney = (value: number) => `KES ${Number(value || 0).toLocaleString()}`;
 const formatDate = (date?: string | null) => {
@@ -68,12 +72,11 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
     const avg = latestResults.reduce((acc: number, row: any) => acc + Number(row.marks || 0), 0) / latestResults.length;
     
     return { 
-      grade: markToGrade(avg, gradingSystem), 
-      mean: avg.toFixed(1),
+      ...getCbcProficiency(avg),
       examName: latestResults[0]?.exam?.name || 'Exam',
       termName: latestResults[0]?.exam?.term?.name || ''
     };
-  }, [results, gradingSystem]);
+  }, [results]);
 
   const feeSummary = useMemo(() => {
     const totalDue = fees.reduce((acc: number, row: any) => acc + Number(row.amount_due || 0), 0);
@@ -120,17 +123,19 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
   }, [notifications, feeSummary]);
 
   const analyticsData = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const yearResults = results.filter(r => r.exam?.term?.year === currentYear);
+    const yearResults = results; // Use all results to ensure data shows up
     
-    if (!yearResults.length || !gradingSystem.length) return [];
+    if (!yearResults.length) return [];
 
     const getPoints = (m: number) => {
-      const found = gradingSystem.find(s => m >= s.min_mark && m <= s.max_mark);
-      return Number(found?.grade_point || 0);
+      if (gradingSystem.length > 0) {
+        const found = gradingSystem.find(s => m >= s.min_mark && m <= s.max_mark);
+        return Number(found?.grade_point || 0);
+      }
+      return m / 10; // Fallback to raw scaled points
     };
 
-    if (viewMode === 'SUBJECTS') {
+    if (viewMode === 'LEARNING_AREAS') {
       const subjectMap = new Map();
       yearResults.forEach(r => {
         const name = r.subject?.name || 'Unknown';
@@ -140,12 +145,14 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
 
       return Array.from(subjectMap.entries()).map(([name, scores]) => {
         const avg = scores.reduce((a: any, b: any) => a + b, 0) / scores.length;
-        const points = getPoints(avg);
+        const cbc = getCbcProficiency(avg);
+        const points = avg; // Use raw average for radar/bar scaling under CBC
         return {
           name,
           points,
-          gradeLabel: markToGrade(avg, gradingSystem),
-          color: points >= 9 ? '#10b981' : points >= 5 ? '#f59e0b' : '#ef4444'
+          fullMark: 100,
+          gradeLabel: cbc.label,
+          color: cbc.color
         };
       });
     }
@@ -180,7 +187,7 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
         isFirstOfTerm: true,
         points,
         marks: avg.toFixed(1),
-        gradeLabel: markToGrade(avg, gradingSystem),
+        gradeLabel: getCbcProficiency(avg).label,
         color: avg > 0 ? (points >= 9 ? '#10b981' : points >= 5 ? '#f59e0b' : '#ef4444') : '#f4f4f5'
       };
     });
@@ -196,7 +203,10 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
     return Array.from(map.entries())
       .map(([name, scores]) => ({ name, avg: scores.reduce((a: any, b: any) => a + b, 0) / scores.length }))
       .filter(s => s.avg < 60)
-      .map(s => ({ ...s, grade: s.avg >= 50 ? 'D' : 'E' }));
+      .map(s => {
+         const cbc = getCbcProficiency(s.avg);
+         return { ...s, grade: cbc.label, color: cbc.color };
+      });
   }, [results]);
 
   const loadDashboard = async () => {
@@ -486,218 +496,142 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
         </div>
       )}
 
-      {/* 1. Header */}
-      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 sm:gap-12">
-        <div className="space-y-0.5">
-          <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 dark:text-white tracking-tight font-sora">Welcome, {user?.full_name?.split(' ')[0]}</h1>
-          <p className="text-[14px] text-emerald-600 font-medium tracking-tight font-sora uppercase tracking-[0.1em]">{schoolName}</p>
-          <div className="flex items-center gap-2 pt-2 font-black uppercase text-[10px] tracking-[0.2em] font-inter">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-zinc-400">{selectedStudent?.profile?.full_name}</span>
-          </div>
+      {/* MODALS END */}
+
+      {/* 1. Dashboard Header & Sibling Switcher */}
+      <header className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+           <div className="space-y-1">
+             <h1 className="text-2xl sm:text-3xl font-semibold text-zinc-900 dark:text-white tracking-tight font-inter">
+               Welcome {user?.full_name?.split(' ')[0]}
+             </h1>
+             <p className="text-sm text-zinc-500 font-medium tracking-tight font-inter">
+               Parent: {selectedStudent?.profile?.full_name || 'No child selected'}
+             </p>
+           </div>
+           <div className="flex items-center gap-3 pb-2 overflow-x-auto no-scrollbar">
+             <Link to="/parent/fees"><NavButton label="Pay Fees" icon={<CreditCard size={16} />} badge={feeSummary.balance > 0 ? '!' : undefined} badgeColor="bg-rose-500" /></Link>
+             <Link to="/parent/results"><NavButton label="Results" icon={<FileText size={16} />} badge={results.length > 0 ? '✓' : undefined} badgeColor="bg-emerald-500" /></Link>
+             <Link to="/parent/announcements"><NavButton label="Updates" icon={<Bell size={16} />} badge={announcements.length > 0 ? announcements.length.toString() : undefined} badgeColor="bg-blue-500" /></Link>
+           </div>
         </div>
 
-        <div className="flex items-center gap-4 sm:gap-10 pb-4 sm:pb-0 overflow-x-auto no-scrollbar">
-          <NavButton onClick={() => setShowAppointmentsMsg(true)} label="Appointments" icon={<MessageSquare size={18} />} />
-          <Link to="/results"><NavButton label="Results" icon={<FileText size={18} />} /></Link>
-          <Link to="/fees"><NavButton label="Fees" icon={<CreditCard size={18} />} /></Link>
-          <NavButton onClick={() => setShowChildModal(true)} label="My Child" icon={<Users size={18} />} />
-        </div>
+        {/* Sibling Switcher Tab Bar */}
+        {students.length > 0 && (
+           <div className="flex flex-wrap gap-2 items-center bg-transparent">
+             {students.map(s => (
+               <button
+                 key={s.id}
+                 onClick={() => setStudents([s, ...students.filter(other => other.id !== s.id)])}
+                 className={cn("flex items-center gap-2 px-4 py-2 rounded-lg transition-all text-sm font-medium border",
+                   selectedStudent?.id === s.id ? "bg-zinc-900 text-white border-zinc-900 dark:bg-white dark:text-zinc-900" : "bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700")}
+               >
+                 {s.profile?.full_name?.split(' ')[0]}
+               </button>
+             ))}
+           </div>
+        )}
       </header>
 
-      {/* 2. Stats */}
-      <section className="space-y-3">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <StatCard label="Outstanding" value={formatMoney(feeSummary.balance)} sub={feeSummary.lastPayment ? `Recent: ${formatMoney(feeSummary.lastPayment.amount_paid)}` : "No history"} trend={feeSummary.balance > 0 ? "danger" : "success"} icon={<CreditCard size={14} />} />
-          <StatCard 
-            label="Current Grade" 
-            value={`${currentGradeLabel.mean}% (${currentGradeLabel.grade})`} 
-            sub={`${currentGradeLabel.examName} • ${currentGradeLabel.termName}`} 
-            trend="success" 
-            icon={<GraduationCap size={14} />} 
-          />
-          <StatCard 
-            label="Attendance" 
-            value={attendanceSummary.percentage} 
-            sub={`Present: ${attendanceSummary.present} / ${attendanceSummary.total} Days`} 
-            trend={Number(attendanceSummary.percentage.replace('%', '')) >= 90 ? "success" : "warning"} 
-            icon={<Users size={14} />} 
-            hideMobile={!showAllStats} 
-          />
-          <StatCard label="Next Event" value={events[0]?.title || "TBD"} sub={events[0]?.date ? formatDate(events[0].date) : "—"} trend="neutral" icon={<Calendar size={14} />} hideMobile={!showAllStats} />
-        </div>
-        <button onClick={() => setShowAllStats(!showAllStats)} className="lg:hidden w-full py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[9px] font-black uppercase tracking-widest text-zinc-400">
-          {showAllStats ? "Hide Detail" : "View Analytics"}
-        </button>
+      {/* 2. Stats (Vercel Style) */}
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard 
+          label="Outstanding Fees" 
+          value={feeSummary.balance > 0 ? formatMoney(feeSummary.balance) : 'KES 0'} 
+          sub={feeSummary.lastPayment ? `Last paid: ${formatMoney(feeSummary.lastPayment.amount_paid)}` : "No payment history"} 
+          trend={feeSummary.balance > 0 ? "warning" : "neutral"} 
+        />
+        <StatCard 
+          label="Overall Grade" 
+          value={results.length > 0 ? `${currentGradeLabel.grade}` : 'No Data'} 
+          sub={results.length > 0 ? `${currentGradeLabel.examName}` : "No assessments recorded"} 
+          trend={['EE', 'ME'].includes(currentGradeLabel.grade) ? "success" : "neutral"} 
+        />
+        <StatCard 
+          label="Attendance" 
+          value={attendance.length > 0 ? attendanceSummary.percentage : 'No Data'} 
+          sub={attendance.length > 0 ? `${attendanceSummary.present} of ${attendanceSummary.total} days present` : "No attendance recorded"} 
+          trend="neutral" 
+          hideMobile 
+        />
       </section>
 
       {/* 3. Main Dashboard */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-8">
-          <div className="bg-white dark:bg-zinc-950 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 shadow-sm overflow-hidden mb-8">
-            <div className="p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6 border-b border-zinc-50 dark:border-zinc-900">
+          <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden mb-8">
+            <div className="p-6 border-b border-zinc-100 dark:border-zinc-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-[12px] font-black uppercase tracking-[0.4em] text-zinc-900 dark:text-white mb-1.5 font-sora">Academic Performance</h2>
-                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest uppercase">Institutional Progress Tracking</p>
+                <h2 className="text-base font-semibold text-zinc-900 dark:text-white">Academic Performance</h2>
+                <p className="text-sm text-zinc-500">Student progress over time</p>
               </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="inline-flex bg-zinc-50 dark:bg-zinc-900/50 p-1 rounded-xl border border-zinc-100 dark:border-zinc-800">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex bg-zinc-100 dark:bg-zinc-900 p-1 rounded-lg">
                   <button
                     onClick={() => setViewMode('PROGRESSION')}
                     className={cn("px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all",
                       viewMode === 'PROGRESSION' ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm" : "text-zinc-400 hover:text-zinc-600")}
                   >
-                    Progression
+                    Exams
                   </button>
                   <button
-                    onClick={() => setViewMode('SUBJECTS')}
+                    onClick={() => setViewMode('LEARNING_AREAS')}
                     className={cn("px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all",
-                      viewMode === 'SUBJECTS' ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm" : "text-zinc-400 hover:text-zinc-600")}
+                      viewMode === 'LEARNING_AREAS' ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm" : "text-zinc-400 hover:text-zinc-600")}
                   >
-                    By Subjects
-                  </button>
-                </div>
-
-                <div className="inline-flex bg-zinc-50 dark:bg-zinc-900/50 p-1 rounded-xl border border-zinc-100 dark:border-zinc-800">
-                  <button
-                    onClick={() => setGraphType('LINE')}
-                    className={cn("p-2 rounded-lg transition-all",
-                      graphType === 'LINE' ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm" : "text-zinc-400")}
-                  >
-                    <LineChartIcon size={14} />
-                  </button>
-                  <button
-                    onClick={() => setGraphType('BAR')}
-                    className={cn("p-2 rounded-lg transition-all",
-                      graphType === 'BAR' ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm" : "text-zinc-400")}
-                  >
-                    <BarChart3 size={14} />
+                    Class Projects
                   </button>
                 </div>
               </div>
             </div>
 
             <div className="p-0 sm:p-6 pb-2">
-              <div className="h-[450px] sm:h-[550px] w-full mt-4">
+              <div className="mt-4 space-y-6">
                 {results.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    {viewMode === 'PROGRESSION' && graphType === 'LINE' ? (
-                      <LineChart data={analyticsData} margin={{ top: 20, right: 30, left: 40, bottom: 40 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
-                        <XAxis
-                          dataKey="name"
-                          axisLine={false}
-                          tickLine={false}
-                          interval={0}
-                          padding={{ left: 50, right: 50 }}
-                          tick={(props: any) => {
-                            const { x, y, index } = props;
-                            const data = analyticsData[index];
-                            if (!data) return null;
-                            return (
-                              <g transform={`translate(${x},${y})`}>
-                                <text x={0} y={0} dy={16} textAnchor="middle" fill="#18181b" fontSize={11} fontWeight={900}>{data.name}</text>
-                                {data.isFirstOfTerm && (
-                                  <text x={0} y={20} dy={22} textAnchor="middle" fill="#a1a1aa" fontSize={9} fontWeight={900} className="uppercase tracking-[0.2em]">{data.termLabel}</text>
-                                )}
-                              </g>
-                            );
-                          }}
-                        />
-                        <YAxis
-                          domain={[0, 12]}
-                          ticks={[0, 3, 6, 9, 12]}
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fontSize: 10, fontWeight: 900, fill: '#18181b' }}
-                          label={{ value: 'POINTS', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fontWeight: 900, fill: '#a1a1aa' }}
-                        />
-                        <Tooltip
-                          cursor={{ stroke: '#f4f4f5', strokeWidth: 2 }}
-                          content={({ active, payload }) => {
-                            if (active && payload && payload.length) {
-                              const data = payload[0].payload;
-                              const prevData = data.prevIndex >= 0 ? analyticsData[data.prevIndex] : null;
-                              const currentMarks = Number(data.marks);
-                              const prevMarks = prevData ? Number(prevData.marks) : -1;
-                              const diff = prevMarks >= 0 ? currentMarks - prevMarks : 0;
-
-                              return (
-                                <div className="bg-white border border-zinc-100 shadow-2xl rounded-3xl p-5 min-w-[180px] animate-in zoom-in-95 duration-200">
-                                  <div className="flex items-center justify-between mb-4">
-                                    <span className="text-[9px] font-black uppercase tracking-widest text-zinc-400 font-sora">{data.termLabel} • {data.name}</span>
-                                    {prevMarks >= 0 && (
-                                      <div className={cn("flex items-center group", diff >= 0 ? "text-emerald-500" : "text-rose-500")}>
-                                        {diff >= 0 ? <TrendingUp size={12} /> : <ShieldAlert size={12} />}
-                                        <span className="text-[10px] font-black ml-1">{Math.abs(diff).toFixed(1)}%</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="space-y-1">
-                                    <div className="flex items-end gap-2">
-                                      <span className="text-4xl font-black text-zinc-900 leading-none font-sora">{data.gradeLabel}</span>
-                                      <span className="text-sm font-bold text-zinc-400 mb-1">{data.marks}%</span>
-                                    </div>
-                                    <div className="pt-4 border-t border-zinc-50 mt-4">
-                                      <p className="text-[8px] font-black text-zinc-300 uppercase tracking-widest mb-1">Historical Comparison</p>
-                                      <p className="text-[10px] font-bold text-zinc-500">Previous Term: <span className="text-zinc-900">{prevData ? `${prevData.gradeLabel} (${prevData.marks}%)` : 'No Data'}</span></p>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            }
-                            return null;
-                          }}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="points"
-                          stroke="#18181b"
-                          strokeWidth={2.5}
-                          connectNulls={true}
-                          dot={(props: any) => {
-                            const { cx, cy, payload } = props;
-                            return <rect x={cx - 5} y={cy - 5} width={10} height={10} fill={payload.color} stroke="#fff" strokeWidth={2} />;
-                          }}
-                          activeDot={{ r: 8, strokeWidth: 0 }}
-                          animationDuration={1500}
-                        />
-                      </LineChart>
-                    ) : viewMode === 'SUBJECTS' || graphType === 'BAR' ? (
-                      <BarChart data={analyticsData} margin={{ top: 20, right: 30, left: 40, bottom: 40 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
-                        <XAxis
-                          dataKey="name"
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fontSize: 10, fontWeight: 900, fill: '#71717a' }}
-                          label={{ value: viewMode === 'SUBJECTS' ? 'SUBJECTS' : 'EXAMS', position: 'insideBottom', offset: -10, fontSize: 10, fontWeight: 900, fill: '#a1a1aa' }}
-                        />
-                        <YAxis
-                          domain={[0, 12]}
-                          ticks={[0, 3, 6, 9, 12]}
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fontSize: 10, fontWeight: 900, fill: '#18181b' }}
-                          label={{ value: 'POINTS', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fontWeight: 900, fill: '#a1a1aa' }}
-                        />
-                        <Tooltip
-                          contentStyle={{ backgroundColor: '#18181b', borderRadius: '12px', border: 'none', color: '#fff', padding: '12px' }}
-                          itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
-                          labelStyle={{ opacity: 0.5, fontSize: '9px', marginBottom: '4px', textTransform: 'uppercase', color: '#fff' }}
-                          cursor={{ stroke: '#f4f4f5', strokeWidth: 1 }}
-                        />
-                        <Bar dataKey="points" radius={[8, 8, 8, 8]} barSize={viewMode === 'SUBJECTS' ? 24 : 32}>
-                          {analyticsData.map((entry: any, index: number) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.8} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    ) : null}
-                  </ResponsiveContainer>
+                  viewMode === 'PROGRESSION' ? (
+                    <div className="space-y-4">
+                      {analyticsData.map((data: any, idx: number) => (
+                        <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+                          <div>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 font-sora block mb-1">{data.termLabel}</span>
+                            <span className="text-sm font-black text-zinc-900 dark:text-white uppercase">{data.name}</span>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <span className="text-xs font-bold text-zinc-500 block">Average Score</span>
+                              <span className="text-sm font-black text-zinc-900 dark:text-white">{data.marks}%</span>
+                            </div>
+                            <div className="w-[120px] sm:w-[160px] h-10 rounded-xl flex items-center justify-center border" style={{ backgroundColor: data.color + '20', borderColor: data.color + '40', color: data.color }}>
+                              <span className="text-xs font-black uppercase tracking-widest">{data.gradeLabel}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {analyticsData.map((data: any, idx: number) => (
+                        <div key={idx} className="p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+                          <div className="flex justify-between items-end mb-3">
+                            <span className="text-xs font-black text-zinc-900 dark:text-white uppercase tracking-widest">{data.name}</span>
+                            <span className="text-[10px] font-bold" style={{ color: data.color }}>{data.gradeLabel} ({data.marks}%)</span>
+                          </div>
+                          <div className="w-full h-3 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden flex">
+                            <div className="h-full transition-all duration-1000" style={{ width: `${Math.min(100, data.marks)}%`, backgroundColor: data.color }} />
+                          </div>
+                          <div className="flex justify-between mt-2 px-1">
+                            <span className="text-[8px] font-bold text-zinc-400">BE</span>
+                            <span className="text-[8px] font-bold text-zinc-400">AE</span>
+                            <span className="text-[8px] font-bold text-zinc-400">ME</span>
+                            <span className="text-[8px] font-bold text-zinc-400">EE</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
                 ) : (
-                  <div className="h-full flex flex-col items-center justify-center text-zinc-300 border border-dashed border-zinc-100 dark:border-zinc-800 rounded-2xl">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Database Empty</p>
+                  <div className="h-[200px] flex flex-col items-center justify-center text-zinc-300 border border-dashed border-zinc-100 dark:border-zinc-800 rounded-2xl">
+                    <p className="text-[12px] font-medium tracking-tight text-zinc-400 font-inter">No Data Available</p>
                   </div>
                 )}
               </div>
@@ -742,61 +676,96 @@ export const ParentStudentDashboard: React.FC<{ user: any }> = ({ user }) => {
   );
 };
 
-const ActivityFeed: React.FC<{ activities: any[]; isDrawer?: boolean }> = ({ activities, isDrawer }) => (
-  <section className={cn("bg-zinc-50 dark:bg-zinc-900/50 rounded-3xl p-6 h-full border border-zinc-100 dark:border-zinc-800 animate-in fade-in slide-in-from-right-4 duration-1000", isDrawer && "bg-white dark:bg-zinc-950 border-0 p-0")}>
-    <div className="flex items-center justify-between mb-8 px-1">
-      <h3 className="text-[11px] font-black uppercase tracking-[0.3em] flex items-center gap-3 text-zinc-900 dark:text-white font-sora">
-        <Bell size={14} className="text-orange-500" /> Notifications
-      </h3>
-      <span className="text-[9px] font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-md">{activities.length} New</span>
-    </div>
+const ActivityFeed: React.FC<{ activities: any[]; isDrawer?: boolean }> = ({ activities, isDrawer }) => {
+  const [activeTab, setActiveTab] = useState<'ALERTS' | 'TASKS'>('ALERTS');
+  
+  const mockTasks: any[] = []; // Replaced with actual tasks when API is ready
 
-    <div className="space-y-3">
-      {activities.length > 0 ? activities.map(item => (
-        <div key={item.id} className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 group hover:border-orange-500/30 transition-all cursor-pointer relative overflow-hidden">
-          <div className="flex justify-between items-start mb-2">
-            <span className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md",
-              item.type === 'ERROR' || item.urgent ? "bg-rose-50 text-rose-600" :
-                item.type === 'WARNING' ? "bg-amber-50 text-amber-600" :
-                  item.type === 'SUCCESS' ? "bg-emerald-50 text-emerald-600" :
-                    "bg-zinc-100 text-zinc-500")}>
-              {item.type}
-            </span>
-            <p className="text-[8px] font-bold text-zinc-400 uppercase">{formatDate(item.date)}</p>
-          </div>
-          <h4 className="text-[11px] font-black text-zinc-900 dark:text-white uppercase leading-tight tracking-tight mb-1">{item.title}</h4>
-          <p className="text-[10px] text-zinc-500 leading-relaxed font-medium line-clamp-2">{item.content}</p>
-          {!item.is_read && item.id.length > 15 && <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-orange-500 rounded-full" />}
-        </div>
-      )) : (
-        <div className="py-20 flex flex-col items-center justify-center opacity-20 transform scale-75">
-          <Bell size={40} className="mb-4" />
-          <p className="text-[10px] font-black uppercase tracking-widest">Inbox Zero</p>
-        </div>
-      )}
-    </div>
-  </section>
-);
+  return (
+    <section className={cn("bg-zinc-50 dark:bg-zinc-900/50 rounded-3xl p-6 h-full border border-zinc-100 dark:border-zinc-800 animate-in fade-in slide-in-from-right-4 duration-1000 flex flex-col", isDrawer && "bg-white dark:bg-zinc-950 border-0 p-0")}>
+      
+      <div className="flex items-center gap-2 mb-6 bg-zinc-200/50 dark:bg-zinc-800/50 p-1 rounded-xl">
+        <button onClick={() => setActiveTab('ALERTS')} className={cn("flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all", activeTab === 'ALERTS' ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm" : "text-zinc-500 hover:text-zinc-700")}>
+          System Alerts
+        </button>
+        <button onClick={() => setActiveTab('TASKS')} className={cn("flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2", activeTab === 'TASKS' ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm" : "text-zinc-500 hover:text-zinc-700")}>
+          Home Tasks <span className="bg-emerald-500 text-white px-1.5 py-0.5 rounded-full text-[8px]">2</span>
+        </button>
+      </div>
 
-const StatCard: React.FC<{ label: string; value: string; sub: string; trend: 'success' | 'warning' | 'danger' | 'neutral'; icon: React.ReactNode; hideMobile?: boolean }> = ({ label, value, sub, trend, icon, hideMobile }) => (
-  <div className={cn("rounded-[2rem] border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-sm transition-all hover:shadow-xl", hideMobile ? "hidden lg:block" : "block")}>
-    <div className="flex items-center justify-between mb-6">
-      <div className={cn("p-2 rounded-xl", trend === 'success' ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/10 dark:text-emerald-400" : trend === 'danger' ? "bg-rose-50 text-rose-700 dark:bg-rose-900/10 dark:text-rose-400" : "bg-zinc-50 text-zinc-600 dark:bg-zinc-800/50 dark:text-zinc-400")}>{icon}</div>
-      <div className={cn("px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-[0.1em]", trend === 'success' ? "bg-emerald-500/10 text-emerald-600" : trend === 'danger' ? "bg-rose-500/10 text-rose-600" : "bg-zinc-500/10 text-zinc-500")}>{trend}</div>
+      <div className="flex-1 overflow-y-auto space-y-3 pr-2 no-scrollbar">
+        {activeTab === 'ALERTS' ? (
+          activities.length > 0 ? activities.map(item => (
+            <div key={item.id} className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 group hover:border-orange-500/30 transition-all cursor-pointer relative overflow-hidden">
+              <div className="flex justify-between items-start mb-2">
+                <span className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md",
+                  item.type === 'ERROR' || item.urgent ? "bg-rose-50 text-rose-600" :
+                    item.type === 'WARNING' ? "bg-amber-50 text-amber-600" :
+                      item.type === 'SUCCESS' ? "bg-emerald-50 text-emerald-600" :
+                        "bg-zinc-100 text-zinc-500")}>
+                  {item.type}
+                </span>
+                <p className="text-[8px] font-bold text-zinc-400 uppercase">{formatDate(item.date)}</p>
+              </div>
+              <h4 className="text-[11px] font-black text-zinc-900 dark:text-white uppercase leading-tight tracking-tight mb-1">{item.title}</h4>
+              <p className="text-[10px] text-zinc-500 leading-relaxed font-medium line-clamp-2">{item.content}</p>
+              {!item.is_read && item.id.length > 15 && <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-orange-500 rounded-full" />}
+            </div>
+          )) : (
+            <div className="py-20 flex flex-col items-center justify-center opacity-20 transform scale-75">
+              <Bell size={40} className="mb-4" />
+              <p className="text-[10px] font-black uppercase tracking-widest">Inbox Zero</p>
+            </div>
+          )
+        ) : (
+          mockTasks.length > 0 ? mockTasks.map(item => (
+            <div key={item.id} className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/30 group hover:border-emerald-500/50 transition-all cursor-pointer relative overflow-hidden">
+              <div className="flex justify-between items-start mb-2">
+                <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                  {item.type}
+                </span>
+                <p className="text-[8px] font-bold text-emerald-500 uppercase">{formatDate(item.date)}</p>
+              </div>
+              <h4 className="text-[11px] font-black text-emerald-900 dark:text-emerald-100 uppercase leading-tight tracking-tight mb-1">{item.title}</h4>
+              <p className="text-[10px] text-emerald-600/80 leading-relaxed font-medium">{item.content}</p>
+            </div>
+          )) : (
+            <div className="py-20 flex flex-col items-center justify-center opacity-40">
+              <p className="text-xs font-semibold text-zinc-500">No tasks assigned</p>
+            </div>
+          )
+        )}
+      </div>
+    </section>
+  );
+};
+
+const StatCard: React.FC<{ label: string; value: string; sub: string; trend: 'success' | 'warning' | 'danger' | 'neutral'; icon?: React.ReactNode; hideMobile?: boolean }> = ({ label, value, sub, trend, icon, hideMobile }) => (
+  <div className={cn("rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-5 shadow-sm transition-all hover:border-zinc-300 dark:hover:border-zinc-700", hideMobile ? "hidden sm:block" : "block")}>
+    <div className="flex items-center gap-2 mb-2">
+      {icon && <div className="text-zinc-500">{icon}</div>}
+      <p className="text-sm font-medium text-zinc-500 tracking-tight">{label}</p>
     </div>
-    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-1 font-sora">{label}</p>
-    <p className="text-xl font-black text-zinc-900 dark:text-zinc-100 leading-none">{value}</p>
-    <p className="mt-3 text-[9px] font-bold uppercase text-zinc-500 truncate bg-zinc-50 dark:bg-zinc-800/50 py-1.5 px-2 rounded-lg border border-zinc-50 dark:border-zinc-800/50">{sub || "No records"}</p>
+    <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100 leading-none mb-2 font-inter tracking-tight">{value}</p>
+    <div className="flex items-center gap-2">
+      <div className={cn("w-2 h-2 rounded-full", trend === 'success' ? "bg-emerald-500" : trend === 'danger' ? "bg-rose-500" : trend === 'warning' ? "bg-amber-500" : "bg-zinc-300 dark:bg-zinc-600")} />
+      <p className="text-xs text-zinc-500 truncate font-inter">{sub || "No records"}</p>
+    </div>
   </div>
 );
 
-const NavButton: React.FC<{ label: string; icon: React.ReactNode; onClick?: () => void }> = ({ label, icon, onClick }) => (
+const NavButton: React.FC<{ label: string; icon: React.ReactNode; onClick?: () => void; badge?: string; badgeColor?: string }> = ({ label, icon, onClick, badge, badgeColor }) => (
   <button
     onClick={onClick}
     className="flex flex-col items-center gap-2 min-w-[70px] group active:scale-95 transition-transform"
   >
-    <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-[1.25rem] bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center text-zinc-400 group-hover:text-emerald-500 group-hover:bg-emerald-500/5 transition-all shadow-sm group-hover:shadow-emerald-500/10 border border-transparent group-hover:border-emerald-500/10">
+    <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-[1.25rem] bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center text-zinc-400 group-hover:text-emerald-500 group-hover:bg-emerald-500/5 transition-all shadow-sm group-hover:shadow-emerald-500/10 border border-transparent group-hover:border-emerald-500/10">
       {icon}
+      {badge && (
+        <div className={cn("absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black text-white", badgeColor || "bg-emerald-500")}>
+          {badge}
+        </div>
+      )}
     </div>
     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.1em] text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors font-sora">{label}</span>
   </button>

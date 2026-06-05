@@ -4,15 +4,15 @@ import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
-import { 
-  LayoutDashboard, 
-  FileText, 
-  CreditCard, 
-  AlertTriangle, 
-  Calendar, 
-  Bell, 
-  Users, 
-  BookOpen, 
+import {
+  LayoutDashboard,
+  FileText,
+  CreditCard,
+  AlertTriangle,
+  Calendar,
+  Bell,
+  Users,
+  BookOpen,
   MessageSquare,
   LogOut,
   Menu,
@@ -56,38 +56,44 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
   TEACHER: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'Results and student mngt', icon: FileText, path: '/results-management' },
+    { label: 'Input Results (CBC)', icon: FileText, path: '/input-results' },
+    { label: 'Summative Projects (CBC)', icon: CheckCircle, path: '/project-submissions' },
     { label: 'My Class', icon: BookOpen, path: '/my-classroom' },
+    { label: 'Matta AI Workspace', icon: Activity, path: '/matta-workspace' },
     { label: 'Messages', icon: MessageSquare, path: '/my-chats' },
     { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
     { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
-    { label: 'Templates', icon: Settings, path: '/templates' },
-    { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
+    { label: 'System Settings', icon: Settings, path: '/settings' },
   ],
   PRINCIPAL: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'School Audit', icon: Activity, path: '/principal-oversight' },
     { label: 'Results and student mngt', icon: FileText, path: '/results-management' },
+    { label: 'Input Results (CBC)', icon: FileText, path: '/input-results' },
+    { label: 'Summative Projects (CBC)', icon: CheckCircle, path: '/project-submissions' },
     { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
     { label: 'Students', icon: Users, path: '/students' },
     { label: 'Teachers', icon: ShieldCheck, path: '/teachers' },
     { label: 'Classes', icon: BookOpen, path: '/classes' },
     { label: 'Fees', icon: CreditCard, path: '/fees' },
+    { label: 'Bursar ERP', icon: CreditCard, path: '/bursar' },
     { label: 'School Calendar', icon: Calendar, path: '/calendar' },
-    { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
-    { label: 'Templates', icon: Settings, path: '/templates' },
+    { label: 'System Settings', icon: Settings, path: '/settings' },
   ],
   ADMIN: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'School Audit', icon: Activity, path: '/principal-oversight' },
     { label: 'Results and student mngt', icon: FileText, path: '/results-management' },
+    { label: 'Input Results (CBC)', icon: FileText, path: '/input-results' },
+    { label: 'Summative Projects (CBC)', icon: CheckCircle, path: '/project-submissions' },
     { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
     { label: 'Students', icon: Users, path: '/students' },
     { label: 'Teachers', icon: ShieldCheck, path: '/teachers' },
     { label: 'Classes', icon: BookOpen, path: '/classes' },
     { label: 'Fees', icon: CreditCard, path: '/fees' },
+    { label: 'Bursar ERP', icon: CreditCard, path: '/bursar' },
     { label: 'School Calendar', icon: Calendar, path: '/calendar' },
-    { label: 'Profile and settings', icon: UserCircle2, path: '/profile-settings' },
-    { label: 'Templates', icon: Settings, path: '/templates' },
+    { label: 'System Settings', icon: Settings, path: '/settings' },
   ],
 };
 
@@ -105,7 +111,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     if (!user?.id || !user?.school_id) return;
-    
+
     const fetchNotifs = async () => {
       try {
         const data = await api.getNotifications(user.id, user.school_id);
@@ -114,19 +120,19 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         console.error('Failed to fetch global notifs:', err);
       }
     };
-    
+
     fetchNotifs();
 
     const channel = supabase
       .channel(`user-notifs-${user.id}`)
       .on(
-        'postgres_changes', 
-        { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'in_app_notifications', 
-          filter: `user_id=eq.${user.id}` 
-        }, 
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'in_app_notifications',
+          filter: `user_id=eq.${user.id}`
+        },
         (payload) => {
           if (payload.new && (!payload.new.school_id || payload.new.school_id === user.school_id)) {
             setNotifications(prev => [payload.new, ...prev]);
@@ -161,11 +167,11 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   };
 
   const linksWithTemplates = [...(sidebarLinks[user.role] || [])];
-  
+
   // Dynamic links for Class Teachers
   if (user.is_class_teacher) {
-     // Insert after Results and student mngt
-     linksWithTemplates.splice(2, 0, { label: 'Submissions & Upload', icon: CloudUpload, path: '/submissions-upload' });
+    // Insert after Results and student mngt
+    linksWithTemplates.splice(2, 0, { label: 'Submissions & Upload', icon: CloudUpload, path: '/submissions-upload' });
   }
 
   const getUserInitials = (name?: string) => {
@@ -174,17 +180,17 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex transition-colors duration-200">
+    <div className="min-h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex transition-colors duration-200">
       {/* Sidebar Overlay */}
       {isSidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 lg:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
-      <aside 
+      <aside
         id="mobile-sidebar"
         className={cn(
           "fixed inset-y-0 left-0 z-50 w-56 bg-white dark:bg-zinc-900 border-r border-gray-100 dark:border-zinc-800 transition-transform duration-300 lg:relative lg:translate-x-0",
@@ -194,12 +200,12 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         <div className="h-full flex flex-col">
           <div className="p-5 flex items-center gap-2 border-b border-gray-50 dark:border-zinc-800">
             {schoolInfo?.logo_url ? (
-               <img src={schoolInfo.logo_url} alt="Logo" className="w-8 h-8 object-contain rounded" />
-             ) : (
-               <div className="w-8 h-8 bg-zinc-900 dark:bg-white rounded flex items-center justify-center text-white dark:text-black font-bold text-sm">
-                 {schoolInfo?.name?.[0] || 'S'}
-               </div>
-             )}
+              <img src={schoolInfo.logo_url} alt="Logo" className="w-8 h-8 object-contain rounded" />
+            ) : (
+              <div className="w-8 h-8 bg-zinc-900 dark:bg-white rounded flex items-center justify-center text-white dark:text-black font-bold text-sm">
+                {schoolInfo?.name?.[0] || 'S'}
+              </div>
+            )}
             <h1 className="font-bold text-xs tracking-tight leading-none uppercase max-w-[120px]">
               {schoolInfo?.name || 'School System'}
             </h1>
@@ -220,8 +226,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 onClick={() => setIsSidebarOpen(false)}
                 className={cn(
                   "flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-medium",
-                  location.pathname === link.path 
-                    ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white" 
+                  location.pathname === link.path
+                    ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white"
                     : "text-zinc-500 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800/50"
                 )}
               >
@@ -231,7 +237,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 {link.label}
               </Link>
             ))}
-            </nav>
+          </nav>
 
           <div className="p-4 border-t border-gray-50 dark:border-zinc-800 space-y-4">
             <div className="grid grid-cols-2 gap-y-2 px-2">
@@ -240,7 +246,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               <a href="#" className="text-[9px] font-black text-zinc-400 hover:text-zinc-900 dark:hover:text-white uppercase tracking-tight">Support</a>
               <a href="#" className="text-[9px] font-black text-zinc-400 hover:text-zinc-900 dark:hover:text-white uppercase tracking-tight">Help desk</a>
             </div>
-            
+
             <div className="px-2 pt-2 border-t border-gray-50 dark:border-zinc-800/50">
               <p className="text-[9px] font-black text-zinc-900 dark:text-white uppercase tracking-tighter">
                 Pschool v1.2 | myschools management system
@@ -249,7 +255,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 developed by © p3l developers
               </p>
             </div>
-            <button 
+            <button
               onClick={logout}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-lg transition-colors"
             >
@@ -262,7 +268,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 sticky top-0 z-30 font-sans">
+        <header className="bg-white dark:bg-zinc-900 sticky top-0 z-30 font-sans">
           <div className="h-14 flex items-center justify-between px-6">
             <div className="flex items-center gap-3">
               {schoolInfo?.logo_url ? (
@@ -281,7 +287,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
             <div className="flex items-center gap-2">
               <div className="relative" ref={notifRef}>
-                <button 
+                <button
                   onClick={() => setIsNotifOpen(!isNotifOpen)}
                   className="p-1.5 text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded transition-all relative"
                 >
@@ -296,51 +302,51 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 {isNotifOpen && (
                   <div className="absolute right-0 mt-3 w-80 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
                     <div className="p-4 border-b border-zinc-50 dark:border-zinc-800 flex justify-between items-center">
-                       <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-400">System Alerts</h3>
-                       <button onClick={() => setNotifications(prev => prev.map(n => ({...n, is_read: true})))} className="text-[9px] font-bold text-zinc-900 dark:text-white">Mark all read</button>
+                      <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-400">System Alerts</h3>
+                      <button onClick={() => setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))} className="text-[9px] font-bold text-zinc-900 dark:text-white">Mark all read</button>
                     </div>
                     <div className="max-h-96 overflow-y-auto">
-                       {notifications.length === 0 ? (
-                         <div className="p-10 text-center space-y-2">
-                            <Bell size={24} className="mx-auto text-zinc-100" />
-                            <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">No alerts found</p>
-                         </div>
-                       ) : (
-                         notifications.map(n => (
-                           <button 
-                             key={n.id} 
-                             onClick={() => markRead(n.id, n.link)}
-                             className={cn(
-                               "w-full text-left p-4 border-b border-zinc-50 dark:border-zinc-800 last:border-0 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-all group",
-                               !n.is_read && "bg-zinc-50/50 dark:bg-zinc-800/20"
-                             )}
-                           >
-                             <div className="flex justify-between items-start mb-1">
-                                <p className="text-[11px] font-bold text-zinc-900 dark:text-white">{n.title}</p>
-                                <p className="text-[8px] font-medium text-zinc-400">{formatDate(n.created_at)}</p>
-                             </div>
-                             <p className="text-[10px] text-zinc-500 leading-relaxed mb-2 line-clamp-2">{n.message}</p>
-                             <div className="flex items-center gap-2">
-                                <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-400 group-hover:text-zinc-600 transition-colors">From Principal</span>
-                                {n.link && <ExternalLink size={10} className="text-zinc-300" />}
-                             </div>
-                           </button>
-                         ))
-                       )}
+                      {notifications.length === 0 ? (
+                        <div className="p-10 text-center space-y-2">
+                          <Bell size={24} className="mx-auto text-zinc-100" />
+                          <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">No alerts found</p>
+                        </div>
+                      ) : (
+                        notifications.map(n => (
+                          <button
+                            key={n.id}
+                            onClick={() => markRead(n.id, n.link)}
+                            className={cn(
+                              "w-full text-left p-4 border-b border-zinc-50 dark:border-zinc-800 last:border-0 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-all group",
+                              !n.is_read && "bg-zinc-50/50 dark:bg-zinc-800/20"
+                            )}
+                          >
+                            <div className="flex justify-between items-start mb-1">
+                              <p className="text-[11px] font-bold text-zinc-900 dark:text-white">{n.title}</p>
+                              <p className="text-[8px] font-medium text-zinc-400">{formatDate(n.created_at)}</p>
+                            </div>
+                            <p className="text-[10px] text-zinc-500 leading-relaxed mb-2 line-clamp-2">{n.message}</p>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-400 group-hover:text-zinc-600 transition-colors">From Principal</span>
+                              {n.link && <ExternalLink size={10} className="text-zinc-300" />}
+                            </div>
+                          </button>
+                        ))
+                      )}
                     </div>
                   </div>
                 )}
               </div>
-              
-              <button 
+
+              <button
                 onClick={toggleDarkMode}
                 className="p-1.5 text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded transition-all"
               >
                 {isDarkMode ? <Sun size={15} /> : <Moon size={15} />}
               </button>
-              
+
               <div className="relative" ref={profileRef}>
-                <button 
+                <button
                   onClick={() => setIsProfileOpen(!isProfileOpen)}
                   className="flex items-center gap-3 pl-3 border-l border-zinc-100 dark:border-zinc-800 ml-1 group transition-all"
                 >
@@ -360,28 +366,28 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                       <p className="text-[10px] font-bold text-zinc-400 truncate">{user.email}</p>
                     </div>
                     <div className="p-2">
-                       <Link 
-                        to="/settings" 
+                      <Link
+                        to="/settings"
                         onClick={() => setIsProfileOpen(false)}
                         className="w-full flex items-center gap-3 px-3 py-2.5 text-[11px] font-bold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-xl transition-all"
-                       >
-                         <Settings size={14} className="text-zinc-400" /> Settings & Accounts
-                       </Link>
-                       <Link 
-                        to="/privacy" 
+                      >
+                        <Settings size={14} className="text-zinc-400" /> Settings & Accounts
+                      </Link>
+                      <Link
+                        to="/privacy"
                         onClick={() => setIsProfileOpen(false)}
                         className="w-full flex items-center gap-3 px-3 py-2.5 text-[11px] font-bold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-xl transition-all"
-                       >
-                         <ShieldCheck size={14} className="text-zinc-400" /> Privacy Policy
-                       </Link>
+                      >
+                        <ShieldCheck size={14} className="text-zinc-400" /> Privacy Policy
+                      </Link>
                     </div>
                     <div className="p-2 border-t border-zinc-100 dark:border-zinc-800">
-                       <button 
+                      <button
                         onClick={() => { logout(); setIsProfileOpen(false); }}
                         className="w-full flex items-center gap-3 px-3 py-2.5 text-[11px] font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/10 rounded-xl transition-all"
-                       >
-                         <LogOut size={14} /> Log Out
-                       </button>
+                      >
+                        <LogOut size={14} /> Log Out
+                      </button>
                     </div>
                   </div>
                 )}
@@ -390,7 +396,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </div>
 
           <div className="h-10 border-t border-zinc-50 dark:border-zinc-800/50 flex items-center px-6">
-            <button 
+            <button
               onClick={() => setIsSidebarOpen((open) => !open)}
               className="flex items-center gap-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors lg:hidden"
               aria-expanded={isSidebarOpen}
@@ -402,8 +408,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               </span>
             </button>
             <div className="hidden lg:flex items-center gap-2 text-zinc-400">
-               <Menu size={14} className="opacity-50" />
-               <span className="text-[9px] font-bold uppercase tracking-[0.2em]">{linksWithTemplates.find(l => l.path === location.pathname)?.label || 'Overview'}</span>
+              <Menu size={14} className="opacity-50" />
+              <span className="text-[9px] font-bold uppercase tracking-[0.2em]">{linksWithTemplates.find(l => l.path === location.pathname)?.label || 'Overview'}</span>
             </div>
           </div>
         </header>
@@ -415,13 +421,62 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         </main>
 
         <footer className="fixed bottom-0 left-0 right-0 z-50 py-3 px-6 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl border-t border-zinc-100 dark:border-zinc-900/50 pointer-events-none">
-           <div className="max-w-[1400px] mx-auto flex items-center justify-center">
-              <p className="text-[9px] font-medium text-zinc-400 tracking-widest uppercase">
-                 &copy; <span className="italic">p3ldevelopers</span>, <span className="font-black text-zinc-900 dark:text-white">Matta Africa</span>
-              </p>
-           </div>
+          <div className="max-w-[1400px] mx-auto flex items-center justify-center">
+            <p className="text-[9px] font-medium text-zinc-400 tracking-widest uppercase">
+              &copy; <span className="italic">p3ldevelopers</span>, <span className="font-black text-zinc-900 dark:text-white">Matta Africa</span>
+            </p>
+          </div>
         </footer>
+
+        {/* FLOATING MATTA AI BUTTON */}
+        <MattaAIButton />
       </div>
     </div>
+  );
+};
+
+const MattaAIButton = () => {
+  const [showToast, setShowToast] = React.useState(false);
+  return (
+    <>
+      <button
+        onClick={() => setShowToast(true)}
+        className="fixed bottom-16 right-6 z-[200] group"
+        title="Matta AI"
+      >
+        <span className="absolute inset-0 rounded-full bg-violet-500 opacity-20 group-hover:opacity-40 animate-ping pointer-events-none" />
+        <span className="absolute inset-0 rounded-full bg-gradient-to-br from-violet-600 to-indigo-600 opacity-30 blur-md group-hover:opacity-60 transition-opacity pointer-events-none" />
+        <div className="relative w-14 h-14 rounded-full bg-gradient-to-br from-violet-600 to-indigo-700 flex items-center justify-center shadow-2xl shadow-violet-500/40 group-hover:scale-110 transition-transform duration-300 border-2 border-white/20">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" className="text-white">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="currentColor" fillOpacity="0.15" />
+            <circle cx="12" cy="12" r="3" fill="currentColor" />
+            <path d="M12 5v2M12 17v2M5 12H7M17 12h2M7.05 7.05l1.41 1.41M15.54 15.54l1.41 1.41M7.05 16.95l1.41-1.41M15.54 8.46l1.41-1.41" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </div>
+        <span className="absolute -top-8 left-1/2 -translate-x-1/2 text-[9px] font-black uppercase tracking-widest text-violet-600 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-white px-2 py-0.5 rounded-full shadow-sm border border-violet-100">
+          Matta AI
+        </span>
+      </button>
+
+      {showToast && (
+        <div className="fixed bottom-36 right-6 z-[201] animate-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-zinc-950 text-white rounded-2xl px-5 py-4 shadow-2xl border border-white/10 max-w-xs">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-600 to-indigo-700 flex items-center justify-center shrink-0 mt-0.5">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-white">
+                  <circle cx="12" cy="12" r="3" fill="currentColor" />
+                  <path d="M12 5v2M12 17v2M5 12H7M17 12h2M7.05 7.05l1.41 1.41M15.54 15.54l1.41 1.41M7.05 16.95l1.41-1.41M15.54 8.46l1.41-1.41" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-bold">Matta AI</p>
+                <p className="text-xs text-zinc-400 mt-0.5">Coming soon — your school's intelligent assistant is being trained on your data.</p>
+              </div>
+              <button onClick={() => setShowToast(false)} className="ml-1 text-zinc-500 hover:text-white transition-colors text-xl leading-none">&times;</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
