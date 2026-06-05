@@ -150,48 +150,58 @@ export const ParentStudentFees: React.FC = () => {
             </div>
          </div>
 
-         {/* 3. FEE LEDGER */}
+         {/* 3. FEE INVOICE LEDGER */}
          <div className="space-y-6 pt-6">
             <div className="flex items-center justify-between border-b border-zinc-50 pb-4">
                <div className="flex items-center gap-3 text-black">
-                  <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">Statement History</h2>
+                  <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">Itemized Invoice Breakdown</h2>
                </div>
-               <button className="text-[10px] font-bold uppercase text-zinc-300 hover:text-black transition-colors">Export PDF</button>
+               <button className="text-[10px] font-bold uppercase text-zinc-300 hover:text-emerald-600 transition-colors flex items-center gap-2"><Download size={12}/> Download PDF Statement</button>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Capitation Banner */}
+            <div className="flex justify-between items-center p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/30">
+               <div>
+                  <h3 className="text-xs font-black text-emerald-800 dark:text-emerald-400 uppercase tracking-widest">Government Capitation (FPE)</h3>
+                  <p className="text-[10px] font-bold text-emerald-600/80 mt-1">Free Primary Education Subsidy</p>
+               </div>
+               <div className="text-right">
+                  <p className="text-sm font-black text-emerald-700 dark:text-emerald-300">KES 1,420</p>
+                  <span className="text-[8px] font-bold uppercase text-emerald-500 tracking-widest px-2 py-0.5 bg-emerald-100 rounded-full mt-1 inline-block">Fully Covered</span>
+               </div>
+            </div>
+
+            <div className="overflow-x-auto mt-4">
                <table className="w-full text-left">
                   <thead>
-                     <tr className="uppercase text-[9px] font-bold text-zinc-300 tracking-widest border-b border-zinc-50">
-                        <th className="pb-6 pr-6">Fee Item</th>
-                        <th className="pb-6 px-6 text-center">Amount Due</th>
-                        <th className="pb-6 px-6 text-center">Paid</th>
-                        <th className="pb-6 px-6 text-center">Balance</th>
-                        <th className="pb-6 pl-6 text-right">Method</th>
+                     <tr className="uppercase text-[9px] font-bold text-zinc-400 tracking-widest border-b border-zinc-100">
+                        <th className="pb-4 pr-6">Parent Levy Item</th>
+                        <th className="pb-4 px-6 text-center">Amount Due</th>
+                        <th className="pb-4 px-6 text-center">Paid</th>
+                        <th className="pb-4 px-6 text-center">Balance</th>
                      </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-50">
                      {feeRows.length === 0 && (
-                        <tr><td colSpan={5} className="py-20 text-center text-[10px] font-medium text-zinc-300 uppercase tracking-widest">No Billing Records</td></tr>
+                        <tr><td colSpan={4} className="py-20 text-center text-[10px] font-medium text-zinc-300 uppercase tracking-widest">No Parent Levies Required</td></tr>
                      )}
                      {feeRows.map((row: any) => {
                         const bal = Number(row.amount_due) - Number(row.amount_paid);
                         return (
-                           <tr key={row.id} className="group">
-                              <td className="py-8 pr-6">
-                                 <p className="font-bold text-black text-xs uppercase">{row.type}</p>
-                                 <p className="text-[9px] text-zinc-300 mt-1 uppercase font-medium">{new Date(row.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                           <tr key={row.id} className="group hover:bg-zinc-50/50 transition-colors">
+                              <td className="py-6 pr-6">
+                                 <p className="font-bold text-zinc-900 text-xs uppercase">{row.type}</p>
+                                 <p className="text-[9px] text-zinc-400 mt-1 uppercase font-medium">{new Date(row.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                               </td>
-                              <td className="py-8 px-6 text-center font-medium text-zinc-400 text-xs">{formatCurrency(row.amount_due)}</td>
-                              <td className="py-8 px-6 text-center">
-                                 <span className={cn("text-xs font-medium", row.amount_paid > 0 ? "text-zinc-600" : "text-zinc-200")}>
+                              <td className="py-6 px-6 text-center font-medium text-zinc-500 text-xs">{formatCurrency(row.amount_due)}</td>
+                              <td className="py-6 px-6 text-center">
+                                 <span className={cn("text-xs font-medium", row.amount_paid > 0 ? "text-emerald-600" : "text-zinc-300")}>
                                     {formatCurrency(row.amount_paid)}
                                  </span>
                               </td>
-                              <td className="py-8 px-6 text-center font-bold text-black text-xs">
-                                 {bal > 0 ? formatCurrency(bal) : <span className="text-emerald-500">None</span>}
+                              <td className="py-6 px-6 text-center font-black text-zinc-900 text-xs">
+                                 {bal > 0 ? formatCurrency(bal) : <span className="text-emerald-500 bg-emerald-50 px-2 py-1 rounded-md text-[9px] uppercase tracking-widest">Cleared</span>}
                               </td>
-                              <td className="py-8 pl-6 text-right text-[10px] font-medium text-zinc-300 uppercase">{row.bank_name || 'System'}</td>
                            </tr>
                         );
                      })}
@@ -318,14 +328,16 @@ export const ParentStudentFees: React.FC = () => {
                         <div className="space-y-6 animate-in fade-in duration-300">
                            <div className="space-y-4">
                               <div className="space-y-2">
-                                 <label className="text-[10px] font-bold text-zinc-400 uppercase">Phone Number</label>
-                                 <input type="tel" value={mpesaForm.phone} onChange={e => setMpesaForm(p => ({ ...p, phone: e.target.value }))} className="w-full h-12 px-5 rounded-xl border border-zinc-100 outline-none text-sm font-bold focus:border-black transition-all" />
+                                 <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Phone Number for STK Push</label>
+                                 <input type="tel" value={mpesaForm.phone} onChange={e => setMpesaForm(p => ({ ...p, phone: e.target.value }))} className="w-full h-12 px-5 rounded-xl border border-emerald-200 bg-emerald-50/30 outline-none text-sm font-bold focus:border-emerald-500 transition-all text-emerald-900" />
                               </div>
                               <div className="space-y-2">
-                                 <label className="text-[10px] font-bold text-zinc-400 uppercase">Edit Amount</label>
-                                 <input type="number" value={mpesaForm.amount} onChange={e => setMpesaForm(p => ({ ...p, amount: e.target.value }))} className="w-full h-12 px-5 rounded-xl border border-zinc-100 outline-none text-xl font-bold focus:border-black transition-all" />
+                                 <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Confirm Amount</label>
+                                 <input type="number" value={mpesaForm.amount} onChange={e => setMpesaForm(p => ({ ...p, amount: e.target.value }))} className="w-full h-12 px-5 rounded-xl border border-emerald-200 bg-emerald-50/30 outline-none text-xl font-bold focus:border-emerald-500 transition-all text-emerald-900" />
                               </div>
-                              <button onClick={handleMpesaPush} className="w-full h-14 bg-black text-white rounded-2xl font-bold uppercase tracking-widest text-[10px] active:scale-[0.98] transition-all">Send Prompt</button>
+                              <button onClick={handleMpesaPush} className="w-full h-14 bg-[#25D366] hover:bg-[#128C7E] text-white rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3">
+                                 <Smartphone size={16} /> Pay via M-Pesa Now
+                              </button>
                            </div>
                         </div>
                      )}

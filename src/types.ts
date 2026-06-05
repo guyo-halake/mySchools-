@@ -159,3 +159,49 @@ export interface SchoolEvent {
   location?: string;
   rsvps: string[];
 }
+
+export interface ClassroomSession {
+  id: string;
+  school_id: string;
+  teacher_id?: string;
+  stream_id?: string;
+  subject_id?: string;
+  title: string;
+  class_label?: string;
+  day_name?: string;
+  start_time?: string;
+  end_time?: string;
+  status: string;
+  room_url?: string;
+  template_started_at?: string;
+  auto_close_at?: string;
+  closed_at?: string;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ELibraryResource {
+  id: string;
+  school_id: string;
+  title: string;
+  resource_type: string;
+  url?: string;
+  subject_id?: string;
+  tags?: string[];
+  color_theme?: string;
+  icon_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MattaAcademyCourse {
+  id: string;
+  title: string;
+  description?: string;
+  progress: number;
+  students_enrolled?: string;
+  syllabus_json?: any;
+  created_at: string;
+  updated_at: string;
+}
