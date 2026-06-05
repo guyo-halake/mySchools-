@@ -2,8 +2,8 @@ const TeacherView = ({ user }: any) => {
   const [allStreams, setAllStreams] = useState<any[]>([]);
   const [selectedStreamId, setSelectedStreamId] = useState<string | null>(localStorage.getItem('teacher_stream_id'));
   const [students, setStudents] = useState<any[]>([]);
-  
-  // Data States
+
+  // Data Statesss
   const [assessments, setAssessments] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
@@ -14,7 +14,7 @@ const TeacherView = ({ user }: any) => {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('results'); // results, projects, appointments
   const [selectedLearningAreaId, setSelectedLearningAreaId] = useState<string>('ALL');
-  
+
   const selectedStream = allStreams.find(s => s.id === selectedStreamId);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -36,7 +36,7 @@ const TeacherView = ({ user }: any) => {
       setAllStreams(streamRows);
       setAppointments(apps || []);
       setLearningAreas(laRes.data || []);
-      
+
       if (!selectedStreamId && streamRows.length > 0) setSelectedStreamId(streamRows[0].id);
     } catch (e) { console.error(e); }
     finally { setIsLoading(false); }
@@ -53,7 +53,7 @@ const TeacherView = ({ user }: any) => {
 
         if (studs && studs.length > 0) {
           const studentIds = studs.map((s: any) => s.id);
-          
+
           // Fetch Assessments
           const { data: assessData } = await supabase
             .from('cbc_student_assessments')
@@ -61,7 +61,7 @@ const TeacherView = ({ user }: any) => {
             .eq('school_id', user.school_id)
             .in('student_id', studentIds)
             .order('created_at', { ascending: false });
-          
+
           setAssessments(assessData || []);
 
           // Fetch Attendance for today
@@ -71,7 +71,7 @@ const TeacherView = ({ user }: any) => {
             .select('student_id, status')
             .eq('date', todayStr)
             .in('student_id', studentIds);
-            
+
           let p = 0; let a = 0;
           (attData || []).forEach(record => {
             if (record.status === 'present' || record.status === 'late') p++;
@@ -141,7 +141,7 @@ const TeacherView = ({ user }: any) => {
 
   return (
     <div className="w-full flex flex-col gap-0 animate-in fade-in duration-500 bg-zinc-50/50 min-h-screen">
-      
+
       {/* HEADER & STREAM SELECTOR */}
       <div className="px-6 pt-6 pb-6 bg-white border-b border-zinc-100">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
@@ -173,10 +173,10 @@ const TeacherView = ({ user }: any) => {
       </div>
 
       <div className="p-6 space-y-6">
-        
+
         {/* TOP BENTO GRID */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          
+
           {/* CARD 1: Class Overview */}
           <div className="bg-white border border-zinc-100 rounded-3xl p-6 shadow-sm flex flex-col justify-between relative overflow-hidden">
             <div className="absolute top-0 right-0 p-6 text-zinc-100 pointer-events-none">
@@ -199,7 +199,7 @@ const TeacherView = ({ user }: any) => {
                 </div>
               </div>
             </div>
-            
+
             {/* QUICK ACTIONS ROW */}
             <div className="relative z-10 mt-6 pt-6 border-t border-zinc-100 flex gap-3 overflow-x-auto pb-1 hide-scrollbar">
               <Link to="/my-classroom" className="shrink-0 flex items-center gap-2 px-4 py-2 bg-zinc-950 text-white rounded-xl hover:bg-zinc-800 transition-all text-xs font-bold shadow-sm">
@@ -222,7 +222,7 @@ const TeacherView = ({ user }: any) => {
                 <Plus size={12} strokeWidth={3} /> Add Project
               </button>
             </div>
-            
+
             <div className="space-y-3 flex-1 overflow-y-auto max-h-[160px] hide-scrollbar pr-2">
               {projects.length > 0 ? projects.slice(0, 3).map((p: any) => (
                 <div key={p.id} className="p-3 bg-zinc-50 border border-zinc-100 rounded-2xl flex items-center justify-between hover:border-zinc-300 transition-all cursor-pointer group">
@@ -249,7 +249,7 @@ const TeacherView = ({ user }: any) => {
 
         {/* BOTTOM TABBED SECTION */}
         <div className="bg-white border border-zinc-100 rounded-3xl shadow-sm overflow-hidden min-h-[500px]">
-          
+
           {/* TAB STRIP */}
           <div className="flex border-b border-zinc-100 bg-zinc-50/50 px-6 pt-4 gap-8 overflow-x-auto hide-scrollbar">
             {[
@@ -271,7 +271,7 @@ const TeacherView = ({ user }: any) => {
           </div>
 
           <div className="p-6">
-            
+
             {/* RESULTS TAB */}
             {activeTab === 'results' && (
               <div className="space-y-6 animate-in fade-in duration-300">
@@ -330,9 +330,9 @@ const TeacherView = ({ user }: any) => {
                                 <span className={cn(
                                   'px-2.5 py-1 text-[10px] font-black rounded-lg',
                                   assess.rating === 'EE' ? 'bg-emerald-100 text-emerald-700' :
-                                  assess.rating === 'ME' ? 'bg-blue-100 text-blue-700' :
-                                  assess.rating === 'AE' ? 'bg-amber-100 text-amber-700' :
-                                  'bg-rose-100 text-rose-700'
+                                    assess.rating === 'ME' ? 'bg-blue-100 text-blue-700' :
+                                      assess.rating === 'AE' ? 'bg-amber-100 text-amber-700' :
+                                        'bg-rose-100 text-rose-700'
                                 )}>{assess.rating}</span>
                               ) : (
                                 <span className="text-zinc-300">-</span>
@@ -395,8 +395,8 @@ const TeacherView = ({ user }: any) => {
             {/* APPOINTMENTS TAB */}
             {activeTab === 'appointments' && (
               <div className="space-y-6 animate-in fade-in duration-300">
-                 <h3 className="text-sm font-bold text-zinc-900 mb-4">Parent Appointments</h3>
-                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <h3 className="text-sm font-bold text-zinc-900 mb-4">Parent Appointments</h3>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {appointments.length > 0 ? appointments.map((app: any) => (
                     <div key={app.id} className="p-5 bg-white border border-zinc-200 rounded-2xl flex flex-col justify-between hover:shadow-md transition-all">
                       <div className="flex items-center gap-3 mb-4">
@@ -419,7 +419,7 @@ const TeacherView = ({ user }: any) => {
                       <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">No pending appointments</p>
                     </div>
                   )}
-                 </div>
+                </div>
               </div>
             )}
 
