@@ -59,9 +59,10 @@ export const InputResults: React.FC = () => {
     const fetchInitial = async () => {
       if (!user?.school_id) return;
       try {
+        const isTeacher = user?.role === 'TEACHER' || user?.role === 'teacher';
         const [t, s, la] = await Promise.all([
           api.getTerms(user.school_id),
-          api.getStreams(user.school_id),
+          isTeacher ? api.getTeacherStreams(user.id, user.school_id) : api.getStreams(user.school_id),
           api.getLearningAreas(user.school_id)
         ]);
         setTerms(t || []);

@@ -20,6 +20,7 @@ import { Chat } from './pages/Chat';
 import { Assignments } from './pages/Assignments';
 import { Timetable } from './pages/Timetable';
 import { MyClassroom } from './pages/MyClassroom';
+import { MattaWorkspace } from './pages/MattaWorkspace';
 import { TemplatesPermision } from './pages/TemplatesPermision';
 import { TemplatesList } from './pages/TemplatesList';
 import { TemplateDetail } from './pages/TemplateDetail';
@@ -77,6 +78,7 @@ const AppContent = () => {
               <Route path="/assignments" element={<Assignments />} />
               <Route path="/timetable" element={<Timetable />} />
               <Route path="/my-classroom" element={<MyClassroom />} />
+              <Route path="/matta-workspace" element={<MattaWorkspace />} />
               <Route path="/templates" element={<TemplatesList />} />
               <Route path="/templates/permissions" element={<TemplatesPermision />} />
               <Route path="/templates/:id" element={<TemplateDetail />} />

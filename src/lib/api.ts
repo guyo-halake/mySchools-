@@ -860,15 +860,28 @@ export const api = {
   },
 
   // 8. ATTENDANCE & TEACHER DASHBOARD
-  async getTeacherStreams(teacherId: string) {
+  async getTeacherStreams(teacherId: string, schoolId?: string) {
     try {
       if (!isUuid(teacherId)) return [];
-      const { data, error } = await supabase
+      
+      let query = supabase
         .from('streams')
-        .select('*, class:classes!streams_class_id_fkey(*)')
-        .eq('class_teacher_id', teacherId);
+        .select('*, class:classes!streams_class_id_fkey!inner(*)');
+        
+      if (schoolId) {
+        query = query.eq('class.school_id', schoolId);
+      } else {
+        query = query.eq('class_teacher_id', teacherId);
+      }
+      
+      const { data, error } = await query;
       if (error) throw error;
-      return data || [];
+      
+      return (data || []).sort((a: any, b: any) => {
+        if (a.class_teacher_id === teacherId) return -1;
+        if (b.class_teacher_id === teacherId) return 1;
+        return 0;
+      });
     } catch (e) {
       console.warn('API getTeacherStreams error:', e);
       return [];
@@ -1542,7 +1555,7 @@ export const api = {
     if (!isUuid(teacherId)) return [];
     const { data, error } = await supabase
       .from('appointments')
-      .select('*, parent:profiles(full_name, email, phone), student:students(profile:profiles!students_id_fkey(full_name))')
+      .select('*, parent:profiles(full_name, email, phone)')
       .eq('teacher_id', teacherId)
       .order('appointment_date', { ascending: false });
     if (error) {

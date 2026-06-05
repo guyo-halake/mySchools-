@@ -59,6 +59,7 @@ const sidebarLinks: Record<Role, { label: string; icon: any; path: string }[]> =
     { label: 'Input Results (CBC)', icon: FileText, path: '/input-results' },
     { label: 'Summative Projects (CBC)', icon: CheckCircle, path: '/project-submissions' },
     { label: 'My Class', icon: BookOpen, path: '/my-classroom' },
+    { label: 'Matta AI Workspace', icon: Activity, path: '/matta-workspace' },
     { label: 'Messages', icon: MessageSquare, path: '/my-chats' },
     { label: 'Announcements & Events', icon: Bell, path: '/announcements' },
     { label: 'Disciplinary', icon: AlertTriangle, path: '/suspensions' },
