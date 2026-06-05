@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Building2, DollarSign, Settings, LogOut, Sun, Moon,
   ShieldCheck, Users, BarChart3, Bell, User, Shield, Settings2,
   HardDrive, Github, Globe, ChevronUp, ChevronDown, Package,
-  Search, Plus, Menu, ChevronLeft, Database, X, LifeBuoy, Zap
+  Search, Plus, Menu, ChevronLeft, Database, X, LifeBuoy, Zap, FileSearch
 } from 'lucide-react';
 
 interface NavItem {
@@ -26,6 +26,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Tech Ops',       icon: ShieldCheck,     path: '/admin/tech-ops',         roles: ['SUPER_ADMIN', 'TECH_ADMIN'],                                depts: ['Engineering & Tech'] },
   { label: 'P3L Developers',  icon: Zap,             path: '/admin/p3l-developers',   roles: ['SUPER_ADMIN', 'TECH_ADMIN'],                                depts: ['Engineering & Tech'] },
   { label: 'Data Engine',    icon: Database,        path: '/admin/data-engine',      roles: ['SUPER_ADMIN', 'TECH_ADMIN'],                                depts: ['Engineering & Tech'] },
+  { label: 'Results Checker',icon: FileSearch,      path: '/admin/results-checker',  roles: ['SUPER_ADMIN', 'TECH_ADMIN', 'OPERATIONS_ADMIN'],            depts: ['Any'] },
   { label: 'Users & Support', icon: Users,           path: '/admin/users',            roles: ['SUPER_ADMIN', 'TECH_ADMIN', 'SALES_ADMIN'],                 depts: ['Any'] },
   // { label: 'Analytics',      icon: BarChart3,       path: '/admin/analytics',        roles: ['SUPER_ADMIN', 'SALES_ADMIN'],                               depts: ['Sales & Clients'] },
   // { label: 'Notifications',  icon: Bell,            path: '/admin/notifications',    roles: ['SUPER_ADMIN', 'OPERATIONS_ADMIN', 'TECH_ADMIN', 'SALES_ADMIN'], depts: ['Any'] },

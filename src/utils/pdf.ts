@@ -4,12 +4,10 @@ import autoTable from 'jspdf-autotable';
 export const generateResultPDF = async (student: any, studentDetails: any, schoolInfo: any, mode: 'ALL' | number = 'ALL') => {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.width;
-  const subjects_list = ['MATHEMATICS', 'ENGLISH', 'KISWAHILI', 'CHEMISTRY', 'BIOLOGY', 'PHYSICS', 'HISTORY', 'GEOGRAPHY', 'CRE', 'AGRICULTURE', 'BUSINESS', 'COMPUTER'];
 
-  // 1. SCHOOL LOGO & HEADER (Asynchronous & CORS Safe)
+  // 1. SCHOOL LOGO & HEADER
   if (schoolInfo?.logo_url) {
     try {
-      // Helper to load image safely
       const img = await new Promise<HTMLImageElement>((resolve, reject) => {
         const image = new Image();
         image.crossOrigin = 'Anonymous';
@@ -38,114 +36,98 @@ export const generateResultPDF = async (student: any, studentDetails: any, schoo
   doc.setFont('helvetica', 'bold');
   const teacher = student.stream?.teacher;
 
-  // Left Column
   doc.text(`NAME: ${student.profile?.full_name?.toUpperCase()}`, 15, 45);
   doc.text(`ADM NO: ${student.adm_no}`, 15, 51);
-  doc.text(`CLASS: ${student.stream?.class?.name} ${student.stream?.name}`, 15, 57);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Class Position: Pending Calc`, 15, 63);
-  doc.text(`Form Position: Pending Calc`, 15, 69);
+  doc.text(`GRADE/CLASS: ${student.stream?.class?.name} ${student.stream?.name}`, 15, 57);
 
-  // Right Column
-  const balance = studentDetails.fees.reduce((acc: number, f: any) => acc + (Number(f.amount_due || 0) - Number(f.amount_paid || 0)), 0);
-  doc.setFont('helvetica', 'bold');
-  doc.text(`TEACHER: ${teacher?.full_name || 'N/A'}`, 110, 45);
-  doc.text(`EMAIL: ${teacher?.email || 'N/A'}`, 110, 51);
-  doc.text(`FEES BALANCE: Ksh ${balance.toLocaleString()}`, 110, 57);
+  const balance = studentDetails.fees?.reduce((acc: number, f: any) => acc + (Number(f.amount_due || 0) - Number(f.amount_paid || 0)), 0) || 0;
+  doc.text(`FACILITATOR: ${teacher?.full_name || 'N/A'}`, 110, 45);
+  doc.text(`FEES BALANCE: Ksh ${balance.toLocaleString()}`, 110, 51);
 
   doc.setLineWidth(0.2);
-  doc.line(15, 73, pageWidth - 15, 73);
+  doc.line(15, 63, pageWidth - 15, 63);
 
-  // 3. RESULTS TABLE
-  const tableHead = [['Subject', 'T1 MID', 'T1 END', 'T2 MID', 'T2 END', 'T3 MID', 'T3 END']];
+  // 3. CBC RESULTS TABLE
+  const tableHead = [['Learning Area', 'Strand', 'Sub-Strand', 'Rating', 'Remarks']];
   const tableBody: any[] = [];
 
   const results = studentDetails.results || [];
-  const yearsFound = Array.from(new Set(results.map((r: any) => r.exam?.term?.year || 2026))).sort((a, b) => b - a);
-
-  yearsFound.forEach(year => {
-    const resultsForYear = results.filter((r: any) => r.exam?.term?.year === year);
-    if (resultsForYear.length === 0) return;
-
-    // Determine Form name more robustly
-    let formName = '4'; // Fallback
-    const firstResult = resultsForYear[0];
-    const termName = (firstResult.exam?.term?.name || '').toUpperCase();
-    const formMatch = termName.match(/FORM\s*(\d+)/i);
-    if (formMatch) {
-       formName = formMatch[1];
-    } else {
-       formName = student.stream?.class?.level || '4';
-    }
-
-    tableBody.push([{ 
-       content: `ACADEMIC TRANSCRIPT - YEAR ${year} (FORM ${formName})`, 
-       colSpan: 7, 
-       styles: { fillColor: [240, 240, 240], fontStyle: 'bold', halign: 'center', textColor: [50, 50, 50] } 
-    }]);
-
-    const subjects = studentDetails.subjects?.length > 0 
-       ? studentDetails.subjects.map((s: any) => s.subject?.name || s.name).filter(Boolean)
-       : subjects_list;
-
-    subjects.forEach((subjectName: string) => {
-      const row = [subjectName];
-      [1, 2, 3].forEach(termNum => {
-        const searchTerm = `TERM ${termNum}`;
-        const mid = resultsForYear.find((r: any) => {
-           const rSubName = (r.subject?.name || '').toUpperCase();
-           const rTermName = (r.exam?.term?.name || r.term?.name || '').toUpperCase();
-           const rExamName = (r.exam?.name || '').toUpperCase();
-           const rExamType = (r.exam?.type || '').toUpperCase();
-           
-           return rSubName === subjectName.toUpperCase() && 
-                  rTermName.includes(searchTerm) && 
-                  (rExamType.includes('MID') || rExamName.includes('MID'));
-        });
-
-        const end = resultsForYear.find((r: any) => {
-           const rSubName = (r.subject?.name || '').toUpperCase();
-           const rTermName = (r.exam?.term?.name || r.term?.name || '').toUpperCase();
-           const rExamName = (r.exam?.name || '').toUpperCase();
-           const rExamType = (r.exam?.type || '').toUpperCase();
-           
-           return rSubName === subjectName.toUpperCase() && 
-                  rTermName.includes(searchTerm) && 
-                  (rExamType.includes('END') || rExamName.includes('END'));
-        });
-
-        row.push(mid ? `${mid.marks}${mid.grade ? ' ' + mid.grade : ''}` : '-');
-        row.push(end ? `${end.marks}${end.grade ? ' ' + end.grade : ''}` : '-');
-      });
-      tableBody.push(row);
+  
+  if (results.length === 0) {
+    tableBody.push([{ content: 'No CBC Assessments Recorded for this period.', colSpan: 5, styles: { halign: 'center' } }]);
+  } else {
+    // Group by Learning Area -> Strand
+    const grouped: Record<string, Record<string, any[]>> = {};
+    results.forEach((r: any) => {
+       const learningArea = r.learning_area?.name || r.learning_area_id || 'General Assessment';
+       const strand = r.cbc_strands?.name || r.strand || 'General';
+       if (!grouped[learningArea]) grouped[learningArea] = {};
+       if (!grouped[learningArea][strand]) grouped[learningArea][strand] = [];
+       grouped[learningArea][strand].push({
+          sub_strand: r.cbc_sub_strands?.name || r.sub_strand || 'Overall',
+          rating: r.rating || 'N/A',
+          remarks: r.teacher_comment || ''
+       });
     });
+
+    Object.entries(grouped).forEach(([learningArea, strands]) => {
+      tableBody.push([{ 
+         content: learningArea.toUpperCase(), 
+         colSpan: 5, 
+         styles: { fillColor: [240, 240, 240], fontStyle: 'bold', textColor: [50, 50, 50] } 
+      }]);
+
+      Object.entries(strands).forEach(([strand, assessments]) => {
+        assessments.forEach((a, idx) => {
+          tableBody.push([
+            idx === 0 ? strand : '', // Only show strand name on first row
+            idx === 0 ? strand : '', // Need to keep columns aligned, we actually put strand in column 2
+            a.sub_strand,
+            a.rating,
+            a.remarks
+          ]);
+        });
+      });
+    });
+  }
+
+  // Fix tableBody formatting since we decided to put strand in col 2
+  const finalTableBody = tableBody.map(row => {
+    if (row.length === 1) return row; // Section header
+    return [
+      '', // Learning Area is already a section header, so leave empty
+      row[1], // Strand
+      row[2], // Sub-Strand
+      row[3], // Rating
+      row[4]  // Remarks
+    ];
   });
 
   autoTable(doc, {
-    startY: 78,
+    startY: 68,
     head: tableHead,
-    body: tableBody,
+    body: finalTableBody,
     styles: { fontSize: 8, font: 'helvetica' },
     headStyles: { fillColor: [39, 39, 42], textColor: 255 },
     alternateRowStyles: { fillColor: [252, 252, 252] },
-    margin: { top: 75 },
+    margin: { top: 65 },
     pageBreak: 'auto'
   });
 
   const finalY = (doc as any).lastAutoTable.finalY + 15;
   doc.setFontSize(9);
-  doc.text("Class Teacher Signed: __________________", 15, finalY);
-  doc.text("Principal Signed: ______________________", 110, finalY);
+  doc.setFont('helvetica', 'bold');
+  doc.text("Facilitator's Signature: __________________", 15, finalY);
+  doc.text("Principal's Signature: ______________________", 110, finalY);
 
   const footerY = doc.internal.pageSize.height - 15;
   doc.setFontSize(7);
   doc.setFont('courier', 'bold');
   doc.text(schoolInfo?.name?.toUpperCase() || "SCHOOL NAME", pageWidth / 2, footerY, { align: 'center' });
-  doc.text("P3L SYSTEM | OFFICIAL TRANSCRIPT | MATTA DEVELOPS", pageWidth / 2, footerY + 4, { align: 'center' });
+  doc.text("P3L SYSTEM | COMPETENCY BASED CURRICULUM REPORT | MATTA DEVELOPS", pageWidth / 2, footerY + 4, { align: 'center' });
 
-  // Clean filename for Windows/Browser compatibility
   const cleanerName = (student.profile?.full_name || 'Student').replace(/[^a-zA-Z0-9]/g, '_');
-  const filename = `${cleanerName}_Transcript_F${mode}.pdf`;
+  const filename = `${cleanerName}_CBC_Report.pdf`;
   
   doc.save(filename);
 };

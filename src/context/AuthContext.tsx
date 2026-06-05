@@ -197,11 +197,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const userExists = userEntries[0];
 
-    // 3. Password Verification
+    // 3. Password Verification & Auth Session Establishment
     if (password) {
-      if (userExists.password !== password) {
-        console.warn('Login Failed: Incorrect password.');
-        throw new Error('Incorrect password. Please try again.');
+      try {
+        // Try authenticating through Supabase GoTrue Auth first
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: targetEmail,
+          password: password
+        });
+
+        if (authError) {
+          if (authError.message?.toLowerCase().includes('invalid login credentials')) {
+             throw new Error('Incorrect password. Please try again.');
+          }
+          console.warn('Supabase Auth failed, trying local fallback...', authError.message);
+          if (userExists.password !== password) {
+            throw new Error('Incorrect password. Please try again.');
+          }
+        } else {
+          console.log('Supabase Auth success. Session established.');
+        }
+      } catch (authErr: any) {
+        if (authErr.message?.includes('Incorrect password')) {
+          throw authErr;
+        }
+        if (userExists.password !== password) {
+          throw new Error('Incorrect password. Please try again.');
+        }
       }
     }
 
