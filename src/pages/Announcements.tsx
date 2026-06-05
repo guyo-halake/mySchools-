@@ -22,7 +22,8 @@ import {
   AlertCircle,
   MessageCircle,
   Send,
-  Sparkles
+  Sparkles,
+  Users
 } from 'lucide-react';
 import { formatDate, cn } from '../utils/utils';
 
@@ -38,6 +39,7 @@ interface HubItem {
   location?: string;
   theme?: string;
   rsvps?: string[];
+  target_roles?: string[];
 }
 
 export const Announcements: React.FC = () => {
@@ -81,9 +83,14 @@ export const Announcements: React.FC = () => {
         supabase.from('reminders').select('*').eq('user_id', user.id)
       ]);
 
-      const normalizedAnn = (annData || []).map(a => ({
+      let filteredAnnData = annData || [];
+      if (user?.role === 'PARENT') {
+         filteredAnnData = filteredAnnData.filter(a => !a.target_roles || a.target_roles.length === 0 || a.target_roles.includes('PARENT'));
+      }
+
+      const normalizedAnn = filteredAnnData.map(a => ({
         id: a.id, type: 'announcement' as HubType, title: a.title, content: a.content,
-        date: a.created_at, author: a.profiles?.full_name || 'Admin', theme: 'News'
+        date: a.created_at, author: a.profiles?.full_name || 'Admin', theme: 'News', target_roles: a.target_roles
       }));
 
       const normalizedEve = (eveData || []).map(e => ({
@@ -112,7 +119,6 @@ export const Announcements: React.FC = () => {
         }));
     }
 
-    // Sort: 1. Date DESC, but 2. READ status goes to bottom
     return source
       .filter(i => i.title.toLowerCase().includes(searchQuery.toLowerCase()) || i.content.toLowerCase().includes(searchQuery.toLowerCase()))
       .sort((a, b) => {
@@ -144,13 +150,33 @@ export const Announcements: React.FC = () => {
     finally { setSubmitting(false); }
   };
 
+  const handleRSVP = async (item: HubItem) => {
+    if (!user || item.type !== 'event') return;
+    const isGoing = item.rsvps?.includes(user.id);
+    const newRsvps = isGoing ? item.rsvps?.filter(id => id !== user.id) : [...(item.rsvps || []), user.id];
+    
+    try {
+       await supabase.from('events').update({ rsvps: newRsvps }).eq('id', item.id);
+       showToast(isGoing ? "RSVP Cancelled" : `You have RSVP'd for ${item.title}`); 
+       setSelectedItem(prev => prev ? { ...prev, rsvps: newRsvps } : null);
+       loadHubData();
+    } catch(err) {
+       showToast("Failed to RSVP", "err");
+    }
+  };
+
   const GlassCard = ({ item }: { item: HubItem }) => {
     const isRead = readIds.includes(item.id);
 
     return (
-      <div className={cn(
-        "relative overflow-hidden rounded-2xl border p-6 transition-all flex flex-col justify-between h-full hover:shadow-lg",
-        isRead ? "bg-zinc-50 border-zinc-100 opacity-70" : "border-zinc-200 bg-white dark:bg-zinc-900"
+      <div 
+        onClick={() => {
+           setSelectedItem(item);
+           if (!isRead) setReadIds(prev => [...prev, item.id]);
+        }}
+        className={cn(
+        "group relative overflow-hidden rounded-2xl border p-6 transition-all flex flex-col justify-between h-full hover:shadow-lg cursor-pointer",
+        isRead ? "bg-zinc-50 border-zinc-100 opacity-70" : "border-zinc-200 bg-white dark:bg-zinc-900 hover:border-emerald-200"
       )}>
           <div className="space-y-3">
               <div className="flex items-center justify-between gap-2 overflow-hidden">
@@ -163,15 +189,15 @@ export const Announcements: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-1">
                         <button 
-                            onClick={() => setReadIds(prev => isRead ? prev.filter(id => id !== item.id) : [...prev, item.id])}
-                            className={cn("p-1 rounded-full transition-colors", isRead ? "text-emerald-500 bg-emerald-50" : "text-zinc-300 hover:text-emerald-500")}
+                            onClick={(e) => { e.stopPropagation(); setReadIds(prev => isRead ? prev.filter(id => id !== item.id) : [...prev, item.id]); }}
+                            className={cn("p-1 rounded-full transition-colors z-10", isRead ? "text-emerald-500 bg-emerald-50" : "text-zinc-300 hover:text-emerald-500")}
                             title={isRead ? "Mark as Unread" : "Mark as Read"}
                         >
                             <CheckCircle2 size={14} />
                         </button>
                         <button 
-                            onClick={() => setItems(prev => prev.filter(i => i.id !== item.id))}
-                            className="p-1 text-zinc-300 hover:text-rose-500 transition-colors"
+                            onClick={(e) => { e.stopPropagation(); setItems(prev => prev.filter(i => i.id !== item.id)); }}
+                            className="p-1 text-zinc-300 hover:text-rose-500 transition-colors z-10"
                         >
                             <X size={14} />
                         </button>
@@ -180,7 +206,7 @@ export const Announcements: React.FC = () => {
               </div>
               
               <div className="space-y-1">
-                  <h3 className={cn("text-xs sm:text-sm font-bold font-sora line-clamp-1 uppercase", isRead ? "text-zinc-500" : "text-zinc-900 dark:text-white")}>{item.title}</h3>
+                  <h3 className={cn("text-xs sm:text-sm font-bold font-sora line-clamp-1 uppercase group-hover:text-emerald-600 transition-colors", isRead ? "text-zinc-500" : "text-zinc-900 dark:text-white")}>{item.title}</h3>
                   {item.type === 'event' && (
                       <div className="flex flex-col gap-1 mt-1.5 py-1.5 border-y border-zinc-50 border-dashed">
                           <div className="flex items-center gap-1.5 text-[9px] font-bold text-zinc-600">
@@ -194,31 +220,14 @@ export const Announcements: React.FC = () => {
           </div>
           
           <div className="mt-4 pt-4 border-t border-zinc-100 flex items-center justify-between gap-1.5">
-              <div className="flex gap-2 w-full">
-                  <button onClick={() => {
-                      setRemForm({ date: item.date.split('T')[0], time: '08:00', offset: '0', whatsapp: true });
-                      setReminderModal({ open: true, item });
-                  }} className="flex-1 py-2 bg-zinc-900 text-white rounded-lg text-[8px] font-bold uppercase flex items-center justify-center gap-1.5 active:scale-95 transition-all"><BellRing size={10}/> Remind</button>
-                  
-                  {item.type === 'event' ? (
-                      <button onClick={() => {
-                        const isGoing = item.rsvps?.includes(user?.id || '');
-                        supabase.from('events').update({ rsvps: isGoing ? item.rsvps?.filter(id => id !== user?.id) : [...(item.rsvps || []), user?.id] }).eq('id', item.id).then(() => { 
-                          showToast(isGoing ? "RSVP Cancelled" : `You have RSVP for ${item.title}`); 
-                          loadHubData(); 
-                        });
-                      }} className={cn("flex-1 py-2 rounded-lg text-[8px] font-bold uppercase flex items-center justify-center gap-1.5 active:scale-95 transition-all", item.rsvps?.includes(user?.id || '') ? "bg-zinc-100 text-zinc-900" : "bg-black text-white hover:bg-zinc-800")}>
-                          <CalendarCheck size={10}/> {item.rsvps?.includes(user?.id || '') ? 'Going' : 'RSVP Now'}
-                      </button>
-                  ) : (
-                      <button onClick={() => {
-                        setSelectedItem(item);
-                        if (!isRead) setReadIds(prev => [...prev, item.id]);
-                      }} className="flex-1 py-2 bg-zinc-50 text-zinc-600 rounded-lg text-[8px] font-bold uppercase flex items-center justify-center gap-1.5 active:scale-95 transition-all"><BookOpen size={10}/> Read News</button>
-                  )}
-              </div>
+              <span className="text-[10px] font-bold text-zinc-400 group-hover:text-emerald-500 transition-colors uppercase flex items-center gap-1">
+                 View Details <ChevronRight size={12} />
+              </span>
               {(user?.role === 'ADMIN' || user?.role === 'PRINCIPAL') && (
-                  <button onClick={() => supabase.from(item.type === 'event' ? 'events' : 'announcements').delete().eq('id', item.id).then(() => loadHubData())} className="p-1.5 text-zinc-300 hover:text-rose-500 transition-colors"><Trash2 size={12}/></button>
+                  <button onClick={(e) => {
+                     e.stopPropagation(); 
+                     supabase.from(item.type === 'event' ? 'events' : 'announcements').delete().eq('id', item.id).then(() => loadHubData());
+                  }} className="p-1.5 text-zinc-300 hover:text-rose-500 transition-colors z-10"><Trash2 size={12}/></button>
               )}
           </div>
       </div>
@@ -293,12 +302,22 @@ export const Announcements: React.FC = () => {
                 </div>
               )}
 
-              <button 
-                onClick={() => setSelectedItem(null)}
-                className="w-full py-4 bg-zinc-100 text-zinc-900 rounded-2xl font-bold uppercase text-[11px] tracking-widest active:scale-95 transition-all"
-              >
-                Close
-              </button>
+              <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-zinc-100">
+                  <button onClick={() => {
+                      if (selectedItem) {
+                         setRemForm({ date: selectedItem.date.split('T')[0], time: '08:00', offset: '0', whatsapp: true });
+                         setReminderModal({ open: true, item: selectedItem });
+                      }
+                  }} className="flex-1 py-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 rounded-2xl text-[10px] font-bold uppercase flex items-center justify-center gap-1.5 active:scale-95 transition-all">
+                     <BellRing size={14}/> Remind Me
+                  </button>
+                  
+                  {selectedItem?.type === 'event' && (
+                      <button onClick={() => handleRSVP(selectedItem)} className={cn("flex-1 py-3 rounded-2xl text-[10px] font-bold uppercase flex items-center justify-center gap-1.5 active:scale-95 transition-all", selectedItem.rsvps?.includes(user?.id || '') ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-black text-white hover:bg-zinc-800")}>
+                          <CalendarCheck size={14}/> {selectedItem.rsvps?.includes(user?.id || '') ? "I'm Going (Cancel RSVP)" : 'RSVP Now'}
+                      </button>
+                  )}
+              </div>
           </div>
       </Modal>
 

@@ -1,0 +1,156 @@
+src/admin/lib/admin_api.ts(6,35): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/admin/lib/admin_api.ts(7,35): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/admin/lib/admin_api.ts(209,36): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/admin/pages/DataEnginePage.tsx(501,21): error TS2367: This comparison appears to be unintentional because the types 'UserRole' and '"ONBOARDING"' have no overlap.
+src/admin/pages/SalesPage.tsx(82,26): error TS2304: Cannot find name 'Lead'.
+src/admin/pages/SalesPage.tsx(147,35): error TS2304: Cannot find name 'Lead'.
+src/admin/pages/SalesPage.tsx(147,76): error TS2304: Cannot find name 'Lead'.
+src/admin/pages/SalesPage.tsx(315,16): error TS2345: Argument of type '{ id: any; name: any; contact_name: any; contact_phone: any; contact_email: any; stage: string; assigned_agent: any; revenue_potential: any; next_followup: string; last_contact: any; notes: string; created_at: any; updated_at: any; }[]' is not assignable to parameter of type 'SetStateAction<Client[]>'.
+  Type '{ id: any; name: any; contact_name: any; contact_phone: any; contact_email: any; stage: string; assigned_agent: any; revenue_potential: any; next_followup: string; last_contact: any; notes: string; created_at: any; updated_at: any; }[]' is not assignable to type 'Client[]'.
+    Type '{ id: any; name: any; contact_name: any; contact_phone: any; contact_email: any; stage: string; assigned_agent: any; revenue_potential: any; next_followup: string; last_contact: any; notes: string; created_at: any; updated_at: any; }' is not assignable to type 'Client'.
+      Types of property 'stage' are incompatible.
+        Type 'string' is not assignable to type 'Stage'.
+src/admin/pages/SalesPage.tsx(331,21): error TS2304: Cannot find name 'loadLeads'.
+src/admin/pages/SalesPage.tsx(331,56): error TS2304: Cannot find name 'loadLeads'.
+src/admin/pages/SalesPage.tsx(336,93): error TS2304: Cannot find name 'loadLeads'.
+src/admin/pages/SalesPage.tsx(340,7): error TS2304: Cannot find name 'loadLeads'.
+src/admin/pages/SalesPage.tsx(350,5): error TS2304: Cannot find name 'loadLeads'.
+src/admin/pages/SalesPage.tsx(353,38): error TS2304: Cannot find name 'Lead'.
+src/admin/pages/SalesPage.tsx(354,5): error TS2304: Cannot find name 'setLeads'.
+src/admin/pages/SalesPage.tsx(355,9): error TS2304: Cannot find name 'selectedLead'.
+src/admin/pages/SalesPage.tsx(355,42): error TS2304: Cannot find name 'setSelectedLead'.
+src/admin/pages/SalesPage.tsx(366,49): error TS2304: Cannot find name 'leads'.
+src/admin/pages/SalesPage.tsx(366,57): error TS2304: Cannot find name 'leads'.
+src/admin/pages/SalesPage.tsx(387,34): error TS2304: Cannot find name 'setShowAddLead'.
+src/admin/pages/SalesPage.tsx(450,36): error TS2304: Cannot find name 'leads'.
+src/admin/pages/SalesPage.tsx(477,42): error TS2304: Cannot find name 'setSelectedLead'.
+src/admin/pages/SalesPage.tsx(550,141): error TS2304: Cannot find name 'setSelectedLead'.
+src/admin/pages/SalesPage.tsx(589,46): error TS2304: Cannot find name 'leads'.
+src/admin/pages/SalesPage.tsx(589,73): error TS2339: Property 'lead_id' does not exist on type 'SalesActivity'.
+src/admin/pages/SalesPage.tsx(589,90): error TS2304: Cannot find name 'setSelectedLead'.
+src/admin/pages/SalesPage.tsx(594,26): error TS2339: Property 'lead' does not exist on type 'SalesActivity'.
+src/admin/pages/SalesPage.tsx(594,100): error TS2339: Property 'lead' does not exist on type 'SalesActivity'.
+src/admin/pages/SalesPage.tsx(655,8): error TS2304: Cannot find name 'showAddLead'.
+src/admin/pages/SalesPage.tsx(655,24): error TS2304: Cannot find name 'AddLeadModal'.
+src/admin/pages/SalesPage.tsx(655,52): error TS2304: Cannot find name 'setShowAddLead'.
+src/admin/pages/SalesPage.tsx(655,88): error TS2304: Cannot find name 'setLeads'.
+src/admin/pages/SalesPage.tsx(656,8): error TS2304: Cannot find name 'selectedLead'.
+src/admin/pages/SalesPage.tsx(656,41): error TS2304: Cannot find name 'selectedLead'.
+src/admin/pages/SalesPage.tsx(656,70): error TS2304: Cannot find name 'setSelectedLead'.
+src/components/ChatScreen.tsx(131,17): error TS2345: Argument of type '(prev: Message[]) => (Message | { id: string; chat_id: string; sender_id: string; content: string; created_at: string; read_at: any; })[]' is not assignable to parameter of type 'SetStateAction<Message[]>'.
+  Type '(prev: Message[]) => (Message | { id: string; chat_id: string; sender_id: string; content: string; created_at: string; read_at: any; })[]' is not assignable to type '(prevState: Message[]) => Message[]'.
+    Type '(Message | { id: string; chat_id: string; sender_id: string; content: string; created_at: string; read_at: any; })[]' is not assignable to type 'Message[]'.
+      Type 'Message | { id: string; chat_id: string; sender_id: string; content: string; created_at: string; read_at: any; }' is not assignable to type 'Message'.
+        Property 'type' is missing in type '{ id: string; chat_id: string; sender_id: string; content: string; created_at: string; read_at: any; }' but required in type 'Message'.
+src/components/ChatScreen.tsx(269,74): error TS2339: Property 'read_at' does not exist on type 'Message'.
+src/components/ChatScreen.tsx(270,83): error TS2339: Property 'read_at' does not exist on type 'Message'.
+src/components/ChatScreen.tsx(306,54): error TS2304: Cannot find name 'handleAttachClick'.
+src/components/GlobalNotificationManager.tsx(90,31): error TS2345: Argument of type '(prev: Notification[]) => (Notification | { id: string; title: any; message: any; type: "message"; link: string; avatar: any; created_at: string; })[]' is not assignable to parameter of type 'SetStateAction<Notification[]>'.
+  Type '(prev: Notification[]) => (Notification | { id: string; title: any; message: any; type: "message"; link: string; avatar: any; created_at: string; })[]' is not assignable to type '(prevState: Notification[]) => Notification[]'.
+    Type '(Notification | { id: string; title: any; message: any; type: "message"; link: string; avatar: any; created_at: string; })[]' is not assignable to type 'Notification[]'.
+      Type 'Notification | { id: string; title: any; message: any; type: "message"; link: string; avatar: any; created_at: string; }' is not assignable to type 'Notification'.
+        Type '{ id: string; title: any; message: any; type: "message"; link: string; avatar: any; created_at: string; }' is not assignable to type 'Notification'.
+          Types of property 'type' are incompatible.
+            Type '"message"' is not assignable to type '"update" | "error" | "info" | "success" | "warning" | "alarm"'.
+src/components/GlobalNotificationManager.tsx(178,21): error TS2367: This comparison appears to be unintentional because the types '"update" | "error" | "info" | "success" | "warning" | "alarm"' and '"message"' have no overlap.
+src/components/GlobalNotificationManager.tsx(180,22): error TS2367: This comparison appears to be unintentional because the types '"update" | "error" | "info" | "success" | "warning" | "alarm"' and '"message"' have no overlap.
+src/components/Layout.tsx(35,7): error TS2741: Property 'STAFF' is missing in type '{ PARENT: { label: string; icon: React.ForwardRefExoticComponent<Omit<LucideProps, "ref"> & React.RefAttributes<SVGSVGElement>>; path: string; }[]; STUDENT: { ...; }[]; TEACHER: { ...; }[]; PRINCIPAL: { ...; }[]; ADMIN: { ...; }[]; }' but required in type 'Record<Role, { label: string; icon: any; path: string; }[]>'.
+src/context/AppContext.tsx(3,21): error TS2305: Module '"../types"' has no exported member 'Teacher'.
+src/context/AppContext.tsx(4,3): error TS2305: Module '"../types"' has no exported member 'SuspensionComplaint'.
+src/lib/api.ts(4,12): error TS2305: Module '"../types"' has no exported member 'Teacher'.
+src/lib/api.ts(11,15): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/lib/api.ts(11,65): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/lib/api.ts(329,9): error TS2300: Duplicate identifier 'getClasses'.
+src/lib/api.ts(932,34): error TS2339: Property 'name' does not exist on type '{ name: any; }[]'.
+src/lib/api.ts(971,31): error TS2339: Property 'name' does not exist on type '{ name: any; }[]'.
+src/lib/api.ts(1195,21): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/lib/api.ts(1268,34): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/lib/api.ts(1274,41): error TS2339: Property 'full_name' does not exist on type '{ full_name: any; }[]'.
+src/lib/api.ts(1277,39): error TS2339: Property 'name' does not exist on type '{ name: any; }[]'.
+src/lib/api.ts(1310,9): error TS2300: Duplicate identifier 'getNotifications'.
+src/lib/api.ts(1326,9): error TS2300: Duplicate identifier 'markNotificationAsRead'.
+src/lib/api.ts(1404,127): error TS2339: Property 'full_name' does not exist on type '{ full_name: any; }[]'.
+src/lib/api.ts(1498,126): error TS2339: Property 'full_name' does not exist on type '{ full_name: any; }[]'.
+src/lib/api.ts(1523,9): error TS2300: Duplicate identifier 'getTeacherStreams'.
+src/lib/api.ts(1546,9): error TS2300: Duplicate identifier 'getStreamPerformanceTrend'.
+src/lib/api.ts(1577,9): error TS2300: Duplicate identifier 'getStreamVsFormComparison'.
+src/lib/api.ts(1620,9): error TS2300: Duplicate identifier 'getStreamSubjectBreakdown'.
+src/lib/api.ts(1651,9): error TS2300: Duplicate identifier 'getStreamStudentRankings'.
+src/lib/api.ts(1674,26): error TS2339: Property 'full_name' does not exist on type '{ full_name: any; }[]'.
+src/lib/api.ts(1683,9): error TS2300: Duplicate identifier 'updateStreamProfile'.
+src/lib/api.ts(1716,9): error TS2300: Duplicate identifier 'getNotifications'.
+src/lib/api.ts(1775,9): error TS2300: Duplicate identifier 'markNotificationAsRead'.
+src/lib/api.ts(1807,9): error TS2300: Duplicate identifier 'getResults'.
+src/lib/supabase.ts(2,26): error TS2307: Cannot find module '../types/supabase' or its corresponding type declarations.
+src/lib/supabase.ts(4,40): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/lib/supabase.ts(5,44): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/pages/AdminOS.tsx(17,9): error TS2339: Property 'getIssues' does not exist on type '{ getStudents(schoolId: string): Promise<Student[]>; getClasses(schoolId: string): Promise<any[]>; getClasses(schoolId: string): Promise<Class[]>; ... 89 more ...; recomputeInstitutionalAverages(schoolId: string, termId?: string): Promise<...>; }'.
+src/pages/AdminOS.tsx(26,17): error TS2551: Property 'updateIssueStatus' does not exist on type '{ getStudents(schoolId: string): Promise<Student[]>; getClasses(schoolId: string): Promise<any[]>; getClasses(schoolId: string): Promise<Class[]>; ... 89 more ...; recomputeInstitutionalAverages(schoolId: string, termId?: string): Promise<...>; }'. Did you mean 'updateFeeStatus'?
+src/pages/AdminOS.tsx(57,25): error TS2322: Type '{ children: string; size: string; variant: "outline"; onClick: () => void; }' is not assignable to type 'IntrinsicAttributes & { children: ReactNode; variant?: "outline" | "primary" | "secondary" | "danger" | "ghost"; onClick?: () => void; className?: string; type?: "submit" | "button"; disabled?: boolean; loading?: boolean; title?: string; }'.
+  Property 'size' does not exist on type 'IntrinsicAttributes & { children: ReactNode; variant?: "outline" | "primary" | "secondary" | "danger" | "ghost"; onClick?: () => void; className?: string; type?: "submit" | "button"; disabled?: boolean; loading?: boolean; title?: string; }'.
+src/pages/Announcements.tsx(157,26): error TS2322: Type '"info" | "outline"' is not assignable to type '"info" | "success" | "warning" | "danger" | "neutral"'.
+  Type '"outline"' is not assignable to type '"info" | "success" | "warning" | "danger" | "neutral"'.
+src/pages/Announcements.tsx(272,24): error TS2322: Type '"info" | "outline"' is not assignable to type '"info" | "success" | "warning" | "danger" | "neutral"'.
+  Type '"outline"' is not assignable to type '"info" | "success" | "warning" | "danger" | "neutral"'.
+src/pages/Announcements.tsx(278,86): error TS2552: Cannot find name 'Users'. Did you mean 'user'?
+src/pages/Dashboard.tsx(1114,17): error TS2339: Property 'updateAppointmentStatus' does not exist on type '{ getStudents(schoolId: string): Promise<Student[]>; getClasses(schoolId: string): Promise<any[]>; getClasses(schoolId: string): Promise<Class[]>; ... 89 more ...; recomputeInstitutionalAverages(schoolId: string, termId?: string): Promise<...>; }'.
+src/pages/Dashboard.tsx(1342,77): error TS2322: Type '"emerald"' is not assignable to type '"info" | "success" | "warning" | "danger" | "neutral"'.
+src/pages/Dashboard.tsx(1343,59): error TS2322: Type '{ label: string; variant: "warning"; }' is not assignable to type 'IntrinsicAttributes & { children: ReactNode; variant?: "info" | "success" | "warning" | "danger" | "neutral"; className?: string; }'.
+  Property 'label' does not exist on type 'IntrinsicAttributes & { children: ReactNode; variant?: "info" | "success" | "warning" | "danger" | "neutral"; className?: string; }'.
+src/pages/Dashboard.tsx(1423,60): error TS2322: Type '{ children: string; onClick: () => void; fullWidth: true; }' is not assignable to type 'IntrinsicAttributes & { children: ReactNode; variant?: "outline" | "primary" | "secondary" | "danger" | "ghost"; onClick?: () => void; className?: string; type?: "submit" | "button"; disabled?: boolean; loading?: boolean; title?: string; }'.
+  Property 'fullWidth' does not exist on type 'IntrinsicAttributes & { children: ReactNode; variant?: "outline" | "primary" | "secondary" | "danger" | "ghost"; onClick?: () => void; className?: string; type?: "submit" | "button"; disabled?: boolean; loading?: boolean; title?: string; }'.
+src/pages/Dashboard.tsx(1794,9): error TS2353: Object literal may only specify known properties, and 'theme' does not exist in type 'Partial<SchoolEvent>'.
+src/pages/Dashboard.tsx(2439,33): error TS2322: Type '{ children: string; type: "submit"; fullWidth: true; disabled: boolean; }' is not assignable to type 'IntrinsicAttributes & { children: ReactNode; variant?: "outline" | "primary" | "secondary" | "danger" | "ghost"; onClick?: () => void; className?: string; type?: "submit" | "button"; disabled?: boolean; loading?: boolean; title?: string; }'.
+  Property 'fullWidth' does not exist on type 'IntrinsicAttributes & { children: ReactNode; variant?: "outline" | "primary" | "secondary" | "danger" | "ghost"; onClick?: () => void; className?: string; type?: "submit" | "button"; disabled?: boolean; loading?: boolean; title?: string; }'.
+src/pages/Dashboard.tsx(2463,33): error TS2322: Type '{ children: string; type: "submit"; fullWidth: true; disabled: boolean; }' is not assignable to type 'IntrinsicAttributes & { children: ReactNode; variant?: "outline" | "primary" | "secondary" | "danger" | "ghost"; onClick?: () => void; className?: string; type?: "submit" | "button"; disabled?: boolean; loading?: boolean; title?: string; }'.
+  Property 'fullWidth' does not exist on type 'IntrinsicAttributes & { children: ReactNode; variant?: "outline" | "primary" | "secondary" | "danger" | "ghost"; onClick?: () => void; className?: string; type?: "submit" | "button"; disabled?: boolean; loading?: boolean; title?: string; }'.
+src/pages/FeesManagement.tsx(118,17): error TS2339: Property 'addFeeType' does not exist on type '{ getStudents(schoolId: string): Promise<Student[]>; getClasses(schoolId: string): Promise<any[]>; getClasses(schoolId: string): Promise<Class[]>; ... 89 more ...; recomputeInstitutionalAverages(schoolId: string, termId?: string): Promise<...>; }'.
+src/pages/Login.tsx(110,20): error TS2339: Property 'logo_url' does not exist on type 'School'.
+src/pages/Login.tsx(112,27): error TS2339: Property 'logo_url' does not exist on type 'School'.
+src/pages/MyChats.tsx(498,21): error TS2552: Cannot find name 'User'. Did you mean 'Users'?
+src/pages/MyClassroom.tsx(3356,42): error TS2339: Property 'status' does not exist on type 'SessionItem'.
+src/pages/ParentStudentAssignments.tsx(126,47): error TS2322: Type '{ children: (string | Element)[]; variant: "outline"; size: string; }' is not assignable to type 'IntrinsicAttributes & { children: ReactNode; variant?: "outline" | "primary" | "secondary" | "danger" | "ghost"; onClick?: () => void; className?: string; type?: "submit" | "button"; disabled?: boolean; loading?: boolean; title?: string; }'.
+  Property 'size' does not exist on type 'IntrinsicAttributes & { children: ReactNode; variant?: "outline" | "primary" | "secondary" | "danger" | "ghost"; onClick?: () => void; className?: string; type?: "submit" | "button"; disabled?: boolean; loading?: boolean; title?: string; }'.
+src/pages/ParentStudentAssignments.tsx(127,45): error TS2322: Type '{ children: (string | Element)[]; variant: "ghost"; size: string; }' is not assignable to type 'IntrinsicAttributes & { children: ReactNode; variant?: "outline" | "primary" | "secondary" | "danger" | "ghost"; onClick?: () => void; className?: string; type?: "submit" | "button"; disabled?: boolean; loading?: boolean; title?: string; }'.
+  Property 'size' does not exist on type 'IntrinsicAttributes & { children: ReactNode; variant?: "outline" | "primary" | "secondary" | "danger" | "ghost"; onClick?: () => void; className?: string; type?: "submit" | "button"; disabled?: boolean; loading?: boolean; title?: string; }'.
+src/pages/ParentStudentDashboard.tsx(600,39): error TS2339: Property 'isFirstOfTerm' does not exist on type '{ name: any; points: number; gradeLabel: string; color: string; }'.
+src/pages/ParentStudentDashboard.tsx(601,172): error TS2339: Property 'termLabel' does not exist on type '{ name: any; points: number; gradeLabel: string; color: string; }'.
+src/pages/ParentStudentDashboard.tsx(622,76): error TS2339: Property 'marks' does not exist on type '{ name: any; points: number; gradeLabel: string; color: string; }'.
+src/pages/ParentStudentDashboard.tsx(643,185): error TS2339: Property 'marks' does not exist on type '{ name: any; points: number; gradeLabel: string; color: string; }'.
+src/pages/ParentStudentFees.tsx(346,19): error TS2367: This comparison appears to be unintentional because the types '"" | "CHEQUE" | "MPESA" | "BANK"' and '"SCAN"' have no overlap.
+src/pages/ParentStudentProfileSettings.tsx(280,18): error TS2304: Cannot find name 'Badge'.
+src/pages/ParentStudentProfileSettings.tsx(280,102): error TS2304: Cannot find name 'Badge'.
+src/pages/ProfileSettings.tsx(89,28): error TS2352: Conversion of type '{ id: any; class_teacher_id: any; class: { name: any; }[]; }[]' to type 'StreamRow[]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ id: any; class_teacher_id: any; class: { name: any; }[]; }' is not comparable to type 'StreamRow'.
+    Types of property 'class' are incompatible.
+      Property 'name' is missing in type '{ name: any; }[]' but required in type '{ name: string; }'.
+src/pages/ProfileSettings.tsx(205,22): error TS2322: Type '"outline"' is not assignable to type '"info" | "success" | "warning" | "danger" | "neutral"'.
+src/pages/SchoolSettings.tsx(27,11): error TS2339: Property 'addToast' does not exist on type 'ToastContextType'.
+src/pages/StudentsManagement.tsx(23,7): error TS2339: Property 'name' does not exist on type 'Student'.
+src/pages/StudentsManagement.tsx(24,7): error TS2339: Property 'admissionNumber' does not exist on type 'Student'.
+src/pages/StudentsManagement.tsx(30,32): error TS2559: Type '{ name: string; admissionNumber: string; classId: string; teacherId: string; parentEmail: string; photo: string; }' has no properties in common with type 'Partial<Student>'.
+src/pages/StudentsManagement.tsx(32,18): error TS2345: Argument of type '{ name: string; admissionNumber: string; classId: string; teacherId: string; parentEmail: string; photo: string; }' is not assignable to parameter of type 'Omit<Student, "id">'.
+  Type '{ name: string; admissionNumber: string; classId: string; teacherId: string; parentEmail: string; photo: string; }' is missing the following properties from type 'Omit<Student, "id">': adm_no, school_id, discipline_status
+src/pages/StudentsManagement.tsx(86,31): error TS2339: Property 'photo' does not exist on type 'Student'.
+src/pages/StudentsManagement.tsx(87,50): error TS2339: Property 'name' does not exist on type 'Student'.
+src/pages/StudentsManagement.tsx(90,62): error TS2339: Property 'admissionNumber' does not exist on type 'Student'.
+src/pages/StudentsManagement.tsx(92,69): error TS2339: Property 'classId' does not exist on type 'Student'.
+src/pages/StudentsManagement.tsx(94,66): error TS2339: Property 'parentEmail' does not exist on type 'Student'.
+src/pages/StudentsManagement.tsx(163,71): error TS2339: Property 'name' does not exist on type 'Profile'.
+src/pages/SubmissionsUpload.tsx(248,29): error TS2322: Type '(e: any) => void' is not assignable to type '() => void'.
+  Target signature provides too few arguments. Expected 1 or more, but got 0.
+src/pages/Support.tsx(113,32): error TS2304: Cannot find name 'cn'.
+src/pages/Support.tsx(121,37): error TS2304: Cannot find name 'cn'.
+src/pages/TeachersManagement.tsx(20,7): error TS2339: Property 'name' does not exist on type 'Profile'.
+src/pages/TeachersManagement.tsx(29,18): error TS2345: Argument of type '{ name: string; email: string; subjects: string[]; classId: string; }' is not assignable to parameter of type 'Omit<Profile, "id">'.
+  Type '{ name: string; email: string; subjects: string[]; classId: string; }' is missing the following properties from type 'Omit<Profile, "id">': full_name, role, school_id
+src/pages/TeachersManagement.tsx(79,24): error TS2339: Property 'name' does not exist on type 'Profile'.
+src/pages/TeachersManagement.tsx(81,50): error TS2339: Property 'name' does not exist on type 'Profile'.
+src/pages/TeachersManagement.tsx(87,22): error TS2339: Property 'subjects' does not exist on type 'Profile'.
+src/pages/TeachersManagement.tsx(91,72): error TS2339: Property 'classId' does not exist on type 'Profile'.
+src/pages/UserDirectory.tsx(122,12): error TS2304: Cannot find name 'afterBasics'.
+src/pages/UserDirectory.tsx(178,59): error TS2322: Type '{ children: (string | Element)[]; onClick: () => void; size: string; className: string; }' is not assignable to type 'IntrinsicAttributes & { children: ReactNode; variant?: "outline" | "primary" | "secondary" | "danger" | "ghost"; onClick?: () => void; className?: string; type?: "submit" | "button"; disabled?: boolean; loading?: boolean; title?: string; }'.
+  Property 'size' does not exist on type 'IntrinsicAttributes & { children: ReactNode; variant?: "outline" | "primary" | "secondary" | "danger" | "ghost"; onClick?: () => void; className?: string; type?: "submit" | "button"; disabled?: boolean; loading?: boolean; title?: string; }'.
+src/pages/UserDirectory.tsx(207,23): error TS2339: Property 'full_name' does not exist on type 'Stream'.
+src/pages/UserDirectory.tsx(309,32): error TS2322: Type '{ label: string; variant: "info"; }' is not assignable to type 'IntrinsicAttributes & { children: ReactNode; variant?: "info" | "success" | "warning" | "danger" | "neutral"; className?: string; }'.
+  Property 'label' does not exist on type 'IntrinsicAttributes & { children: ReactNode; variant?: "info" | "success" | "warning" | "danger" | "neutral"; className?: string; }'.

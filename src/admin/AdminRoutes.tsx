@@ -12,6 +12,7 @@ import { P3LDevelopersPage } from './pages/P3LDevelopersPage';
 import { DataEnginePage } from './pages/DataEnginePage';
 import { UsersSupportPage } from './pages/UsersSupportPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
+import { ResultsCheckerPage } from './pages/ResultsCheckerPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { SettingsPage } from './pages/SettingsPage';
 
@@ -44,6 +45,7 @@ export const AdminRoutes: React.FC = () => {
         <Route path="p3l-developers" element={<AdminProtectedRoute><P3LDevelopersPage /></AdminProtectedRoute>} />
         <Route path="data-engine" element={<AdminProtectedRoute><DataEnginePage /></AdminProtectedRoute>} />
         <Route path="users" element={<AdminProtectedRoute><UsersSupportPage /></AdminProtectedRoute>} />
+        <Route path="results-checker" element={<AdminProtectedRoute><ResultsCheckerPage /></AdminProtectedRoute>} />
         <Route path="analytics" element={<AdminProtectedRoute><AnalyticsPage /></AdminProtectedRoute>} />
         <Route path="notifications" element={<AdminProtectedRoute><NotificationsPage /></AdminProtectedRoute>} />
         <Route path="settings" element={<AdminProtectedRoute><SettingsPage /></AdminProtectedRoute>} />
